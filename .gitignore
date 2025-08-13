@@ -1,0 +1,54 @@
+gitignore_content = """
+# Composer dependencies
+/vendor/
+
+# Laravel specific
+/node_modules/
+public/storage
+storage/*.key
+.env
+.env.*
+Homestead.yaml
+Homestead.json
+/.vagrant/
+
+# Laravel IDE Helper
+.phpstorm.meta.php
+_ide_helper.php
+_ide_helper_models.php
+
+# PHPUnit
+.phpunit.result.cache
+tests/_output/
+tests/_support/_generated/
+
+# Logs & Cache
+*.log
+storage/logs/
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Misc
+*.bak
+*.tmp
+*.swp
+*.zip
+*.tar.gz
+*.gz
+"""
+
+with open(".gitignore", "w") as f:
+    f.write(gitignore_content.strip())
+
+print("สร้างไฟล์ .gitignore เรียบร้อยแล้ว")
