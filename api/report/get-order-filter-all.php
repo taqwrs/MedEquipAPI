@@ -20,6 +20,8 @@ try {
     $role_id = $input->role_id ?? ''; // รับ role_id จาก token
     $div = $input->div ?? ''; // รับ div (department) จาก token
 
+
+    
     if ($filterType === 'day') {
         $query = "
         SELECT 
