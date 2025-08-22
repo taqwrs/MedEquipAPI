@@ -8,9 +8,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-    $query_user = "SELECT role_id FROM users WHERE employee_code = :employee_code";
+    $query_user = "SELECT role_id FROM users WHERE user_id = :user_id";
     $stmt_user = $dbh->prepare($query_user);
-    $stmt_user->bindParam(":employee_code", $employee_code);
+    $stmt_user->bindParam(":user_id", $user_id);
     $stmt_user->execute();
 
     $r_id = null;

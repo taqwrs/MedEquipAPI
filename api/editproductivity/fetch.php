@@ -8,9 +8,9 @@ $date = $input["date"] ?? date("Y-m-d");
 
 try {
   
-    $query_user = "SELECT * FROM users WHERE employee_code = :employee_code";
+    $query_user = "SELECT * FROM users WHERE user_id = :user_id";
     $stmt1 = $dbh->prepare($query_user);
-    $stmt1->bindParam(":employee_code", $employee_code);
+    $stmt1->bindParam(":user_id", $user_id);
     $stmt1->execute();
 
     while ($row = $stmt1->fetch(PDO::FETCH_ASSOC)) {
@@ -31,10 +31,10 @@ try {
         p.visit_count,
         nh.NHPWU,
         nh.FTE_1,
-        u.employee_code
+        u.user_id
     FROM productivity p
     JOIN ward w ON p.ward_id = w.ward_id
-    JOIN users u ON p.employee_code = u.employee_code
+    JOIN users u ON p.user_id = u.user_id
     LEFT JOIN nursing_hours nh ON nh.NH_id = (
         SELECT NH_id 
         FROM productivity p2 
@@ -84,7 +84,7 @@ try {
             'FTE_1' => $row['FTE_1'], 
             'date' => $row['date'],
             'department' => $row['department'],
-            'employee_code' => $row['employee_code'],
+            'user_id' => $row['user_id'],
             'na_actual' => ($row['na_actual_ADJ'] !== null ? (float)$row['na_actual_ADJ'] : (float)$row['na_actual']),
             'rn_actual' => ($row['rn_actual_ADJ'] !== null ? (float)$row['rn_actual_ADJ'] : (float)$row['rn_actual']),
             'visit_count' => $visit_count,

@@ -86,12 +86,12 @@ try {
         exit;
     }
     $insertQuery = "
-            INSERT INTO `log` (`employee_code`, `rn_old`, `na_old`, `rn_new`, `na_new`, `ward_id`)
-            VALUES (:employee_code, :rn_old, :na_old, :rn_new, :na_new, :ward_id)
+            INSERT INTO `log` (`user_id`, `rn_old`, `na_old`, `rn_new`, `na_new`, `ward_id`)
+            VALUES (:user_id, :rn_old, :na_old, :rn_new, :na_new, :ward_id)
         ";
       $insertStmt = $dbh->prepare($insertQuery);
        $insertStmt->execute([
-                    ':employee_code' => $employee_code,
+                    ':user_id' => $user_id,
                     ':rn_old' => $OldRn,
                     ':na_old' => $OldNa,
                     ':rn_new' => $rn_actual,

@@ -42,10 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST'&& $_SERVER['REQUEST_METHOD'] !== 'GET'
 // Retrieve the token from the Authorization header
 $headers = apache_request_headers();
 $token = isset($headers['Authorization']) ? $headers['Authorization'] : (isset($headers['authorization']) ? $headers['authorization'] : null);
-
+// echo $token;
 if (!$token) {
     http_response_code(401);
-    echo json_encode(['error' => 'Token not provided']);
+    echo json_encode(['error' => 'Token not provided ได้ไง']);
     exit;
 }
 
@@ -62,7 +62,7 @@ if (!$decoded) {
 }
 
 // Extract user information if token is valid
-$employee_code = $decoded->data->employee_code;
+$user_id = $decoded->data->user_id;
 $name = $decoded->data->name;
 $role_id = $decoded->data->role_id;
 $div = $decoded->data->div;

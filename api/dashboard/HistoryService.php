@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
 
     $query = "
-       SELECT *,w.ward_id as real_ward_id,p.employee_code as real_employee_code FROM intern_productivity.nursing_hours nh INNER JOIN intern_productivity.productivity p ON nh.NH_id = p.NH_id INNER JOIN ward w ON nh.ward_id = w.ward_id;
+       SELECT *,w.ward_id as real_ward_id,p.user_id as real_user_id FROM intern_productivity.nursing_hours nh INNER JOIN intern_productivity.productivity p ON nh.NH_id = p.NH_id INNER JOIN ward w ON nh.ward_id = w.ward_id;
     ";
     $stmt = $dbh->prepare($query);
     $stmt->execute();
@@ -36,10 +36,10 @@ try {
         $productivity = ($TotalHN_dy * 100) / $totalActual;
         $currenttime = date("Y-m-d");
 
-        $sqlAdd = "INSERT INTO history(date,employee_code,ward_id,visit_count,NHPWU,TotalHN_dy,FTE_1,rn_actual,na_actual,total_actual,productivity_score,rn_actual_ADJ,na_actual_ADJ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        $sqlAdd = "INSERT INTO history(date,user_id,ward_id,visit_count,NHPWU,TotalHN_dy,FTE_1,rn_actual,na_actual,total_actual,productivity_score,rn_actual_ADJ,na_actual_ADJ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
         $stmt1 = $dbh->prepare($sqlAdd);
         $stmt1->bindParam(1, $currenttime);
-        $stmt1->bindParam(2, $result['employee_code']);
+        $stmt1->bindParam(2, $result['user_id']);
         $stmt1->bindParam(3, $result['real_ward_id']);
         $stmt1->bindParam(4, $total);
         $stmt1->bindParam(5, $result['NHPWU']);

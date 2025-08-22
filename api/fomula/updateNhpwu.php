@@ -43,9 +43,9 @@ try {
     if ($existing) {
         $oldNHPWU = $existing['NHPWU'];
 
-        $stmt = $dbh->prepare("UPDATE nursing_hours SET NHPWU = ?, employee_code = ?, date = ? WHERE NH_id = ?");
-        $stmt->execute([$NHPWU, $employee_code, $date, $existing['NH_id']]);
-        $stmt = $dbh->prepare("INSERT INTO nursing_hours_log (NH_id, ward_id, department, old_NHPWU, new_NHPWU, employee_code)
+        $stmt = $dbh->prepare("UPDATE nursing_hours SET NHPWU = ?, user_id = ?, date = ? WHERE NH_id = ?");
+        $stmt->execute([$NHPWU, $user_id, $date, $existing['NH_id']]);
+        $stmt = $dbh->prepare("INSERT INTO nursing_hours_log (NH_id, ward_id, department, old_NHPWU, new_NHPWU, user_id)
                                VALUES (?, ?, ?, ?, ?, ?)");
         $stmt->execute([
             $existing['NH_id'],
@@ -53,7 +53,7 @@ try {
             $department,
             $oldNHPWU,
             $NHPWU,
-            $employee_code
+            $user_id
         ]);
 
         echo json_encode([

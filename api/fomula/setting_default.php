@@ -19,9 +19,9 @@ if (isset($input['data']) && is_array($input['data'])) {
     $data = $input['data'];
     
     try {
-        $query_user = "SELECT * FROM users WHERE employee_code = :employee_code";
+        $query_user = "SELECT * FROM users WHERE user_id = :user_id";
         $stmt_user = $dbh->prepare($query_user);
-        $stmt_user->bindParam(":employee_code", $employee_code);
+        $stmt_user->bindParam(":user_id", $user_id);
         $stmt_user->execute();
         $dep = null;
         $r_id = null;
@@ -33,8 +33,8 @@ if (isset($input['data']) && is_array($input['data'])) {
         $dbh->beginTransaction();
         
         $insertQuery = "
-            INSERT INTO `TB_default` (`ward`, `day`, `month`, `year`, `rn`, `na`, `employee_code`)
-            VALUES (:ward, :day, :month, :year, :rn, :na, :employee_code)
+            INSERT INTO `TB_default` (`ward`, `day`, `month`, `year`, `rn`, `na`, `user_id`)
+            VALUES (:ward, :day, :month, :year, :rn, :na, :user_id)
         ";
 
         $insertStmt = $dbh->prepare($insertQuery);
@@ -88,7 +88,7 @@ if (isset($input['data']) && is_array($input['data'])) {
                     ':year' => $year,
                     ':rn' => $rn,
                     ':na' => $na,
-                    ':employee_code' => $employee_code,
+                    ':user_id' => $user_id,
                 ]);
                 
                 if ($success && $insertStmt->rowCount() > 0) {
@@ -130,9 +130,9 @@ if (isset($input['data']) && is_array($input['data'])) {
     }
 } else {
     try {
-        $query_user = "SELECT * FROM users WHERE employee_code = :employee_code";
+        $query_user = "SELECT * FROM users WHERE user_id = :user_id";
         $stmt1 = $dbh->prepare($query_user);
-        $stmt1->bindParam(":employee_code", $employee_code);
+        $stmt1->bindParam(":user_id", $user_id);
         $stmt1->execute();
 
         $dep = null;

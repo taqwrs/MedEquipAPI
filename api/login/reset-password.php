@@ -7,11 +7,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 try {
 
-    $username = $employee_code;
+    $username = $user_id;
     $password = $input->password;
     if (isset($username,$password)) {
         $password = password_hash($password, PASSWORD_BCRYPT); // เข้ารหัสรหัสผ่าน
-        $stmt = $dbh->prepare("UPDATE users SET password = ? WHERE employee_code = ?");
+        $stmt = $dbh->prepare("UPDATE users SET password = ? WHERE user_id = ?");
         $stmt->bindParam(1, $password);
         $stmt->bindParam(2, $username);
         if ($stmt->execute()) {

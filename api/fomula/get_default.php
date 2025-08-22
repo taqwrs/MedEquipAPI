@@ -19,9 +19,9 @@ if (isset($input['data']) && is_array($input['data'])) {
     $data = $input['data'];
     
     try {
-        $query_user = "SELECT * FROM users WHERE employee_code = :employee_code";
+        $query_user = "SELECT * FROM users WHERE user_id = :user_id";
         $stmt_user = $dbh->prepare($query_user);
-        $stmt_user->bindParam(":employee_code", $employee_code);
+        $stmt_user->bindParam(":user_id", $user_id);
         $stmt_user->execute();
 
         $dep = null;
@@ -36,7 +36,7 @@ if (isset($input['data']) && is_array($input['data'])) {
 
         $updateQuery = "
             UPDATE `TB_default`
-            SET `rn` = :rn, `na` = :na, `employee_code` = :employee_code
+            SET `rn` = :rn, `na` = :na, `user_id` = :user_id
             WHERE `ward` = :ward AND `day` = :day AND `month` = :month AND `year` = :year
         ";
 
@@ -94,7 +94,7 @@ if (isset($input['data']) && is_array($input['data'])) {
                     ':year' => $year,
                     ':rn' => $rn,
                     ':na' => $na,
-                    ':employee_code' => $employee_code,
+                    ':user_id' => $user_id,
                 ];
 
                 if ($r_id !== null && $r_id !== 9 && $r_id !== 6) {
@@ -144,9 +144,9 @@ if (isset($input['data']) && is_array($input['data'])) {
     }
 } else {
     try {
-        $query_user = "SELECT * FROM users WHERE employee_code = :employee_code";
+        $query_user = "SELECT * FROM users WHERE user_id = :user_id";
         $stmt1 = $dbh->prepare($query_user);
-        $stmt1->bindParam(":employee_code", $employee_code);
+        $stmt1->bindParam(":user_id", $user_id);
         $stmt1->execute();
 
         $dep = null;

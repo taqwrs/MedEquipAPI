@@ -18,7 +18,7 @@ try {
                 exit;
             }
 
-            $stmt = $dbh->prepare("SELECT permission.status FROM menu LEFT JOIN permission ON menu.id = permission.menu_id INNER JOIN users On users.role_id = permission.role_id WHERE menu.path_name = ? AND users.full_name like ?");
+            $stmt = $dbh->prepare("SELECT permission.status FROM menu LEFT JOIN permission ON menu.menu_id = permission.menu_id INNER JOIN users On users.role_id = permission.role_id WHERE menu.path_name = ? AND users.full_name like ?");
             $stmt->execute([$input->menuPath, $input->name]);
 
             $permission_status = $stmt->fetchColumn();
@@ -75,7 +75,7 @@ try {
         // ====== CASE 5: ดึง role ทั้งหมด ======
         case 'get_roles':
         default:
-            $sql = "SELECT r.role_id, r.role_name, COUNT(DISTINCT u.employee_code) AS user_count, m.path_name FROM role r LEFT JOIN users u ON u.role_id = r.role_id LEFT JOIN permission p ON p.role_id = r.role_id AND p.status = 1 LEFT JOIN menu m ON m.id = p.menu_id GROUP BY r.role_id, m.path_name ORDER BY r.role_id ASC";
+            $sql = "SELECT r.role_id, r.role_name, COUNT(DISTINCT u.user_id) AS user_count, m.path_name FROM role r LEFT JOIN users u ON u.role_id = r.role_id LEFT JOIN permission p ON p.role_id = r.role_id AND p.status = 1 LEFT JOIN menu m ON m.id = p.menu_id GROUP BY r.role_id, m.path_name ORDER BY r.role_id ASC";
 
             $stmt = $dbh->prepare($sql);
             $stmt->execute();

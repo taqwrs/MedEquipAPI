@@ -24,7 +24,7 @@ try {
     $username = $input->username;
     $password = $input->password;
     if (isset($username, $password)) {
-        $query = "SELECT * FROM users WHERE employee_code = ?";
+        $query = "SELECT * FROM users WHERE user_id = ?";
 
         $stmt = $dbh->prepare($query);
         $stmt->bindParam(1, $username);
@@ -33,9 +33,9 @@ try {
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
             if(password_verify($password, $results[0]['password'])) {
                 $users = array(
-                    "employee_code" => $results[0]['employee_code'],
+                    "user_id" => $results[0]['user_id'],
                     "name" => $results[0]['full_name'],
-                    "div" => $results[0]['department'],
+                    "div" => $results[0]['department_id'],
                     "role_id" => $results[0]['role_id'],
                 );
                 $issued_at = time();
@@ -64,7 +64,7 @@ try {
                     "user" => $users,
                     "expiration_time" => $expiration_time,
                 );
-                $stmt = $dbh->prepare("UPDATE users SET last_login = current_timestamp WHERE employee_code = ?");
+                $stmt = $dbh->prepare("UPDATE users SET last_login = current_timestamp WHERE user_id = ?");
                 $stmt->bindParam(1, $username);
 
                 if ($stmt->execute()) {

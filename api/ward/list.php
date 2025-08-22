@@ -6,10 +6,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     die();
 }
 try {
-    // $query = "SELECT employee_code, department, full_name FROM `users`";
+    // $query = "SELECT user_id, department, full_name FROM `users`";
     $query = "
     SELECT 
-        u.employee_code, 
+        u.user_id, 
         u.department, 
         u.full_name,
         u.role_id,

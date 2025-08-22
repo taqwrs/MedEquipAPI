@@ -40,7 +40,7 @@ try {
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             $users = array(
-                "employee_code" => $results[0]['user_id'], // ใช้ user_id แทน employee_code
+                "user_id" => $results[0]['user_id'], // ใช้ user_id แทน user_id
                 "name" => $results[0]['full_name'],
                 "div" => $results[0]['department_name'],  // ใช้ชื่อแผนกจาก join
                 "role_id" => $results[0]['role_id'],
@@ -74,7 +74,7 @@ try {
                 "expiration_time" => $expiration_time,
             );
 
-            // อัปเดต last_login ใช้ user_id แทน employee_code
+            // อัปเดต last_login ใช้ user_id แทน user_id
             $stmt = $dbh->prepare("UPDATE users SET last_login = current_timestamp WHERE user_id = ?");
             $stmt->bindParam(1, $username);
             if ($stmt->execute()) {
@@ -115,7 +115,7 @@ try {
 
                 if ($stmt->execute()) {
                     $users = array(
-                        "employee_code" => $id,
+                        "user_id" => $id,
                         "name" => $name,
                         "div" => $mappedDepartment,
                         "role_id" => 3,
@@ -152,7 +152,7 @@ try {
     } else {
         echo json_encode(array("status" => "error1", "mess" => "fail"));
     }
-    
+
 } catch (PDOException $e) {
     print "Error!: " . $e->getMessage() . "<br/>";
     die();

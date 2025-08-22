@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $query = "
-       SELECT *,w.ward_id as real_ward_id,p.employee_code as real_employee_code FROM intern_productivity.nursing_hours nh INNER JOIN intern_productivity.productivity p ON nh.NH_id = p.NH_id INNER JOIN ward w ON nh.ward_id = w.ward_id
+       SELECT *,w.ward_id as real_ward_id,p.user_id as real_user_id FROM intern_productivity.nursing_hours nh INNER JOIN intern_productivity.productivity p ON nh.NH_id = p.NH_id INNER JOIN ward w ON nh.ward_id = w.ward_id
         WHERE w.department = ?
     ";
 
@@ -49,7 +49,7 @@ try {
                 'NH_id' => $row['NH_id'],
                 'visit_count' => $total,
                 'ward_id' => $row['real_ward_id'],
-                'employee_code' => $row['real_employee_code'],
+                'user_id' => $row['real_user_id'],
                 'TotalHN_dy' => $TotalHN_dy,
                 'rn_actual'=> $rn_actual,
                 'na_actual'=> $na_actual,
