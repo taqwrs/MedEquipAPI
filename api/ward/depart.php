@@ -6,7 +6,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     die();
 }
 try {
-    $query = "SELECT department FROM `ward`";
+    $query = "SELECT department_id, department_name FROM `departments`";
 
     $stmt = $dbh->prepare($query);
     $stmt->execute();
