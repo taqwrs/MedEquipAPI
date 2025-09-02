@@ -1,18 +1,10 @@
 <?php
-header("Access-Control-Allow-Origin: http://localhost:5173"); 
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
-header('Content-Type: application/json; charset=utf-8');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
+include "../config/jwt.php";
+$input = json_decode(file_get_contents('php://input'));
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(array("status" => "error", "message" => "post method!!!"));
+    die();
 }
-
-include "../config/jwt.php"; 
-
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 try {
 
@@ -45,32 +37,35 @@ try {
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($results as &$result) {
         switch ($result['frequency_unit']) {
-            case 1: $unit_text = 'วัน'; break;
-            case 2: $unit_text = 'เดือน'; break;
-            case 3: $unit_text = 'ปี'; break;
-            default: $unit_text = 'หน่วย';
+            case 1:
+                $unit_text = 'วัน';
+                break;
+            case 2:
+                $unit_text = 'เดือน';
+                break;
+            case 3:
+                $unit_text = 'ปี';
+                break;
+            default:
+                $unit_text = 'หน่วย';
         }
         $result['frequency_display'] = "ทุก {$result['frequency_number']} {$unit_text}";
-        $result['status_display']   = $result['is_active'] ? 'ใช้งาน' : 'ไม่ใช้งาน';
-        $total     = (int)$result['total_schedules'];
-        $completed = (int)$result['completed_calibrations'];
+        $result['status_display'] = $result['is_active'] ? 'ใช้งาน' : 'ไม่ใช้งาน';
+        $total = (int) $result['total_schedules'];
+        $completed = (int) $result['completed_calibrations'];
         $result['progress'] = $total > 0 ? round(($completed / $total) * 100, 2) : 0;
-        $result['price']             = (float)$result['price'];
-        $result['frequency_number']  = (int)$result['frequency_number'];
-        $result['frequency_unit']    = (int)$result['frequency_unit'];
-        $result['interval_count']    = (int)$result['interval_count'];
-        $result['is_active']         = (int)$result['is_active'];
+        $result['price'] = (float) $result['price'];
+        $result['frequency_number'] = (int) $result['frequency_number'];
+        $result['frequency_unit'] = (int) $result['frequency_unit'];
+        $result['interval_count'] = (int) $result['interval_count'];
+        $result['is_active'] = (int) $result['is_active'];
     }
 
     echo json_encode([
         "status" => "success",
-        "data"   => $results
-    ], JSON_UNESCAPED_UNICODE);
+        "data" => array_values($results)
+    ]);
 
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        "status"  => "error",
-        "message" => "Error fetching calibration plans: " . $e->getMessage()
-    ], JSON_UNESCAPED_UNICODE);
+    echo json_encode(array("status" => "error", "message" => $e->getMessage()));
 }
