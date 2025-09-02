@@ -1,28 +1,39 @@
 <?php
-include "../config/jwt.php";
+// เรียก jwt.php แบบ absolute path เพื่อให้ path vendor ถูกต้อง
+include_once __DIR__ . "/../../config/jwt.php";
 
-$input = json_decode(file_get_contents('php://input'));
-
+// ตรวจสอบ Method GET
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    echo json_encode(array("status" => "error", "message" => "GET method required"));
+    echo json_encode([
+        "status" => "error",
+        "message" => "GET method required"
+    ]);
     die();
 }
 
 try {
-    // query ข้อมูล category_id และ name จากตาราง equipment_categories
-    $query = "SELECT category_id, name FROM equipment_categories";
+    // Query สำหรับดึงข้อมูลหมวดหมู่เครื่องมือแพทย์
+    $query = "SELECT category_id, name FROM equipment_categories ORDER BY name ASC";
+
+    // เตรียมและ execute query
     $stmt = $dbh->prepare($query);
     $stmt->execute();
-    $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // ส่งผลลัพธ์กลับเป็น JSON
-    echo json_encode([
-        "status" => "ok",
-        "data" => $result
-    ]);
+    // ตรวจสอบผลลัพธ์
+    if ($stmt->rowCount() > 0) {
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode([
+            "status" => "ok",
+            "data" => $results
+        ], JSON_UNESCAPED_UNICODE);
+    } else {
+        echo json_encode([
+            "status" => "error",
+            "message" => "ไม่พบข้อมูล"
+        ]);
+    }
 
 } catch (Exception $e) {
-    // หากมีข้อผิดพลาด ส่ง error กลับ
     echo json_encode([
         "status" => "error",
         "message" => $e->getMessage()
