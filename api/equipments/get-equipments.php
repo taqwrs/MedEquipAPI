@@ -21,8 +21,6 @@ try {
                       OR e.brand LIKE :search";
         $params[':search'] = "%$search%";
     }
-
-    // นับจำนวนทั้งหมด
     $countSql = "SELECT COUNT(DISTINCT e.equipment_id) 
                  FROM equipments e
                  LEFT JOIN file_equip f ON f.equipment_id = e.equipment_id
