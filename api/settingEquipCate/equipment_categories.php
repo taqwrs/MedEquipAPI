@@ -16,8 +16,18 @@ if ($method === 'POST' && isset($input['_method'])) {
 
 try {
     if ($method === 'GET') {
-        // READ
-        $stmt = $dbh->prepare("SELECT category_id, name FROM equipment_categories ORDER BY category_id DESC");
+        // READ - JOIN กับ subcategories
+        $stmt = $dbh->prepare("
+            SELECT 
+                c.category_id,
+                c.name as category_name,
+                s.subcategory_id,
+                s.name as subcategory_name,
+                s.type
+            FROM equipment_categories c
+            LEFT JOIN equipment_subcategories s ON c.category_id = s.category_id
+            ORDER BY c.category_id DESC, s.subcategory_id
+        ");
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode(["status" => "ok", "data" => $results], JSON_UNESCAPED_UNICODE);
@@ -63,3 +73,4 @@ try {
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
+?>
