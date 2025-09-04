@@ -1,5 +1,5 @@
 <?php
-include "../config/jwt.php"; // DB + JWT
+include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -9,7 +9,6 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization");
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents("php://input"), true);
 
-// ถ้าเป็น POST และมี _method ให้ใช้ method นั้น
 if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
 }
