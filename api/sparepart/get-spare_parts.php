@@ -5,7 +5,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(["status" => "error", "message" => "post method!!!"]);
     exit;
 }
-
 $search = trim($input->search ?? '');
 $page   = (int)($input->page ?? 1);
 $limit  = (int)($input->limit ?? 5);
@@ -55,6 +54,8 @@ try {
         gu2.group_name AS group_responsible_name,
         u1.full_name AS user_full_name,
         u2.full_name AS updated_by_name,
+        e.name AS equipment_name,
+        e.asset_code AS equipment_asset_code,
         COALESCE(
             CONCAT('[', GROUP_CONCAT(
                 JSON_OBJECT(
@@ -77,6 +78,7 @@ try {
     LEFT JOIN users u1 ON u1.user_id = sp.user_id
     LEFT JOIN users u2 ON u2.user_id = sp.updated_by
     LEFT JOIN file_spare fs ON fs.spare_part_id = sp.spare_part_id
+    LEFT JOIN equipments e ON e.equipment_id = sp.equipment_id
     $searchSql
     GROUP BY sp.spare_part_id
     LIMIT :limit OFFSET :offset
@@ -105,7 +107,6 @@ try {
             "limit"       => $limit
         ]
     ]);
-
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
