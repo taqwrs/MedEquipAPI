@@ -3,7 +3,7 @@ include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE,OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -21,7 +21,7 @@ try {
                 s.spare_subcategory_id,
                 s.spare_category_id,
                 s.name AS spare_subcategory_name,
-                c.name AS pare_category_name
+                c.name AS spare_category_name
             FROM spare_subcategories s
             JOIN spare_categories c 
                 ON s.spare_category_id = c.spare_category_id
