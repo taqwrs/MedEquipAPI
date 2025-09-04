@@ -18,11 +18,14 @@ if (!$input) {
     exit;
 }
 
-$required_fields = ['plan_name','user_id','group_user_id','company_id','frequency_number','frequency_unit','frequency_type','start_waranty','start_date','end_date','cost_type','price','type_cal'];
+if(!isset($input['plan_id'])){
+    echo json_encode(["status"=>"error","message"=>"Missing field: plan_id"]);
+    exit;
+}
 
-// ใช้ array_key_exists แทน isset เพื่อให้ null ผ่านได้
+$required_fields = ['plan_name','user_id','group_user_id','company_id','frequency_number','frequency_unit','frequency_type','start_waranty','start_date','end_date','cost_type','price','type_cal'];
 foreach($required_fields as $field){
-    if(!array_key_exists($field, $input)){
+    if(!isset($input[$field])){
         echo json_encode(["status"=>"error","message"=>"Missing field: $field"]);
         exit;
     }
@@ -48,7 +51,6 @@ if(!in_array((int)$input['frequency_unit'],$allowed_frequency_unit)){
 try {
     $dbh->beginTransaction();
 
-    // คำนวณ interval
     $startDate = new DateTime($input['start_date']);
     $endDate   = new DateTime($input['end_date']);
     $intervalNumber = (int)$input['frequency_number'];
@@ -66,16 +68,30 @@ try {
         }
     }
 
-    // insert calibration_plans
-    $stmt = $dbh->prepare("INSERT INTO calibration_plans 
-        (plan_name, user_id, group_user_id, company_id, frequency_number, frequency_unit, frequency_type, interval_count, start_waranty, start_date, end_date, cost_type, price, type_cal, is_active)
-        VALUES (:plan_name, :user_id, :group_user_id, :company_id, :frequency_number, :frequency_unit, :frequency_type, :interval_count, :start_waranty, :start_date, :end_date, :cost_type, :price, :type_cal, :is_active)
+    $stmt = $dbh->prepare("UPDATE calibration_plans SET
+        plan_name=:plan_name, 
+        user_id=:user_id,
+        group_user_id=:group_user_id,
+        company_id=:company_id,
+        frequency_number=:frequency_number,
+        frequency_unit=:frequency_unit,
+        frequency_type=:frequency_type,
+        interval_count=:interval_count,
+        start_waranty=:start_waranty,
+        start_date=:start_date,
+        end_date=:end_date,
+        cost_type=:cost_type,
+        price=:price,
+        type_cal=:type_cal,
+        is_active=:is_active
+        WHERE plan_id=:plan_id
     ");
     $stmt->execute([
+        ':plan_id'=>$input['plan_id'],
         ':plan_name'=>$input['plan_name'],
         ':user_id'=>$input['user_id'],
         ':group_user_id'=>$input['group_user_id'],
-        ':company_id'=>$input['company_id'], // null ผ่านได้
+        ':company_id'=>$input['company_id'],
         ':frequency_number'=>$intervalNumber,
         ':frequency_unit'=>$intervalUnit,
         ':frequency_type'=>$input['frequency_type'],
@@ -89,14 +105,14 @@ try {
         ':is_active'=>$input['is_active'] ?? 1
     ]);
 
-    $plan_id = $dbh->lastInsertId();
+    $delDetails = $dbh->prepare("DELETE FROM details_calibration_plans WHERE plan_id=:plan_id");
+    $delDetails->execute([':plan_id'=>$input['plan_id']]);
 
-    // insert details_calibration_plans
     $detailsStmt = $dbh->prepare("INSERT INTO details_calibration_plans (plan_id,start_date) VALUES (:plan_id,:start_date)");
     $scheduledDate = clone $startDate;
     for($i=1;$i<=$intervalCount;$i++){
         $detailsStmt->execute([
-            ':plan_id'=>$plan_id,
+            ':plan_id'=>$input['plan_id'],
             ':start_date'=>$scheduledDate->format('Y-m-d')
         ]);
         switch($intervalUnit){
@@ -107,7 +123,6 @@ try {
         }
     }
 
-    // Upload base64 files
     if(!empty($input['files']) && is_array($input['files'])){
         $uploadDir = __DIR__."/../uploads/files_cal/";
         if(!is_dir($uploadDir)) mkdir($uploadDir,0777,true);
@@ -121,7 +136,7 @@ try {
             $data = base64_decode($file['base64']);
             if(file_put_contents($targetPath,$data) !== false){
                 $fileStmt->execute([
-                    ':plan_id'=>$plan_id,
+                    ':plan_id'=>$input['plan_id'],
                     ':file_cal_name'=>$file['name'],
                     ':file_cal_url'=>"/uploads/files_cal/".$newName,
                     ':cal_type_name'=>$file['type_name'] ?? 'ไม่ระบุ'
@@ -131,7 +146,7 @@ try {
     }
 
     $dbh->commit();
-    echo json_encode(["status"=>"success","plan_id"=>$plan_id]);
+    echo json_encode(["status"=>"success","plan_id"=>$input['plan_id']]);
 
 }catch(Exception $e){
     if($dbh->inTransaction()) $dbh->rollBack();
