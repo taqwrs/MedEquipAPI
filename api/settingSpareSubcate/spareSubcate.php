@@ -9,6 +9,7 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization");
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents("php://input"), true);
 
+
 if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
 }
@@ -19,8 +20,8 @@ try {
             SELECT 
                 s.spare_subcategory_id,
                 s.spare_category_id,
-                s.name AS subcategory_name,
-                c.name AS category_name
+                s.name AS spare_subcategory_name,
+                c.name AS pare_category_name
             FROM spare_subcategories s
             JOIN spare_categories c 
                 ON s.spare_category_id = c.spare_category_id
