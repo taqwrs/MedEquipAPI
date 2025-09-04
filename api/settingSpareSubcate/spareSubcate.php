@@ -17,14 +17,14 @@ try {
     if ($method === 'GET') {
         $stmt = $dbh->prepare("
             SELECT 
-                c.spare_category_id,
-                c.name AS category_name,
                 s.spare_subcategory_id,
-                s.name AS subcategory_name
-            FROM spare_categories c
-            LEFT JOIN spare_subcategories s 
-                ON c.spare_category_id = s.spare_category_id
-            ORDER BY c.spare_category_id DESC, s.spare_subcategory_id
+                s.spare_category_id,
+                s.name AS subcategory_name,
+                c.name AS category_name
+            FROM spare_subcategories s
+            JOIN spare_categories c 
+                ON s.spare_category_id = c.spare_category_id
+            ORDER BY s.spare_subcategory_id DESC
         ");
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -32,35 +32,45 @@ try {
 
     } elseif ($method === 'POST') {
         // CREATE
-        if (empty($input['name'])) {
-            echo json_encode(["status" => "error", "message" => "กรุณากรอก name"]);
+        if (empty($input['spare_category_id']) || empty($input['name'])) {
+            echo json_encode(["status" => "error", "message" => "กรุณากรอก spare_category_id และ name"]);
             exit;
         }
-        $stmt = $dbh->prepare("INSERT INTO spare_categories (name) VALUES (:name)");
+        $stmt = $dbh->prepare("
+            INSERT INTO spare_subcategories (spare_category_id, name) 
+            VALUES (:spare_category_id, :name)
+        ");
+        $stmt->bindParam(":spare_category_id", $input['spare_category_id']);
         $stmt->bindParam(":name", $input['name']);
         $stmt->execute();
         echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
 
     } elseif ($method === 'PUT') {
         // UPDATE
-        if (empty($input['spare_category_id']) || empty($input['name'])) {
-            echo json_encode(["status" => "error", "message" => "กรุณากรอก spare_category_id และ name"]);
+        if (empty($input['spare_subcategory_id']) || empty($input['name'])) {
+            echo json_encode(["status" => "error", "message" => "กรุณากรอก spare_subcategory_id และ name"]);
             exit;
         }
-        $stmt = $dbh->prepare("UPDATE spare_categories SET name = :name WHERE spare_category_id = :id");
+        $stmt = $dbh->prepare("
+            UPDATE spare_subcategories 
+            SET spare_category_id = :spare_category_id, 
+                name = :name
+            WHERE spare_subcategory_id = :id
+        ");
+        $stmt->bindParam(":spare_category_id", $input['spare_category_id']);
         $stmt->bindParam(":name", $input['name']);
-        $stmt->bindParam(":id", $input['spare_category_id']);
+        $stmt->bindParam(":id", $input['spare_subcategory_id']);
         $stmt->execute();
         echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
 
     } elseif ($method === 'DELETE') {
         // DELETE
-        if (empty($input['spare_category_id'])) {
-            echo json_encode(["status" => "error", "message" => "กรุณากรอก spare_category_id"]);
+        if (empty($input['spare_subcategory_id'])) {
+            echo json_encode(["status" => "error", "message" => "กรุณากรอก spare_subcategory_id"]);
             exit;
         }
-        $stmt = $dbh->prepare("DELETE FROM spare_categories WHERE spare_category_id = :id");
-        $stmt->bindParam(":id", $input['spare_category_id']);
+        $stmt = $dbh->prepare("DELETE FROM spare_subcategories WHERE spare_subcategory_id = :id");
+        $stmt->bindParam(":id", $input['spare_subcategory_id']);
         $stmt->execute();
         echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
 
