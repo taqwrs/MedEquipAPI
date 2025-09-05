@@ -9,12 +9,30 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization");
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents("php://input"), true);
 
-
 if ($method === "POST" && isset($input["_method"])) {
     $method = strtoupper($input["_method"]);
 }
 
 try {
+    // GET ENUM types
+    if ($method === "GET" && isset($_GET["action"]) && $_GET["action"] === "types") {
+        $stmt = $dbh->query("SHOW COLUMNS FROM equipment_subcategories LIKE 'type'");
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        preg_match("/^enum\((.*)\)$/", $row['Type'], $matches);
+        $enumValues = [];
+        if (!empty($matches[1])) {
+            $vals = explode(",", $matches[1]);
+            foreach ($vals as $val) {
+                $enumValues[] = trim($val, " '");
+            }
+        }
+
+        echo json_encode(["status" => "ok", "data" => $enumValues], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // GET รายการ subcategories
     if ($method === "GET") {
         $stmt = $dbh->prepare("
             SELECT 
@@ -39,15 +57,17 @@ try {
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode(["status" => "ok", "data" => $results], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
 
-    } elseif ($method === "POST") {
-        // CREATE equipment_subcategories + relation_group
+    // POST (create)
+    if ($method === "POST") {
         if (empty($input["category_id"]) || empty($input["name"]) || empty($input["type"])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก category_id, name, type"]);
             exit;
         }
 
-        // เพิ่มข้อมูล subcategory
+        // เพิ่ม subcategory
         $stmt = $dbh->prepare("
             INSERT INTO equipment_subcategories (category_id, name, type)
             VALUES (:category_id, :name, :type)
@@ -59,21 +79,26 @@ try {
 
         $newId = $dbh->lastInsertId();
 
-        // ผูก relation_group ถ้ามี group_user_id
-        if (!empty($input["group_user_id"])) {
-            $stmt2 = $dbh->prepare("
+        // ผูก relation_group หลายค่า (many-to-many)
+        $group_user_ids = $input["group_user_ids"] ?? [];
+        if (!empty($group_user_ids)) {
+            $stmtRG = $dbh->prepare("
                 INSERT INTO relation_group (group_user_id, subcategory_id)
                 VALUES (:group_user_id, :subcategory_id)
             ");
-            $stmt2->bindParam(":group_user_id", $input["group_user_id"]);
-            $stmt2->bindParam(":subcategory_id", $newId);
-            $stmt2->execute();
+            foreach ($group_user_ids as $gid) {
+                $stmtRG->bindParam(":group_user_id", $gid);
+                $stmtRG->bindParam(":subcategory_id", $newId);
+                $stmtRG->execute();
+            }
         }
 
         echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
+        exit;
+    }
 
-    } elseif ($method === "PUT") {
-        // UPDATE equipment_subcategories + relation_group
+    // PUT (update)
+    if ($method === "PUT") {
         if (empty($input["subcategory_id"]) || empty($input["name"]) || empty($input["type"])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก subcategory_id, name, type"]);
             exit;
@@ -93,40 +118,30 @@ try {
         $stmt->bindParam(":id", $input["subcategory_id"]);
         $stmt->execute();
 
-        // อัปเดต relation_group ถ้ามี group_user_id
-        if (!empty($input["group_user_id"])) {
-            // เช็คว่ามีอยู่แล้วหรือยัง
-            $stmtCheck = $dbh->prepare("
-                SELECT relation_group_id FROM relation_group WHERE subcategory_id = :subcategory_id
+        // อัปเดต relation_group (many-to-many)
+        $stmtDel = $dbh->prepare("DELETE FROM relation_group WHERE subcategory_id = :subcategory_id");
+        $stmtDel->bindParam(":subcategory_id", $input["subcategory_id"]);
+        $stmtDel->execute();
+
+        $group_user_ids = $input["group_user_ids"] ?? [];
+        if (!empty($group_user_ids)) {
+            $stmtRG = $dbh->prepare("
+                INSERT INTO relation_group (group_user_id, subcategory_id)
+                VALUES (:group_user_id, :subcategory_id)
             ");
-            $stmtCheck->bindParam(":subcategory_id", $input["subcategory_id"]);
-            $stmtCheck->execute();
-            $exist = $stmtCheck->fetch(PDO::FETCH_ASSOC);
-
-            if ($exist) {
-                // update
-                $stmt2 = $dbh->prepare("
-                    UPDATE relation_group
-                    SET group_user_id = :group_user_id
-                    WHERE subcategory_id = :subcategory_id
-                ");
-            } else {
-                // insert
-                $stmt2 = $dbh->prepare("
-                    INSERT INTO relation_group (group_user_id, subcategory_id)
-                    VALUES (:group_user_id, :subcategory_id)
-                ");
+            foreach ($group_user_ids as $gid) {
+                $stmtRG->bindParam(":group_user_id", $gid);
+                $stmtRG->bindParam(":subcategory_id", $input["subcategory_id"]);
+                $stmtRG->execute();
             }
-
-            $stmt2->bindParam(":group_user_id", $input["group_user_id"]);
-            $stmt2->bindParam(":subcategory_id", $input["subcategory_id"]);
-            $stmt2->execute();
         }
 
         echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
+        exit;
+    }
 
-    } elseif ($method === "DELETE") {
-        // DELETE ทั้ง relation_group และ equipment_subcategories
+    // DELETE
+    if ($method === "DELETE") {
         if (empty($input["subcategory_id"])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก subcategory_id"]);
             exit;
@@ -137,16 +152,18 @@ try {
         $stmt1->bindParam(":id", $input["subcategory_id"]);
         $stmt1->execute();
 
-        // ลบ equipment_subcategories
+        // ลบ subcategory
         $stmt2 = $dbh->prepare("DELETE FROM equipment_subcategories WHERE subcategory_id = :id");
         $stmt2->bindParam(":id", $input["subcategory_id"]);
         $stmt2->execute();
 
         echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
-
-    } else {
-        echo json_encode(["status" => "error", "message" => "Method not allowed"]);
+        exit;
     }
+
+    //  Method ไม่ถูกต้อง
+    echo json_encode(["status" => "error", "message" => "Method not allowed"]);
+    exit;
 
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
