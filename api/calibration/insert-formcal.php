@@ -75,7 +75,7 @@ try {
         ':plan_name'=>$input['plan_name'],
         ':user_id'=>$input['user_id'],
         ':group_user_id'=>$input['group_user_id'],
-        ':company_id'=>$input['company_id'], // null ผ่านได้
+        ':company_id'=>$input['company_id'],
         ':frequency_number'=>$intervalNumber,
         ':frequency_unit'=>$intervalUnit,
         ':frequency_type'=>$input['frequency_type'],

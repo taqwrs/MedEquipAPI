@@ -51,10 +51,47 @@ if(!in_array((int)$input['frequency_unit'],$allowed_frequency_unit)){
 try {
     $dbh->beginTransaction();
 
-    $startDate = new DateTime($input['start_date']);
-    $endDate   = new DateTime($input['end_date']);
-    $intervalNumber = (int)$input['frequency_number'];
-    $intervalUnit = (int)$input['frequency_unit'];
+    // ดึงข้อมูลปัจจุบัน
+    $stmt = $dbh->prepare("SELECT * FROM calibration_plans WHERE plan_id=:plan_id");
+    $stmt->execute([':plan_id'=>$input['plan_id']]);
+    $current = $stmt->fetch(PDO::FETCH_ASSOC);
+    if(!$current){
+        echo json_encode(["status"=>"error","message"=>"Plan not found"]);
+        exit;
+    }
+
+    $fields = [
+        'plan_name','user_id','group_user_id','company_id',
+        'frequency_number','frequency_unit','frequency_type',
+        'start_waranty','start_date','end_date','cost_type',
+        'price','type_cal','is_active'
+    ];
+    $updateData = [];
+    foreach($fields as $f){
+        $updateData[$f] = $input[$f] ?? $current[$f];
+    }
+    $updateData['is_active'] = $updateData['is_active'] ?? 1;
+
+    // Validate type_cal, cost_type, frequency_unit
+    $allowed_type_cal = ['ภายใน','ภายนอก'];
+    $allowed_cost_type = ['แยกรายรอบ','รวมตลอดทั้งสัญญา'];
+    $allowed_frequency_unit = [1,2,3,4];
+
+    if(!in_array($updateData['type_cal'],$allowed_type_cal)){
+        echo json_encode(["status"=>"error","message"=>"Invalid type_cal"]); exit;
+    }
+    if(!in_array($updateData['cost_type'],$allowed_cost_type)){
+        echo json_encode(["status"=>"error","message"=>"Invalid cost_type"]); exit;
+    }
+    if(!in_array((int)$updateData['frequency_unit'],$allowed_frequency_unit)){
+        echo json_encode(["status"=>"error","message"=>"Invalid frequency_unit"]); exit;
+    }
+
+    // คำนวณ interval_count
+    $startDate = new DateTime($updateData['start_date']);
+    $endDate   = new DateTime($updateData['end_date']);
+    $intervalNumber = (int)$updateData['frequency_number'];
+    $intervalUnit = (int)$updateData['frequency_unit'];
 
     $intervalCount = 0;
     $tempDate = clone $startDate;
@@ -68,6 +105,7 @@ try {
         }
     }
 
+    // UPDATE
     $stmt = $dbh->prepare("UPDATE calibration_plans SET
         plan_name=:plan_name, 
         user_id=:user_id,
@@ -86,25 +124,9 @@ try {
         is_active=:is_active
         WHERE plan_id=:plan_id
     ");
-    $stmt->execute([
-        ':plan_id'=>$input['plan_id'],
-        ':plan_name'=>$input['plan_name'],
-        ':user_id'=>$input['user_id'],
-        ':group_user_id'=>$input['group_user_id'],
-        ':company_id'=>$input['company_id'],
-        ':frequency_number'=>$intervalNumber,
-        ':frequency_unit'=>$intervalUnit,
-        ':frequency_type'=>$input['frequency_type'],
-        ':interval_count'=>$intervalCount,
-        ':start_waranty'=>$input['start_waranty'],
-        ':start_date'=>$input['start_date'],
-        ':end_date'=>$input['end_date'],
-        ':cost_type'=>$input['cost_type'],
-        ':price'=>$input['price'],
-        ':type_cal'=>$input['type_cal'],
-        ':is_active'=>$input['is_active'] ?? 1
-    ]);
+    $stmt->execute(array_merge($updateData, [':interval_count'=>$intervalCount, ':plan_id'=>$input['plan_id']]));
 
+    // ลบและสร้าง details_calibration_plans ใหม่
     $delDetails = $dbh->prepare("DELETE FROM details_calibration_plans WHERE plan_id=:plan_id");
     $delDetails->execute([':plan_id'=>$input['plan_id']]);
 
@@ -123,12 +145,12 @@ try {
         }
     }
 
+    // อัปโหลดไฟล์ถ้ามี
     if(!empty($input['files']) && is_array($input['files'])){
         $uploadDir = __DIR__."/../uploads/files_cal/";
         if(!is_dir($uploadDir)) mkdir($uploadDir,0777,true);
 
         $fileStmt = $dbh->prepare("INSERT INTO file_cal (plan_id,file_cal_name,file_cal_url,cal_type_name) VALUES (:plan_id,:file_cal_name,:file_cal_url,:cal_type_name)");
-
         foreach($input['files'] as $file){
             if(empty($file['name']) || empty($file['base64'])) continue;
             $newName = uniqid().'_'.basename($file['name']);
@@ -152,3 +174,4 @@ try {
     if($dbh->inTransaction()) $dbh->rollBack();
     echo json_encode(["status"=>"error","message"=>$e->getMessage()]);
 }
+
