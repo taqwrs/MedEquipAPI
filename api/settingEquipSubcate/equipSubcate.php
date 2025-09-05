@@ -14,6 +14,25 @@ if ($method === "POST" && isset($input["_method"])) {
 }
 
 try {
+    // GET ENUM types
+    if ($method === "GET" && isset($_GET["action"]) && $_GET["action"] === "types") {
+        $stmt = $dbh->query("SHOW COLUMNS FROM equipment_subcategories LIKE 'type'");
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        preg_match("/^enum\((.*)\)$/", $row['Type'], $matches);
+        $enumValues = [];
+        if (!empty($matches[1])) {
+            $vals = explode(",", $matches[1]);
+            foreach ($vals as $val) {
+                $enumValues[] = trim($val, " '");
+            }
+        }
+
+        echo json_encode(["status" => "ok", "data" => $enumValues], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // GET รายการ subcategories
     if ($method === "GET") {
         $stmt = $dbh->prepare("
             SELECT 
@@ -38,8 +57,11 @@ try {
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode(["status" => "ok", "data" => $results], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
 
-    } elseif ($method === "POST") {
+    // POST (create)
+    if ($method === "POST") {
         if (empty($input["category_id"]) || empty($input["name"]) || empty($input["type"])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก category_id, name, type"]);
             exit;
@@ -72,8 +94,11 @@ try {
         }
 
         echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
+        exit;
+    }
 
-    } elseif ($method === "PUT") {
+    // PUT (update)
+    if ($method === "PUT") {
         if (empty($input["subcategory_id"]) || empty($input["name"]) || empty($input["type"])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก subcategory_id, name, type"]);
             exit;
@@ -112,8 +137,11 @@ try {
         }
 
         echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
+        exit;
+    }
 
-    } elseif ($method === "DELETE") {
+    // DELETE
+    if ($method === "DELETE") {
         if (empty($input["subcategory_id"])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก subcategory_id"]);
             exit;
@@ -130,10 +158,12 @@ try {
         $stmt2->execute();
 
         echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
-
-    } else {
-        echo json_encode(["status" => "error", "message" => "Method not allowed"]);
+        exit;
     }
+
+    //  Method ไม่ถูกต้อง
+    echo json_encode(["status" => "error", "message" => "Method not allowed"]);
+    exit;
 
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
