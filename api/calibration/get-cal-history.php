@@ -38,7 +38,7 @@ try {
 
         foreach ($plans as $plan) {
             $stmtDetails = $dbh->prepare("
-                SELECT dcp.details_cal_id, cr.result, cr.remarks
+                SELECT dcp.details_cal_id, cr.result, cr.remarks,cr.performed_date
                 FROM details_calibration_plans dcp
                 LEFT JOIN calibration_result cr 
                     ON cr.details_cal_id = dcp.details_cal_id
@@ -57,7 +57,8 @@ try {
                     'details_cal_id' => $row['details_cal_id'],
                     'plan_name' => $plan['plan_name'],
                     'status' => $row['result'] ?: 'รอดำเนินการ',
-                    'remark' => $row['remarks'] ?: '-'
+                    'remark' => $row['remarks'] ?: '-',
+                    'performed_date' => $row['performed_date'] ?: '-'
                 ];
             }
 
@@ -88,7 +89,7 @@ try {
 
             // ดึง status และ remark ของ round
             $stmtResult = $dbh->prepare("
-                SELECT result, remarks
+                SELECT result, remarks,performed_date
                 FROM calibration_result
                 WHERE details_cal_id = :round_id
                 LIMIT 1
@@ -98,6 +99,7 @@ try {
 
             $status = $roundResult['result'] ?? 'รอดำเนินการ';
             $remark = $roundResult['remarks'] ?? '-';
+            $performed_date = $roundResult['performed_date'] ?? '-';
 
             // ดึงทุกอุปกรณ์ของ plan
             $stmtEquip = $dbh->prepare("
@@ -118,7 +120,8 @@ try {
                             'details_cal_id' => $roundId,
                             'plan_name' => $planName,
                             'status' => $status,
-                            'remark' => $remark
+                            'remark' => $remark,
+                            'performed_date' => $performed_date
                         ]
                     ]
                 ];
