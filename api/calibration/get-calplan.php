@@ -50,7 +50,6 @@ try {
         }
     }
 
-    // map files
     $filesMap = [];
     if (!empty($planIds)) {
         $inQuery = implode(',', array_fill(0, count($planIds), '?'));
