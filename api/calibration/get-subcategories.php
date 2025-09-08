@@ -10,11 +10,12 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 try {
     if ($method === 'GET') {
-        // GET: ดึง subcategories + equipments
+        // ดึง subcategories
         $stmt = $dbh->prepare("SELECT subcategory_id, name, category_id, type FROM equipment_subcategories ORDER BY name");
         $stmt->execute();
         $subcategories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+        // ดึง equipments
         $stmt = $dbh->prepare("
             SELECT equipment_id, name, brand, model, asset_code, status, location_details, subcategory_id
             FROM equipments
@@ -23,6 +24,7 @@ try {
         $stmt->execute();
         $equipments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+        // รวม equipments ตาม subcategory
         $subcategoriesWithEquipments = array_map(function($sub) use ($equipments) {
             $sub['equipments'] = array_values(array_filter($equipments, fn($eq) => $eq['subcategory_id'] == $sub['subcategory_id']));
             return $sub;
@@ -51,40 +53,49 @@ try {
         $plan_id = $data['plan_id'];
         $newEquipmentIds = $data['equipment_ids'];
 
-        $dbh->beginTransaction();
+        try {
+            $dbh->beginTransaction();
 
-        // ดึงรายการอุปกรณ์เดิม
-        $stmt = $dbh->prepare("SELECT equipment_id FROM plan_equipments WHERE plan_id = :plan_id");
-        $stmt->execute([':plan_id' => $plan_id]);
-        $existing = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            // ดึงอุปกรณ์เดิม
+            $stmt = $dbh->prepare("SELECT equipment_id FROM plan_equipments WHERE plan_id = :plan_id");
+            $stmt->execute([':plan_id' => $plan_id]);
+            $existing = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-        // หาเครื่องมือที่ต้องลบและต้องเพิ่ม
-        $toDelete = array_diff($existing, $newEquipmentIds);
-        $toAdd = array_diff($newEquipmentIds, $existing);
-
-        if (!empty($toDelete)) {
-            $in = implode(',', array_fill(0, count($toDelete), '?'));
-            $stmt = $dbh->prepare("DELETE FROM plan_equipments WHERE plan_id = ? AND equipment_id IN ($in)");
-            $stmt->execute(array_merge([$plan_id], $toDelete));
-        }
-
-        if (!empty($toAdd)) {
-            $stmt = $dbh->prepare("INSERT INTO plan_equipments (plan_id, equipment_id) VALUES (:plan_id, :equipment_id)");
-            foreach ($toAdd as $equipment_id) {
-                $stmt->execute([
-                    ':plan_id' => $plan_id,
-                    ':equipment_id' => $equipment_id
-                ]);
+            // หาที่ต้องเพิ่ม
+            $toAdd = array_diff($newEquipmentIds, $existing);
+            if (!empty($toAdd)) {
+                $stmtInsert = $dbh->prepare("INSERT INTO plan_equipments (plan_id, equipment_id) VALUES (:plan_id, :equipment_id)");
+                foreach ($toAdd as $equipment_id) {
+                    $stmtInsert->execute([
+                        ':plan_id' => $plan_id,
+                        ':equipment_id' => $equipment_id
+                    ]);
+                }
             }
+
+            // หาที่ต้องลบ
+            $toDelete = array_diff($existing, $newEquipmentIds);
+            if (!empty($toDelete)) {
+                $inQuery = implode(',', array_fill(0, count($toDelete), '?'));
+                $stmtDelete = $dbh->prepare("DELETE FROM plan_equipments WHERE plan_id = ? AND equipment_id IN ($inQuery)");
+                $stmtDelete->execute(array_merge([$plan_id], $toDelete));
+            }
+
+            $dbh->commit();
+
+            echo json_encode([
+                "status" => "success",
+                "message" => "อุปกรณ์ถูกอัปเดตเรียบร้อยแล้ว"
+            ]);
+            exit;
+        } catch (Exception $e) {
+            if ($dbh->inTransaction()) $dbh->rollBack();
+            echo json_encode([
+                "status" => "error",
+                "message" => $e->getMessage()
+            ]);
+            exit;
         }
-
-        $dbh->commit();
-
-        echo json_encode([
-            "status" => "success",
-            "message" => "Plan equipments updated successfully"
-        ]);
-        exit;
     }
 
     echo json_encode([
