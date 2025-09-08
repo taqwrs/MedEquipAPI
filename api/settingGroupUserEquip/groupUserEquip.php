@@ -74,8 +74,8 @@ try {
 
             $group_user_id = $dbh->lastInsertId();
 
-            // เพิ่ม relation_user ถ้ามี user_ids
-            if (!empty($input['user_ids']) && is_array($input['user_ids'])) {
+            // เพิ่ม relation_user ถ้ามี u_ids
+            if (!empty($input['u_ids']) && is_array($input['u_ids'])) {
                 $stmtCheck = $dbh->prepare("
                     SELECT COUNT(*) FROM relation_user 
                     WHERE group_user_id = :group_user_id AND u_id = :u_id
@@ -84,7 +84,7 @@ try {
                     INSERT INTO relation_user (group_user_id, u_id)
                     VALUES (:group_user_id, :u_id)
                 ");
-                foreach ($input['user_ids'] as $uid) {
+                foreach ($input['u_ids'] as $uid) {
                     $stmtCheck->execute([
                         ":group_user_id" => $group_user_id,
                         ":u_id" => $uid
