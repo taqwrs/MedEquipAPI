@@ -18,9 +18,8 @@ if (!$input) {
     exit;
 }
 
-$required_fields = ['plan_name','user_id','group_user_id','company_id','frequency_number','frequency_unit','frequency_type','start_waranty','start_date','end_date','cost_type','price','type_cal'];
+$required_fields = ['plan_name','user_id','group_user_id','company_id','frequency_number','frequency_unit','frequency_type','start_date','end_date','cost_type','price','type_cal'];
 
-// ใช้ array_key_exists แทน isset เพื่อให้ null ผ่านได้
 foreach($required_fields as $field){
     if(!array_key_exists($field, $input)){
         echo json_encode(["status"=>"error","message"=>"Missing field: $field"]);
@@ -66,7 +65,6 @@ try {
         }
     }
 
-    // insert calibration_plans
     $stmt = $dbh->prepare("INSERT INTO calibration_plans 
         (plan_name, user_id, group_user_id, company_id, frequency_number, frequency_unit, frequency_type, interval_count, start_waranty, start_date, end_date, cost_type, price, type_cal, is_active)
         VALUES (:plan_name, :user_id, :group_user_id, :company_id, :frequency_number, :frequency_unit, :frequency_type, :interval_count, :start_waranty, :start_date, :end_date, :cost_type, :price, :type_cal, :is_active)
@@ -80,7 +78,7 @@ try {
         ':frequency_unit'=>$intervalUnit,
         ':frequency_type'=>$input['frequency_type'],
         ':interval_count'=>$intervalCount,
-        ':start_waranty'=>$input['start_waranty'],
+        ':start_waranty'=>!empty($input['start_waranty']) ? $input['start_waranty'] : null,
         ':start_date'=>$input['start_date'],
         ':end_date'=>$input['end_date'],
         ':cost_type'=>$input['cost_type'],
@@ -91,7 +89,6 @@ try {
 
     $plan_id = $dbh->lastInsertId();
 
-    // insert details_calibration_plans
     $detailsStmt = $dbh->prepare("INSERT INTO details_calibration_plans (plan_id,start_date) VALUES (:plan_id,:start_date)");
     $scheduledDate = clone $startDate;
     for($i=1;$i<=$intervalCount;$i++){
@@ -107,7 +104,6 @@ try {
         }
     }
 
-    // Upload base64 files
     if(!empty($input['files']) && is_array($input['files'])){
         $uploadDir = __DIR__."/../uploads/files_cal/";
         if(!is_dir($uploadDir)) mkdir($uploadDir,0777,true);

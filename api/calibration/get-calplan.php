@@ -28,7 +28,6 @@ try {
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $planIds = array_column($results, 'plan_id');
 
-    // map equipments
     $boundDevicesMap = [];
     if (!empty($planIds)) {
         $inQuery = implode(',', array_fill(0, count($planIds), '?'));
