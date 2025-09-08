@@ -1,10 +1,12 @@
 <?php
 include "../config/jwt.php";
+
 $input = json_decode(file_get_contents('php://input'));
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(["status" => "error", "message" => "post method!!!"]);
     exit;
 }
+
 $search = trim($input->search ?? '');
 $page   = (int)($input->page ?? 1);
 $limit  = (int)($input->limit ?? 5);
@@ -21,7 +23,6 @@ try {
         $params[':search'] = "%$search%";
     }
 
-    // SQL เพื่อดึงข้อมูลอุปกรณ์หลักและอุปกรณ์ย่อย (ที่ไม่ใช่อะไหล่) ที่ตรงกับเงื่อนไขการค้นหา
     $sql = "
         SELECT 
             e.*,
@@ -31,14 +32,13 @@ try {
             it.name AS import_type_name, 
             sc.name AS subcategory_name, 
             d.department_name, 
-            mc.name AS manufacturer_company_name, 
-            scp.name AS supplier_company_name, 
-            cc.name AS maintainer_company_name, 
+            mc.name AS manufacturer_name, 
+            scp.name AS supplier_name, 
+            cc.name AS maintainer_name, 
             gu1.group_name AS group_user_name, 
             gu2.group_name AS group_responsible_name, 
-            u1.full_name AS user_full_name, 
+            u1.full_name AS created_by_name, 
             u2.full_name AS updated_by_name,
-            -- ดึงข้อมูลอุปกรณ์ย่อย
             COALESCE(
                 CONCAT('[', GROUP_CONCAT(DISTINCT JSON_OBJECT(
                     'equipment_id', ce.equipment_id,
@@ -46,7 +46,6 @@ try {
                     'asset_code', ce.asset_code
                 )), ']'), '[]'
             ) AS child_equipments,
-            -- ดึงข้อมูลอะไหล่
             COALESCE(
                 CONCAT('[', GROUP_CONCAT(DISTINCT JSON_OBJECT(
                     'spare_part_id', sp.spare_part_id,
@@ -54,7 +53,6 @@ try {
                     'asset_code', sp.asset_code
                 )), ']'), '[]'
             ) AS spareParts,
-            -- ดึงข้อมูลไฟล์แนบ
             COALESCE(
                 CONCAT('[', GROUP_CONCAT(DISTINCT JSON_OBJECT(
                     'file_equip_id', f.file_equip_id,
@@ -84,14 +82,13 @@ try {
         LIMIT :limit OFFSET :offset
     ";
 
-    // นับจำนวนรายการทั้งหมด
     $countSql = "SELECT COUNT(DISTINCT e.equipment_id) FROM equipments e " . $searchSql;
     $countStmt = $dbh->prepare($countSql);
     foreach ($params as $k => $v) $countStmt->bindValue($k, $v);
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
     $totalPages = ceil($totalItems / $limit);
-    
+
     $stmt = $dbh->prepare($sql);
     foreach ($params as $k => $v) $stmt->bindValue($k, $v);
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
@@ -99,12 +96,11 @@ try {
     $stmt->execute();
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Decode JSON และจัดระเบียบข้อมูล
     foreach ($results as &$row) {
         $row['filesInfo'] = json_decode($row['filesInfo'], true);
         $row['spareParts'] = json_decode($row['spareParts'], true);
         $row['child_equipments'] = json_decode($row['child_equipments'], true);
-        // สร้าง object อุปกรณ์หลักสำหรับอุปกรณ์ย่อย
+
         if ($row['main_equipment_id'] !== null) {
             $row['main_equipment'] = [
                 'equipment_id' => $row['main_equipment_id'],
