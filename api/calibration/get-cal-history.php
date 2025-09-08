@@ -20,7 +20,6 @@ try {
     $result = [];
 
     if ($viewType === "allRoundsOfEquipment" && $equipmentId) {
-        // --- ดึง round ของเครื่องแต่ละ plan ---
         $stmtPlans = $dbh->prepare("
             SELECT cp.plan_id, cp.plan_name
             FROM calibration_plans cp
@@ -30,7 +29,6 @@ try {
         $stmtPlans->execute([':equipment_id' => $equipmentId]);
         $plans = $stmtPlans->fetchAll(PDO::FETCH_ASSOC);
 
-        // ชื่อเครื่อง
         $stmtEq = $dbh->prepare("SELECT name FROM equipments WHERE equipment_id = :equipment_id");
         $stmtEq->execute([':equipment_id' => $equipmentId]);
         $eqData = $stmtEq->fetch(PDO::FETCH_ASSOC);
@@ -69,8 +67,6 @@ try {
         }
 
     } elseif ($viewType === "allEquipments" && $roundId) {
-        // --- ดึงอุปกรณ์ทั้งหมดของ round ---
-        // หา plan ของ round
         $stmtPlan = $dbh->prepare("
             SELECT plan_id
             FROM details_calibration_plans
@@ -81,13 +77,10 @@ try {
 
         if ($roundData) {
             $planId = $roundData['plan_id'];
-
-            // ดึงชื่อ plan
             $stmtPlanName = $dbh->prepare("SELECT plan_name FROM calibration_plans WHERE plan_id = :plan_id");
             $stmtPlanName->execute([':plan_id' => $planId]);
             $planName = $stmtPlanName->fetchColumn() ?: "Plan $planId";
 
-            // ดึง status และ remark ของ round
             $stmtResult = $dbh->prepare("
                 SELECT result, remarks,performed_date
                 FROM calibration_result
@@ -97,11 +90,10 @@ try {
             $stmtResult->execute([':round_id' => $roundId]);
             $roundResult = $stmtResult->fetch(PDO::FETCH_ASSOC);
 
-            $status = $roundResult['result'] ?? 'รอดำเนินการ';
+            $status = $roundResult['result'] ?? 'ผ่าน';
             $remark = $roundResult['remarks'] ?? '-';
             $performed_date = $roundResult['performed_date'] ?? '-';
 
-            // ดึงทุกอุปกรณ์ของ plan
             $stmtEquip = $dbh->prepare("
                 SELECT e.equipment_id, e.name AS equipment_name
                 FROM plan_equipments pe
