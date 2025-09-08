@@ -128,53 +128,88 @@ try {
             echo json_encode(["status" => "error", "message" => "ข้อมูลไม่ครบ"]);
         }
 
-    } elseif ($method === 'PUT') {
-        // UPDATE group_user
-        if (!empty($input['group_user_id']) && !empty($input['group_name']) && !empty($input['type'])) {
-            $stmt = $dbh->prepare("
-                UPDATE group_user 
-                SET group_name = :group_name, type = :type 
-                WHERE group_user_id = :id
+   } elseif ($method === 'PUT') {
+    // UPDATE group_user พร้อม relation_user แบบยืดหยุ่น
+    if (!empty($input['group_user_id']) && !empty($input['group_name']) && !empty($input['type'])) {
+        // อัปเดต group_user
+        $stmt = $dbh->prepare("
+            UPDATE group_user 
+            SET group_name = :group_name, type = :type 
+            WHERE group_user_id = :id
+        ");
+        $stmt->bindParam(":group_name", $input['group_name']);
+        $stmt->bindParam(":type", $input['type']);
+        $stmt->bindParam(":id", $input['group_user_id']);
+        $stmt->execute();
+
+        // อัปเดต relation_user แบบยืดหยุ่น
+        if (isset($input['u_ids']) && is_array($input['u_ids'])) {
+            // 1. ลบ relation_user ที่ไม่อยู่ใน u_ids ใหม่
+            $placeholders = implode(',', array_fill(0, count($input['u_ids']), '?'));
+            $stmtDelete = $dbh->prepare("
+                DELETE FROM relation_user 
+                WHERE group_user_id = ? 
+                AND u_id NOT IN ($placeholders)
             ");
-            $stmt->bindParam(":group_name", $input['group_name']);
-            $stmt->bindParam(":type", $input['type']);
-            $stmt->bindParam(":id", $input['group_user_id']);
+            $stmtDelete->execute(array_merge([$input['group_user_id']], $input['u_ids']));
+
+            // 2. INSERT เฉพาะผู้ใช้งานที่ยังไม่มีในกลุ่ม
+            $stmtCheck = $dbh->prepare("
+                SELECT COUNT(*) FROM relation_user 
+                WHERE group_user_id = :group_user_id AND u_id = :u_id
+            ");
+            $stmtInsert = $dbh->prepare("
+                INSERT INTO relation_user (group_user_id, u_id)
+                VALUES (:group_user_id, :u_id)
+            ");
+            foreach ($input['u_ids'] as $uid) {
+                $stmtCheck->execute([
+                    ":group_user_id" => $input['group_user_id'],
+                    ":u_id" => $uid
+                ]);
+                if ($stmtCheck->fetchColumn() == 0) {
+                    $stmtInsert->execute([
+                        ":group_user_id" => $input['group_user_id'],
+                        ":u_id" => $uid
+                    ]);
+                }
+            }
+        }
+
+        echo json_encode(["status" => "ok", "message" => "อัปเดต group_user และ relation_user แบบยืดหยุ่นสำเร็จ"]);
+
+    } elseif (!empty($input['relation_user_id']) && !empty($input['group_user_id']) && !empty($input['u_id'])) {
+        // UPDATE relation_user แยก (เก็บไว้เหมือนเดิม)
+        $stmtCheck = $dbh->prepare("
+            SELECT COUNT(*) FROM relation_user
+            WHERE group_user_id = :group_user_id AND u_id = :u_id
+              AND relation_user_id != :relation_user_id
+        ");
+        $stmtCheck->execute([
+            ":group_user_id" => $input['group_user_id'],
+            ":u_id" => $input['u_id'],
+            ":relation_user_id" => $input['relation_user_id']
+        ]);
+
+        if ($stmtCheck->fetchColumn() == 0) {
+            $stmt = $dbh->prepare("
+                UPDATE relation_user 
+                SET group_user_id = :group_user_id, u_id = :u_id 
+                WHERE relation_user_id = :id
+            ");
+            $stmt->bindParam(":group_user_id", $input['group_user_id']);
+            $stmt->bindParam(":u_id", $input['u_id']);
+            $stmt->bindParam(":id", $input['relation_user_id']);
             $stmt->execute();
 
-            echo json_encode(["status" => "ok", "message" => "อัปเดต group_user สำเร็จ"]);
-
-        } elseif (!empty($input['relation_user_id']) && !empty($input['group_user_id']) && !empty($input['u_id'])) {
-            // UPDATE relation_user
-            $stmtCheck = $dbh->prepare("
-                SELECT COUNT(*) FROM relation_user
-                WHERE group_user_id = :group_user_id AND u_id = :u_id
-                  AND relation_user_id != :relation_user_id
-            ");
-            $stmtCheck->execute([
-                ":group_user_id" => $input['group_user_id'],
-                ":u_id" => $input['u_id'],
-                ":relation_user_id" => $input['relation_user_id']
-            ]);
-
-            if ($stmtCheck->fetchColumn() == 0) {
-                $stmt = $dbh->prepare("
-                    UPDATE relation_user 
-                    SET group_user_id = :group_user_id, u_id = :u_id 
-                    WHERE relation_user_id = :id
-                ");
-                $stmt->bindParam(":group_user_id", $input['group_user_id']);
-                $stmt->bindParam(":u_id", $input['u_id']);
-                $stmt->bindParam(":id", $input['relation_user_id']);
-                $stmt->execute();
-
-                echo json_encode(["status" => "ok", "message" => "อัปเดต relation_user สำเร็จ"]);
-            } else {
-                echo json_encode(["status" => "error", "message" => "ผู้ใช้นี้อยู่ในกลุ่มแล้ว"]);
-            }
-
+            echo json_encode(["status" => "ok", "message" => "อัปเดต relation_user สำเร็จ"]);
         } else {
-            echo json_encode(["status" => "error", "message" => "ข้อมูลไม่ครบ"]);
+            echo json_encode(["status" => "error", "message" => "ผู้ใช้นี้อยู่ในกลุ่มแล้ว"]);
         }
+
+    } else {
+        echo json_encode(["status" => "error", "message" => "ข้อมูลไม่ครบ"]);
+    }
 
     } elseif ($method === 'DELETE') {
         if (!empty($input['group_user_id'])) {
