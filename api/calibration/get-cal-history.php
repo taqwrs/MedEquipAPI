@@ -1,7 +1,6 @@
 <?php
 include "../config/jwt.php"; 
 
-
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
@@ -30,6 +29,7 @@ try {
         ");
         $stmtPlans->execute([':equipment_id' => $equipmentId]);
         $plans = $stmtPlans->fetchAll(PDO::FETCH_ASSOC);
+
         $stmtEq = $dbh->prepare("SELECT name FROM equipments WHERE equipment_id = :equipment_id");
         $stmtEq->execute([':equipment_id' => $equipmentId]);
         $eqData = $stmtEq->fetch(PDO::FETCH_ASSOC);
@@ -37,7 +37,7 @@ try {
 
         foreach ($plans as $plan) {
             $stmtDetails = $dbh->prepare("
-                SELECT dcp.details_cal_id, cr.result, cr.remarks, cr.performed_date
+                SELECT dcp.details_cal_id, cr.cal_result_id, cr.result, cr.remarks, cr.performed_date
                 FROM details_calibration_plans dcp
                 INNER JOIN calibration_result cr 
                     ON cr.details_cal_id = dcp.details_cal_id
@@ -54,6 +54,7 @@ try {
                 $rounds[] = [
                     'round' => $idx + 1,
                     'details_cal_id' => $row['details_cal_id'],
+                    'cal_result_id' => $row['cal_result_id'], // ✅ ส่งเพิ่มตรงนี้
                     'plan_name' => $plan['plan_name'],
                     'status' => $row['result'],
                     'remark' => $row['remarks'] ?: '-',
@@ -80,11 +81,13 @@ try {
 
         if ($roundData) {
             $planId = $roundData['plan_id'];
+
             $stmtPlanName = $dbh->prepare("SELECT plan_name FROM calibration_plans WHERE plan_id = :plan_id");
             $stmtPlanName->execute([':plan_id' => $planId]);
             $planName = $stmtPlanName->fetchColumn() ?: "Plan $planId";
+
             $stmtResult = $dbh->prepare("
-                SELECT cr.equipment_id, cr.result, cr.remarks, cr.performed_date, e.name AS equipment_name
+                SELECT cr.cal_result_id, cr.equipment_id, cr.result, cr.remarks, cr.performed_date, e.name AS equipment_name
                 FROM calibration_result cr
                 INNER JOIN equipments e ON e.equipment_id = cr.equipment_id
                 WHERE cr.details_cal_id = :round_id
@@ -99,6 +102,7 @@ try {
                         [
                             'round' => 1,
                             'details_cal_id' => $roundId,
+                            'cal_result_id' => $row['cal_result_id'], // ✅ ส่งเพิ่มตรงนี้
                             'plan_name' => $planName,
                             'status' => $row['result'],
                             'remark' => $row['remarks'] ?: '-',
