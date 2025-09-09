@@ -1,6 +1,7 @@
 <?php
 include "../config/jwt.php"; 
 
+
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
@@ -20,6 +21,7 @@ try {
     $result = [];
 
     if ($viewType === "allRoundsOfEquipment" && $equipmentId) {
+
         $stmtPlans = $dbh->prepare("
             SELECT cp.plan_id, cp.plan_name
             FROM calibration_plans cp
@@ -28,7 +30,6 @@ try {
         ");
         $stmtPlans->execute([':equipment_id' => $equipmentId]);
         $plans = $stmtPlans->fetchAll(PDO::FETCH_ASSOC);
-
         $stmtEq = $dbh->prepare("SELECT name FROM equipments WHERE equipment_id = :equipment_id");
         $stmtEq->execute([':equipment_id' => $equipmentId]);
         $eqData = $stmtEq->fetch(PDO::FETCH_ASSOC);
@@ -36,17 +37,17 @@ try {
 
         foreach ($plans as $plan) {
             $stmtDetails = $dbh->prepare("
-                SELECT dcp.details_cal_id, cr.result, cr.remarks,cr.performed_date
+                SELECT dcp.details_cal_id, cr.result, cr.remarks, cr.performed_date
                 FROM details_calibration_plans dcp
-                LEFT JOIN calibration_result cr 
+                INNER JOIN calibration_result cr 
                     ON cr.details_cal_id = dcp.details_cal_id
                 WHERE dcp.plan_id = :plan_id
                 ORDER BY dcp.details_cal_id ASC
             ");
-            $stmtDetails->execute([
-                ':plan_id' => $plan['plan_id']
-            ]);
+            $stmtDetails->execute([':plan_id' => $plan['plan_id']]);
             $details = $stmtDetails->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!$details) continue;
 
             $rounds = [];
             foreach ($details as $idx => $row) {
@@ -54,7 +55,7 @@ try {
                     'round' => $idx + 1,
                     'details_cal_id' => $row['details_cal_id'],
                     'plan_name' => $plan['plan_name'],
-                    'status' => $row['result'] ?: 'รอดำเนินการ',
+                    'status' => $row['result'],
                     'remark' => $row['remarks'] ?: '-',
                     'performed_date' => $row['performed_date'] ?: '-'
                 ];
@@ -67,10 +68,12 @@ try {
         }
 
     } elseif ($viewType === "allEquipments" && $roundId) {
+
         $stmtPlan = $dbh->prepare("
-            SELECT plan_id
-            FROM details_calibration_plans
-            WHERE details_cal_id = :round_id
+            SELECT dcp.plan_id
+            FROM details_calibration_plans dcp
+            INNER JOIN calibration_result cr ON cr.details_cal_id = dcp.details_cal_id
+            WHERE dcp.details_cal_id = :round_id
         ");
         $stmtPlan->execute([':round_id' => $roundId]);
         $roundData = $stmtPlan->fetch(PDO::FETCH_ASSOC);
@@ -80,40 +83,26 @@ try {
             $stmtPlanName = $dbh->prepare("SELECT plan_name FROM calibration_plans WHERE plan_id = :plan_id");
             $stmtPlanName->execute([':plan_id' => $planId]);
             $planName = $stmtPlanName->fetchColumn() ?: "Plan $planId";
-
             $stmtResult = $dbh->prepare("
-                SELECT result, remarks,performed_date
-                FROM calibration_result
-                WHERE details_cal_id = :round_id
-                LIMIT 1
+                SELECT cr.equipment_id, cr.result, cr.remarks, cr.performed_date, e.name AS equipment_name
+                FROM calibration_result cr
+                INNER JOIN equipments e ON e.equipment_id = cr.equipment_id
+                WHERE cr.details_cal_id = :round_id
             ");
             $stmtResult->execute([':round_id' => $roundId]);
-            $roundResult = $stmtResult->fetch(PDO::FETCH_ASSOC);
+            $roundResults = $stmtResult->fetchAll(PDO::FETCH_ASSOC);
 
-            $status = $roundResult['result'] ?? 'ผ่าน';
-            $remark = $roundResult['remarks'] ?? '-';
-            $performed_date = $roundResult['performed_date'] ?? '-';
-
-            $stmtEquip = $dbh->prepare("
-                SELECT e.equipment_id, e.name AS equipment_name
-                FROM plan_equipments pe
-                JOIN equipments e ON pe.equipment_id = e.equipment_id
-                WHERE pe.plan_id = :plan_id
-            ");
-            $stmtEquip->execute([':plan_id' => $planId]);
-            $equipRows = $stmtEquip->fetchAll(PDO::FETCH_ASSOC);
-
-            foreach ($equipRows as $eq) {
+            foreach ($roundResults as $row) {
                 $result[] = [
-                    'name' => $eq['equipment_name'],
+                    'name' => $row['equipment_name'],
                     'rounds' => [
                         [
                             'round' => 1,
                             'details_cal_id' => $roundId,
                             'plan_name' => $planName,
-                            'status' => $status,
-                            'remark' => $remark,
-                            'performed_date' => $performed_date
+                            'status' => $row['result'],
+                            'remark' => $row['remarks'] ?: '-',
+                            'performed_date' => $row['performed_date'] ?: '-'
                         ]
                     ]
                 ];
