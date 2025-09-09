@@ -1,8 +1,6 @@
 <?php
 header('Access-Control-Allow-Origin: *');
-
 header('Access-Control-Allow-Methods: GET, POST');
-
 header("Access-Control-Allow-Headers: * ");
 //error_reporting(E_ERROR | E_PARSE);
 date_default_timezone_set("Asia/Bangkok");
