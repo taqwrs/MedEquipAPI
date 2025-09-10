@@ -1,6 +1,7 @@
 <?php
-include "../config/jwt.php";
+include "../config/jwt.php"; 
 
+// กำหนด header สำหรับ response
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET");
@@ -9,13 +10,33 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization");
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    // อนุญาตเฉพาะ method GET
     if ($method !== 'GET') {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
         exit;
     }
 
+    // รับค่า transfer_id จาก query string (ถ้ามี)
     $transfer_id = isset($_GET['transfer_id']) ? $_GET['transfer_id'] : null;
-    
+
+    // ------------------------
+    // ดึง ENUM values ของ transfer_type จากตาราง
+    // ------------------------
+    $enumSql = "SHOW COLUMNS FROM equipment_transfers LIKE 'transfer_type'";
+    $enumStmt = $dbh->prepare($enumSql);
+    $enumStmt->execute();
+    $enumRow = $enumStmt->fetch(PDO::FETCH_ASSOC);
+
+    // ใช้ regex แยกค่าที่อยู่ใน ENUM('value1','value2',...)
+    preg_match("/^enum\((.*)\)$/", $enumRow['Type'], $matches);
+    $enumValues = [];
+    if (!empty($matches[1])) {
+        $enumValues = str_getcsv($matches[1], ',', "'");
+    }
+
+    // ------------------------
+    // SQL หลักสำหรับดึงข้อมูล transfer
+    // ------------------------
     $sql = "
         SELECT 
             et.transfer_id,
@@ -77,10 +98,12 @@ try {
         LEFT JOIN users u_recipient ON et.recipient_user_id = u_recipient.ID
     ";
     
+    // ถ้ามีการส่ง transfer_id เข้ามา กรองด้วย WHERE
     if ($transfer_id) {
         $sql .= " WHERE et.transfer_id = :transfer_id";
     }
     
+    // เรียงตาม transfer_id ล่าสุดก่อน
     $sql .= " ORDER BY et.transfer_id DESC";
     
     $stmt = $dbh->prepare($sql);
@@ -92,13 +115,15 @@ try {
     $stmt->execute();
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // จัดรูปแบบข้อมูลตามที่ต้องการ
+    // ------------------------
+    // จัดรูปแบบข้อมูลให้อ่านง่าย + ดึง group ของ user
+    // ------------------------
     $formattedResults = [];
     foreach ($results as $row) {
-        // ดึงข้อมูล group สำหรับ transfer_user
+        // ดึง group ของ transfer_user (หลายกลุ่ม)
         $transferUserGroups = getUserGroups($row['transfer_user_id'], $row['subcategory_id']);
         
-        // ดึงข้อมูล group สำหรับ recipient_user
+        // ดึง group ของ recipient_user (หลายกลุ่ม)
         $recipientUserGroups = getUserGroups($row['recipient_user_id'], $row['subcategory_id']);
         
         $formattedRow = [
@@ -122,32 +147,33 @@ try {
             'to_department_name' => $row['to_department_name'],
             'transfer_location_department_id' => $row['location_department_id'] ? (int)$row['location_department_id'] : null,
             'transfer_location_department' => $row['transfer_location_department'],
+            // ข้อมูล user ที่โอน
             'transfer_user' => [
                 'transfer_user_id' => $row['transfer_user_id'] ? (int)$row['transfer_user_id'] : null,
                 'transfer_user_name' => $row['transfer_user_name'],
-                'group_user_id' => $transferUserGroups['group_user_id'],
-                'group_name' => $transferUserGroups['group_name'],
-                'group_type' => $transferUserGroups['group_type']
+                'groups' => $transferUserGroups // คืนเป็น array ของกลุ่ม
             ],
+            // ข้อมูล user ที่รับ
             'recipient_user' => [
                 'recipient_user_id' => $row['recipient_user_id'] ? (int)$row['recipient_user_id'] : null,
                 'recipient_user_name' => $row['recipient_user_name'],
-                'group_user_id' => $recipientUserGroups['group_user_id'],
-                'group_name' => $recipientUserGroups['group_name'],
-                'group_type' => $recipientUserGroups['group_type']
+                'groups' => $recipientUserGroups // คืนเป็น array ของกลุ่ม
             ]
         ];
         
         $formattedResults[] = $formattedRow;
     }
     
+    // ถ้ามีการส่ง transfer_id แต่ไม่เจอข้อมูล
     if ($transfer_id && empty($formattedResults)) {
         echo json_encode(["status" => "error", "message" => "Transfer not found"]);
         exit;
     }
     
+    // ส่ง response กลับไป พร้อม enum values ของ transfer_type
     echo json_encode([
         "status" => "ok",
+        "transfer_type_enum" => $enumValues, // ENUM values ของ transfer_type
         "data" => $transfer_id ? $formattedResults[0] : $formattedResults
     ], JSON_UNESCAPED_UNICODE);
 
@@ -155,16 +181,14 @@ try {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
 
-// ฟังก์ชันช่วยดึงข้อมูล group ของ user ที่เกี่ยวข้องกับ subcategory
+// ------------------------
+// ฟังก์ชันดึง group ของ user ตาม subcategory
+// ------------------------
 function getUserGroups($user_id, $subcategory_id) {
     global $dbh;
     
     if (!$user_id || !$subcategory_id) {
-        return [
-            'group_user_id' => null,
-            'group_name' => null,
-            'group_type' => null
-        ];
+        return [];
     }
     
     $sql = "
@@ -177,7 +201,7 @@ function getUserGroups($user_id, $subcategory_id) {
         INNER JOIN group_user gu ON ru.group_user_id = gu.group_user_id
         INNER JOIN relation_group rg ON gu.group_user_id = rg.group_user_id
         WHERE u.ID = :user_id AND rg.subcategory_id = :subcategory_id
-        LIMIT 1
+        ORDER BY gu.group_user_id ASC
     ";
     
     $stmt = $dbh->prepare($sql);
@@ -185,20 +209,18 @@ function getUserGroups($user_id, $subcategory_id) {
     $stmt->bindParam(':subcategory_id', $subcategory_id, PDO::PARAM_INT);
     $stmt->execute();
     
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    if ($result) {
-        return [
-            'group_user_id' => (int)$result['group_user_id'],
-            'group_name' => $result['group_name'],
-            'group_type' => $result['group_type']
+    // คืน array ของกลุ่มทั้งหมด (ไม่จำกัดแค่ 1 กลุ่ม)
+    $groups = [];
+    foreach ($results as $row) {
+        $groups[] = [
+            'group_user_id' => (int)$row['group_user_id'],
+            'group_name' => $row['group_name'],
+            'group_type' => $row['group_type']
         ];
     }
     
-    return [
-        'group_user_id' => null,
-        'group_name' => null,
-        'group_type' => null
-    ];
+    return $groups;
 }
 ?>
