@@ -38,7 +38,8 @@ try {
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             $users = array(
-                "user_id" => $results[0]['user_id'], // ใช้ user_id แทน user_id
+                "ID" => $results[0]['ID'],  
+                "user_id" => $results[0]['user_id'], // ใช้ user_id แทน 
                 "name" => $results[0]['full_name'],
                 "div" => $results[0]['department_name'],  // ใช้ชื่อแผนกจาก join
                 "role_id" => $results[0]['role_id'],

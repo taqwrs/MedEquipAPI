@@ -41,8 +41,10 @@ try {
         exit;
     }
 
-    // URL สำหรับสแกนมือถือ
-    $qrData = "https://yourserver/equipment-detail.php?id=".$equipmentId;
+    // URL สำหรับสแกน
+    $frontendBaseUrl = "http://localhost:5173"; // เปลี่ยนเป็น https://yourdomain.com เมื่อ deploy จริง
+    $qrData = "{$frontendBaseUrl}/equipment-detail/{$equipmentId}?type=equipment";
+    // $qrData = "https://yourserver/equipment-detail.php?id=".$equipmentId;
 
     $qrCode = QrCode::create($qrData)->setSize(300);
     $writer = new PngWriter();

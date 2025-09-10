@@ -16,8 +16,7 @@ $equipment_id = $input['equipment_id'];
 try{
     $dbh->beginTransaction();
 
-    // ---------- Update Equipment หลัก ----------
-    // เพิ่ม 'updated_by' เข้าไปในอาร์เรย์ fields
+    // Update Equipment หลัก
     $fields=[
         'name','asset_code','serial_number','brand','model','import_type_id','subcategory_id',
         'location_department_id','manufacturer_company_id','supplier_company_id','maintainer_company_id',
@@ -39,21 +38,18 @@ try{
         $stmt->execute($params);
     }
 
-    // ---------- Update/Insert Child Equipments ----------
+    // Update/Insert Child Equipments
     if(!empty($input['child_equipments']) && is_array($input['child_equipments'])){
         foreach($input['child_equipments'] as $child){
             $child['main_equipment_id']=$equipment_id;
             $child['updated_by']=$input['updated_by'];
-            
-            // กำหนดค่าเริ่มต้นสำหรับคอลัมน์ที่อาจไม่มีข้อมูล
-            $child['location_details'] = $child['location_details'] ?? null;
+            $child['location_details'] = $child['location_details'] ?? '';
             $child['first_register'] = $child['first_register'] ?? null;
             $child['record_status'] = $child['record_status'] ?? 'draft';
             $child['status'] = $child['status'] ?? 'in_stock';
             $child['active'] = $child['active'] ?? 1;
 
             if(!empty($child['equipment_id'])){
-                // Update existing
                 $child_id=$child['equipment_id'];
                 unset($child['equipment_id']);
                 $set=[]; $p=[':updated_by'=>$child['updated_by'], ':equipment_id'=>$child_id];
@@ -63,14 +59,9 @@ try{
                 $stmt=$dbh->prepare($sql);
                 $stmt->execute($p);
             } else {
-                // Insert new child
                 $childFields = ['name','brand','asset_code','model','serial_number','import_type_id','subcategory_id','location_department_id','location_details','manufacturer_company_id','supplier_company_id','maintainer_company_id','spec','production_year','price','contract','start_date','end_date','warranty_duration_days','warranty_condition','group_user_id','group_responsible_id','user_id','main_equipment_id','updated_by','record_status','status','active','first_register'];
                 $cols=[]; $placeholders=[]; $values=[];
-                foreach($childFields as $f){
-                    $cols[] = $f;
-                    $placeholders[] = ":$f";
-                    $values[":$f"] = $child[$f] ?? null;
-                }
+                foreach($childFields as $f){$cols[]=$f; $placeholders[]=":$f"; $values[":$f"]=$child[$f] ?? null;}
                 $cols[]='updated_at'; $placeholders[]='NOW()';
                 $sql="INSERT INTO equipments (".implode(',',$cols).") VALUES (".implode(',',$placeholders).")";
                 $stmt=$dbh->prepare($sql);
@@ -80,18 +71,15 @@ try{
         }
     }
 
-    // ---------- Update/Insert Spare Parts ----------
+    // Update/Insert Spare Parts
     if(!empty($input['spare_parts']) && is_array($input['spare_parts'])){
         foreach($input['spare_parts'] as $spare){
             $spare['equipment_id']=$equipment_id;
             $spare['updated_by']=$input['updated_by'];
-            
-            // กำหนดค่าเริ่มต้นสำหรับคอลัมน์ที่อาจไม่มีข้อมูล
             $spare['first_register'] = $spare['first_register'] ?? null;
             $spare['active'] = $spare['active'] ?? 1;
 
             if(!empty($spare['spare_part_id'])){
-                // Update existing
                 $spare_id=$spare['spare_part_id'];
                 unset($spare['spare_part_id']);
                 $set=[]; $p=[':spare_part_id'=>$spare_id, ':updated_by'=>$spare['updated_by']];
@@ -101,14 +89,9 @@ try{
                 $stmt=$dbh->prepare($sql);
                 $stmt->execute($p);
             } else {
-                // Insert new
-                $spareFields = ['name','brand','asset_code','model','serial_number','import_type_id','spec','spare_subcate_id','price','contract','start_date','end_date','warranty_duration_days','warranty_condition','group_user_id','group_responsible_id','user_id','manufacturer_company_id','supplier_company_id','maintainer_company_id','production_year','location_department_id','location_details','first_register','active','equipment_id','updated_by'];
+                $spareFields=['name','brand','asset_code','model','serial_number','import_type_id','spec','spare_subcate_id','price','contract','start_date','end_date','warranty_duration_days','warranty_condition','group_user_id','group_responsible_id','user_id','manufacturer_company_id','supplier_company_id','maintainer_company_id','production_year','location_department_id','location_details','first_register','active','equipment_id','updated_by'];
                 $cols=[]; $placeholders=[]; $values=[];
-                foreach($spareFields as $f){
-                    $cols[] = $f;
-                    $placeholders[] = ":$f";
-                    $values[":$f"] = $spare[$f] ?? null;
-                }
+                foreach($spareFields as $f){$cols[]=$f; $placeholders[]=":$f"; $values[":$f"]=$spare[$f] ?? null;}
                 $cols[]='updated_at'; $placeholders[]='NOW()';
                 $sql="INSERT INTO spare_parts (".implode(',',$cols).") VALUES (".implode(',',$placeholders).")";
                 $stmt=$dbh->prepare($sql);
@@ -118,18 +101,15 @@ try{
         }
     }
 
-    // ---------- Update/Insert Files ----------
+    // Update/Insert Files
     if(!empty($input['files']) && is_array($input['files'])){
         foreach($input['files'] as $file){
             $file['equipment_id']=$equipment_id;
-            
-            // กำหนดค่าเริ่มต้นสำหรับคอลัมน์ที่อาจไม่มีข้อมูล
-            $file['equip_type_name'] = $file['equip_type_name'] ?? null;
-            $file['file_equip_name'] = $file['file_equip_name'] ?? null;
-            $file['equip_url'] = $file['equip_url'] ?? null;
+            $file['equip_type_name']=$file['equip_type_name']??null;
+            $file['file_equip_name']=$file['file_equip_name']??null;
+            $file['equip_url']=$file['equip_url']??null;
 
             if(!empty($file['file_equip_id'])){
-                // Update existing
                 $file_id=$file['file_equip_id'];
                 unset($file['file_equip_id']);
                 $set=[]; $p=[':file_equip_id'=>$file_id];
@@ -139,12 +119,9 @@ try{
                 $stmt=$dbh->prepare($sql);
                 $stmt->execute($p);
             } else {
-                // Insert new
-                $fileFields = ['file_equip_name', 'equip_url', 'equip_type_name', 'equipment_id'];
+                $fileFields=['file_equip_name','equip_url','equip_type_name','equipment_id'];
                 $cols=[]; $placeholders=[]; $values=[];
-                foreach($fileFields as $f){
-                    $cols[]=$f; $placeholders[]=":$f"; $values[":$f"]=$file[$f] ?? null;
-                }
+                foreach($fileFields as $f){$cols[]=$f; $placeholders[]=":$f"; $values[":$f"]=$file[$f] ?? null;}
                 $cols[]='updated_at'; $placeholders[]='NOW()';
                 $sql="INSERT INTO file_equip (".implode(',',$cols).") VALUES (".implode(',',$placeholders).")";
                 $stmt=$dbh->prepare($sql);
@@ -158,8 +135,6 @@ try{
     echo json_encode(["status"=>"success","message"=>"Update successfully","equipment_id"=>$equipment_id]);
 
 }catch(Exception $e){
-    if ($dbh->inTransaction()) {
-        $dbh->rollBack();
-    }
+    if($dbh->inTransaction()) $dbh->rollBack();
     echo json_encode(["status"=>"error","message"=>$e->getMessage()]);
 }
