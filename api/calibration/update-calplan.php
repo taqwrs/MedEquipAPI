@@ -26,7 +26,7 @@ if(!isset($input['plan_id'])){
 try {
     $dbh->beginTransaction();
 
-    // ดึงข้อมูลปัจจุบัน
+
     $stmt = $dbh->prepare("SELECT * FROM calibration_plans WHERE plan_id=:plan_id");
     $stmt->execute([':plan_id'=>$input['plan_id']]);
     $current = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -35,7 +35,7 @@ try {
         exit;
     }
 
-    // field ที่อนุญาตให้อัปเดต
+
     $fields = [
         'plan_name','user_id','group_user_id','company_id',
         'frequency_number','frequency_unit','frequency_type',
@@ -47,7 +47,7 @@ try {
         $updateData[$f] = array_key_exists($f, $input) ? $input[$f] : $current[$f];
     }
 
-    // ✅ กรณี soft delete (ส่งมาแค่ is_active)
+ 
     if (isset($input['is_active']) && count($input) === 2) {
         $stmt = $dbh->prepare("UPDATE calibration_plans SET is_active=:is_active WHERE plan_id=:plan_id");
         $stmt->execute([
@@ -59,7 +59,7 @@ try {
         exit;
     }
 
-    // --- validation และคำนวณ interval_count เฉพาะกรณี update ข้อมูลจริง ---
+
     $allowed_type_cal = ['ภายใน','ภายนอก'];
     $allowed_cost_type = ['แยกรายรอบ','รวมตลอดทั้งสัญญา'];
     $allowed_frequency_unit = [1,2,3,4];
@@ -74,7 +74,6 @@ try {
         echo json_encode(["status"=>"error","message"=>"Invalid frequency_unit"]); exit;
     }
 
-    // คำนวณ interval_count
     $startDate = new DateTime($updateData['start_date']);
     $endDate   = new DateTime($updateData['end_date']);
     $intervalNumber = (int)$updateData['frequency_number'];
@@ -92,7 +91,7 @@ try {
         }
     }
 
-    // UPDATE เต็ม
+
     $stmt = $dbh->prepare("UPDATE calibration_plans SET
         plan_name=:plan_name, 
         user_id=:user_id,
