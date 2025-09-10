@@ -18,7 +18,7 @@ if (!$input) {
     exit;
 }
 
-$required_fields = ['plan_name', 'user_id', 'group_user_id', 'company_id', 'frequency_number', 'frequency_unit', 'frequency_type', 'start_date', 'end_date', 'cost_type', 'price', 'type_cal'];
+$required_fields = ['plan_name', 'user_id', 'group_user_id', 'company_id', 'frequency_number', 'frequency_unit', 'frequency_type', 'start_date', 'end_date', 'type_cal'];
 
 foreach ($required_fields as $field) {
     if (!array_key_exists($field, $input)) {
