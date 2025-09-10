@@ -102,7 +102,7 @@ try {
                         [
                             'round' => 1,
                             'details_cal_id' => $roundId,
-                            'cal_result_id' => $row['cal_result_id'], // ✅ ส่งเพิ่มตรงนี้
+                            'cal_result_id' => $row['cal_result_id'], 
                             'plan_name' => $planName,
                             'status' => $row['result'],
                             'remark' => $row['remarks'] ?: '-',

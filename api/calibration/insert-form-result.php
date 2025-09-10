@@ -27,7 +27,7 @@ if (!$equipment_id || !$performed_date || !$user_id || !$details_cal_id) {
 }
 
 try {
-    // ตรวจสอบ duplicate
+
     $checkStmt = $dbh->prepare("
         SELECT COUNT(*) 
         FROM calibration_result
