@@ -10,12 +10,12 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 try {
     if ($method === 'GET') {
-        // ดึง subcategories
+
         $stmt = $dbh->prepare("SELECT subcategory_id, name, category_id, type FROM equipment_subcategories ORDER BY name");
         $stmt->execute();
         $subcategories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // ดึง equipments
+  
         $stmt = $dbh->prepare("
             SELECT equipment_id, name, brand, model, asset_code, status, location_details, subcategory_id
             FROM equipments
@@ -23,8 +23,6 @@ try {
         ");
         $stmt->execute();
         $equipments = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // รวม equipments ตาม subcategory
         $subcategoriesWithEquipments = array_map(function($sub) use ($equipments) {
             $sub['equipments'] = array_values(array_filter($equipments, fn($eq) => $eq['subcategory_id'] == $sub['subcategory_id']));
             return $sub;
@@ -56,12 +54,12 @@ try {
         try {
             $dbh->beginTransaction();
 
-            // ดึงอุปกรณ์เดิม
+
             $stmt = $dbh->prepare("SELECT equipment_id FROM plan_equipments WHERE plan_id = :plan_id");
             $stmt->execute([':plan_id' => $plan_id]);
             $existing = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-            // หาที่ต้องเพิ่ม
+
             $toAdd = array_diff($newEquipmentIds, $existing);
             if (!empty($toAdd)) {
                 $stmtInsert = $dbh->prepare("INSERT INTO plan_equipments (plan_id, equipment_id) VALUES (:plan_id, :equipment_id)");
@@ -73,7 +71,7 @@ try {
                 }
             }
 
-            // หาที่ต้องลบ
+
             $toDelete = array_diff($existing, $newEquipmentIds);
             if (!empty($toDelete)) {
                 $inQuery = implode(',', array_fill(0, count($toDelete), '?'));

@@ -35,6 +35,7 @@ try {
     echo json_encode([
         "status" => "success",
         "plan_id" => $data['plan_id'],
+        "details_cal_id" => $data['details_cal_id'],
         "equipment_id" => $data['equipment_id'],
         "equipment_name" => $data['equipment_name'],
         "unitLabel" => $data['cost_type'] === "รวมตลอดทั้งสัญญา" ? "ภายนอก" : "ภายใน",

@@ -21,6 +21,7 @@ try {
         LEFT JOIN group_user gu ON cp.group_user_id = gu.group_user_id
         LEFT JOIN companies c ON cp.company_id = c.company_id
         LEFT JOIN details_calibration_plans dcp ON cp.plan_id = dcp.plan_id
+        WHERE cp.is_active = 1
         GROUP BY cp.plan_id
     ";
     $stmt = $dbh->prepare($query);
