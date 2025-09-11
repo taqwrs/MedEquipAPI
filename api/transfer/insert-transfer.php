@@ -96,56 +96,21 @@ try {
     $reason = isset($input['reason']) ? $input['reason'] : null;
     $location_details = isset($input['location_details']) ? $input['location_details'] : null;
     
-    // สร้าง equipment transfer record
-    $sql = "INSERT INTO equipment_transfers (
-        transfer_type, equipment_id, from_department_id, to_department_id, transfer_date, reason, 
-        transfer_user_id, recipient_user_id, location_department_id, location_details
-    ) VALUES (
-        :transfer_type, :equipment_id, :from_department_id, :to_department_id, :transfer_date, :reason, 
-        :transfer_user_id, :recipient_user_id, :location_department_id, :location_details
-    )";
-    
-    $stmt = $dbh->prepare($sql);
-    $stmt->bindParam(':transfer_type', $input['transfer_type']);
-    $stmt->bindParam(':equipment_id', $input['equipment_id'], PDO::PARAM_INT);
-    $stmt->bindParam(':from_department_id', $from_dept_id, PDO::PARAM_INT);
-    $stmt->bindParam(':to_department_id', $to_dept_id, PDO::PARAM_INT);
-    $stmt->bindParam(':transfer_date', $input['transfer_date']);
-    $stmt->bindParam(':reason', $reason);
-    $stmt->bindParam(':transfer_user_id', $transfer_user_id, PDO::PARAM_INT);
-    $stmt->bindParam(':recipient_user_id', $recipient_user_id, PDO::PARAM_INT);
-    $stmt->bindParam(':location_department_id', $location_dept_id, PDO::PARAM_INT);
-    $stmt->bindParam(':location_details', $location_details);
-    
-    if (!$stmt->execute()) {
-        $dbh->rollBack();
-        echo json_encode(["status" => "error", "message" => "Failed to create equipment transfer"]);
-        exit;
-    }
-    
-    $transfer_id = $dbh->lastInsertId();
+    // เก็บ old_subcategory_id เพื่อใช้ในการบันทึกและโอนคืน
+    $old_subcategory_id = $equipment['subcategory_id'];
+    $new_subcategory_id = null;
+    $new_group_id = null;
 
     // === การจัดการตาม transfer_type ===
     
     if ($input['transfer_type'] === 'โอนย้ายถาวร') {
-        
-        // 1.1 ดึง group_user ที่ type = ผู้ใช้งาน จาก subcategory_id เดิม
-        $getOriginalUserGroups = $dbh->prepare("
-            SELECT gu.group_user_id, gu.group_name, gu.type
-            FROM group_user gu
-            INNER JOIN relation_group rg ON gu.group_user_id = rg.group_user_id
-            WHERE rg.subcategory_id = :subcategory_id AND gu.type = 'ผู้ใช้งาน'
-        ");
-        $getOriginalUserGroups->bindParam(':subcategory_id', $equipment['subcategory_id'], PDO::PARAM_INT);
-        $getOriginalUserGroups->execute();
-        $originalUserGroups = $getOriginalUserGroups->fetchAll(PDO::FETCH_ASSOC);
         
         // 1.2 สร้าง group_user ใหม่ (ผู้ดูแลหลัก)
         $newMainGroupName = "ผู้ดูแล(" . $equipment['asset_code'] . ")";
         $createMainGroup = $dbh->prepare("INSERT INTO group_user (group_name, type) VALUES (:group_name, 'ผู้ดูแลหลัก')");
         $createMainGroup->bindParam(':group_name', $newMainGroupName);
         $createMainGroup->execute();
-        $main_group_id = $dbh->lastInsertId();
+        $new_group_id = $dbh->lastInsertId();
         
         // 1.3 สร้าง subcategory ใหม่
         $newSubcategoryName = $equipment['subcategory_name'] . "(โอนย้ายถาวร)";
@@ -159,13 +124,24 @@ try {
         $createSubcategory->execute();
         $new_subcategory_id = $dbh->lastInsertId();
         
+        // 1.4 ดึง group_user ที่ type = ผู้ใช้งาน จาก subcategory_id เดิม
+        $getOriginalUserGroups = $dbh->prepare("
+            SELECT gu.group_user_id, gu.group_name, gu.type
+            FROM group_user gu
+            INNER JOIN relation_group rg ON gu.group_user_id = rg.group_user_id
+            WHERE rg.subcategory_id = :subcategory_id AND gu.type = 'ผู้ใช้งาน'
+        ");
+        $getOriginalUserGroups->bindParam(':subcategory_id', $old_subcategory_id, PDO::PARAM_INT);
+        $getOriginalUserGroups->execute();
+        $originalUserGroups = $getOriginalUserGroups->fetchAll(PDO::FETCH_ASSOC);
+        
         // 1.4 ผูก group_user ใหม่ (ผู้ดูแลหลัก) เข้ากับ subcategory ใหม่
         $insertMainRelationGroup = $dbh->prepare("INSERT INTO relation_group (group_user_id, subcategory_id) VALUES (:group_user_id, :subcategory_id)");
-        $insertMainRelationGroup->bindParam(':group_user_id', $main_group_id, PDO::PARAM_INT);
+        $insertMainRelationGroup->bindParam(':group_user_id', $new_group_id, PDO::PARAM_INT);
         $insertMainRelationGroup->bindParam(':subcategory_id', $new_subcategory_id, PDO::PARAM_INT);
         $insertMainRelationGroup->execute();
         
-        // 1.4 ผูก group_user เดิม (ผู้ใช้งาน) เข้ากับ subcategory ใหม่ด้วย
+        // 1.4 ผูก group_user เดิม (ผู้ใช้งาน) เข้ากับ subcategory ใหม่ด้วย (คัดลอก)
         foreach ($originalUserGroups as $userGroup) {
             $insertUserRelationGroup = $dbh->prepare("INSERT INTO relation_group (group_user_id, subcategory_id) VALUES (:group_user_id, :subcategory_id)");
             $insertUserRelationGroup->bindParam(':group_user_id', $userGroup['group_user_id'], PDO::PARAM_INT);
@@ -173,10 +149,10 @@ try {
             $insertUserRelationGroup->execute();
         }
         
-        // 1.5 เพิ่ม relation_user สำหรับผู้ดูแล (recipient_user_id)
+        // 1.5 เพิ่ม relation_user สำหรับผู้ดูแลใหม่ (recipient_user_id)
         if ($recipient_user_id) {
             $insertRelationUser = $dbh->prepare("INSERT INTO relation_user (group_user_id, u_id) VALUES (:group_user_id, :u_id)");
-            $insertRelationUser->bindParam(':group_user_id', $main_group_id, PDO::PARAM_INT);
+            $insertRelationUser->bindParam(':group_user_id', $new_group_id, PDO::PARAM_INT);
             $insertRelationUser->bindParam(':u_id', $recipient_user_id, PDO::PARAM_INT);
             $insertRelationUser->execute();
         }
@@ -189,23 +165,12 @@ try {
         
     } elseif ($input['transfer_type'] === 'โอนย้ายชั่วคราว') {
         
-        // 2.1 ดึง group_user ที่ type = ผู้ดูแลหลัก จาก subcategory_id เดิม
-        $getOriginalAdminGroups = $dbh->prepare("
-            SELECT gu.group_user_id, gu.group_name, gu.type
-            FROM group_user gu
-            INNER JOIN relation_group rg ON gu.group_user_id = rg.group_user_id
-            WHERE rg.subcategory_id = :subcategory_id AND gu.type = 'ผู้ดูแลหลัก'
-        ");
-        $getOriginalAdminGroups->bindParam(':subcategory_id', $equipment['subcategory_id'], PDO::PARAM_INT);
-        $getOriginalAdminGroups->execute();
-        $originalAdminGroups = $getOriginalAdminGroups->fetchAll(PDO::FETCH_ASSOC);
-        
         // 2.2 สร้าง group_user ใหม่ (ผู้ใช้งาน)
         $tempGroupName = "ผู้ใช้งานโอนย้ายชั่วคราว(" . $equipment['asset_code'] . ")";
         $createTempGroup = $dbh->prepare("INSERT INTO group_user (group_name, type) VALUES (:group_name, 'ผู้ใช้งาน')");
         $createTempGroup->bindParam(':group_name', $tempGroupName);
         $createTempGroup->execute();
-        $temp_group_id = $dbh->lastInsertId();
+        $new_group_id = $dbh->lastInsertId();
         
         // 2.3 สร้าง subcategory ใหม่
         $newTempSubcategoryName = $equipment['subcategory_name'] . "(โอนย้ายชั่วคราว)";
@@ -217,43 +182,46 @@ try {
         $createTempSubcategory->bindParam(':name', $newTempSubcategoryName);
         $createTempSubcategory->bindParam(':type', $equipment['subcategory_type']);
         $createTempSubcategory->execute();
-        $new_temp_subcategory_id = $dbh->lastInsertId();
+        $new_subcategory_id = $dbh->lastInsertId();
+        
+        // 2.4 ดึง group_user ที่ type = ผู้ดูแลหลัก จาก subcategory_id เดิม
+        $getOriginalAdminGroups = $dbh->prepare("
+            SELECT gu.group_user_id, gu.group_name, gu.type
+            FROM group_user gu
+            INNER JOIN relation_group rg ON gu.group_user_id = rg.group_user_id
+            WHERE rg.subcategory_id = :subcategory_id AND gu.type = 'ผู้ดูแลหลัก'
+        ");
+        $getOriginalAdminGroups->bindParam(':subcategory_id', $old_subcategory_id, PDO::PARAM_INT);
+        $getOriginalAdminGroups->execute();
+        $originalAdminGroups = $getOriginalAdminGroups->fetchAll(PDO::FETCH_ASSOC);
         
         // 2.4 ผูก group_user ใหม่ (ผู้ใช้งาน) เข้ากับ subcategory ใหม่
         $insertTempRelationGroup = $dbh->prepare("INSERT INTO relation_group (group_user_id, subcategory_id) VALUES (:group_user_id, :subcategory_id)");
-        $insertTempRelationGroup->bindParam(':group_user_id', $temp_group_id, PDO::PARAM_INT);
-        $insertTempRelationGroup->bindParam(':subcategory_id', $new_temp_subcategory_id, PDO::PARAM_INT);
+        $insertTempRelationGroup->bindParam(':group_user_id', $new_group_id, PDO::PARAM_INT);
+        $insertTempRelationGroup->bindParam(':subcategory_id', $new_subcategory_id, PDO::PARAM_INT);
         $insertTempRelationGroup->execute();
         
-        // 2.4 ผูก group_user เดิม (ผู้ดูแลหลัก) เข้ากับ subcategory ใหม่ด้วย
+        // 2.4 ผูก group_user เดิม (ผู้ดูแลหลัก) เข้ากับ subcategory ใหม่ด้วย (คัดลอก)
         foreach ($originalAdminGroups as $adminGroup) {
             $insertAdminRelationGroup = $dbh->prepare("INSERT INTO relation_group (group_user_id, subcategory_id) VALUES (:group_user_id, :subcategory_id)");
             $insertAdminRelationGroup->bindParam(':group_user_id', $adminGroup['group_user_id'], PDO::PARAM_INT);
-            $insertAdminRelationGroup->bindParam(':subcategory_id', $new_temp_subcategory_id, PDO::PARAM_INT);
+            $insertAdminRelationGroup->bindParam(':subcategory_id', $new_subcategory_id, PDO::PARAM_INT);
             $insertAdminRelationGroup->execute();
-            
-            // 2.5 คัดลอก relation_user ของ admin group ไปยัง subcategory ใหม่ด้วย
-            $getAdminUsers = $dbh->prepare("SELECT u_id FROM relation_user WHERE group_user_id = :group_user_id");
-            $getAdminUsers->bindParam(':group_user_id', $adminGroup['group_user_id'], PDO::PARAM_INT);
-            $getAdminUsers->execute();
-            $adminUsers = $getAdminUsers->fetchAll(PDO::FETCH_ASSOC);
-            
-            // หมายเหตุ: relation_user จะอ้างถึง group_user_id เดิม ไม่ต้องสร้างใหม่
-            // เพราะ group_user เดิมได้ถูกผูกเข้ากับ subcategory ใหม่แล้วผ่าน relation_group
         }
         
         // 2.5 เพิ่ม relation_user สำหรับผู้ใช้งานชั่วคราว (recipient_user_id)
         if ($recipient_user_id) {
             $insertTempRelationUser = $dbh->prepare("INSERT INTO relation_user (group_user_id, u_id) VALUES (:group_user_id, :u_id)");
-            $insertTempRelationUser->bindParam(':group_user_id', $temp_group_id, PDO::PARAM_INT);
+            $insertTempRelationUser->bindParam(':group_user_id', $new_group_id, PDO::PARAM_INT);
             $insertTempRelationUser->bindParam(':u_id', $recipient_user_id, PDO::PARAM_INT);
             $insertTempRelationUser->execute();
         }
         
-        // 2.1 สร้างความเชื่อมโยง equipment กับ subcategory ใหม่ (แต่ยังคงอยู่ในเดิมด้วย)
-        // หมายเหตุ: สำหรับโอนย้ายชั่วคราว equipment จะยังอยู่ใน subcategory_id เดิม
-        // แต่จะมีการสร้างช่องทางใหม่ผ่าน subcategory ใหม่
-        // ไม่อัปเดต equipments.subcategory_id เพราะต้องคงไว้ในเดิม
+        // 2.1 อัปเดต equipment ให้ไปยัง subcategory ใหม่
+        $updateTempEquipmentSub = $dbh->prepare("UPDATE equipments SET subcategory_id = :subcategory_id WHERE equipment_id = :equipment_id");
+        $updateTempEquipmentSub->bindParam(':subcategory_id', $new_subcategory_id, PDO::PARAM_INT);
+        $updateTempEquipmentSub->bindParam(':equipment_id', $input['equipment_id'], PDO::PARAM_INT);
+        $updateTempEquipmentSub->execute();
     }
 
     // 1.6 และ 2.6 อัปเดต location ของ equipment
@@ -268,6 +236,39 @@ try {
     $updateEquipLocation->bindParam(':equipment_id', $input['equipment_id'], PDO::PARAM_INT);
     $updateEquipLocation->execute();
 
+    // สร้าง equipment transfer record พร้อมกับ old_subcategory_id และ new_subcategory_id
+    $sql = "INSERT INTO equipment_transfers (
+        transfer_type, equipment_id, from_department_id, to_department_id, transfer_date, reason, 
+        transfer_user_id, recipient_user_id, location_department_id, location_details,
+        old_subcategory_id, new_subcategory_id
+    ) VALUES (
+        :transfer_type, :equipment_id, :from_department_id, :to_department_id, :transfer_date, :reason, 
+        :transfer_user_id, :recipient_user_id, :location_department_id, :location_details,
+        :old_subcategory_id, :new_subcategory_id
+    )";
+    
+    $stmt = $dbh->prepare($sql);
+    $stmt->bindParam(':transfer_type', $input['transfer_type']);
+    $stmt->bindParam(':equipment_id', $input['equipment_id'], PDO::PARAM_INT);
+    $stmt->bindParam(':from_department_id', $from_dept_id, PDO::PARAM_INT);
+    $stmt->bindParam(':to_department_id', $to_dept_id, PDO::PARAM_INT);
+    $stmt->bindParam(':transfer_date', $input['transfer_date']);
+    $stmt->bindParam(':reason', $reason);
+    $stmt->bindParam(':transfer_user_id', $transfer_user_id, PDO::PARAM_INT);
+    $stmt->bindParam(':recipient_user_id', $recipient_user_id, PDO::PARAM_INT);
+    $stmt->bindParam(':location_department_id', $location_dept_id, PDO::PARAM_INT);
+    $stmt->bindParam(':location_details', $location_details);
+    $stmt->bindParam(':old_subcategory_id', $old_subcategory_id, PDO::PARAM_INT);
+    $stmt->bindParam(':new_subcategory_id', $new_subcategory_id, PDO::PARAM_INT);
+    
+    if (!$stmt->execute()) {
+        $dbh->rollBack();
+        echo json_encode(["status" => "error", "message" => "Failed to create equipment transfer"]);
+        exit;
+    }
+    
+    $transfer_id = $dbh->lastInsertId();
+
     $dbh->commit();
     
     echo json_encode([
@@ -275,9 +276,10 @@ try {
         "message" => "Equipment transfer created successfully",
         "transfer_id" => (int)$transfer_id,
         "transfer_type" => $input['transfer_type'],
-        "new_subcategory_id" => isset($new_subcategory_id) ? (int)$new_subcategory_id : (isset($new_temp_subcategory_id) ? (int)$new_temp_subcategory_id : null),
-        "new_group_id" => isset($main_group_id) ? (int)$main_group_id : (isset($temp_group_id) ? (int)$temp_group_id : null),
-        "equipment_moved_permanently" => $input['transfer_type'] === 'โอนย้ายถาวร' ? true : false
+        "old_subcategory_id" => (int)$old_subcategory_id,
+        "new_subcategory_id" => (int)$new_subcategory_id,
+        "new_group_id" => (int)$new_group_id,
+        "equipment_moved" => true
     ]);
 
 } catch (Exception $e) {
