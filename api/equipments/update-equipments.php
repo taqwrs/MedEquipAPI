@@ -20,7 +20,7 @@ try{
     $fields=[
         'name','asset_code','serial_number','brand','model','import_type_id','subcategory_id',
         'location_department_id','manufacturer_company_id','supplier_company_id','maintainer_company_id',
-        'group_user_id','group_responsible_id','user_id','status','record_status','first_register',
+        'user_id','status','record_status','first_register',
         'location_details','spec','production_year','price','contract','start_date','end_date',
         'warranty_duration_days','warranty_condition','updated_by'
     ];
@@ -59,7 +59,7 @@ try{
                 $stmt=$dbh->prepare($sql);
                 $stmt->execute($p);
             } else {
-                $childFields = ['name','brand','asset_code','model','serial_number','import_type_id','subcategory_id','location_department_id','location_details','manufacturer_company_id','supplier_company_id','maintainer_company_id','spec','production_year','price','contract','start_date','end_date','warranty_duration_days','warranty_condition','group_user_id','group_responsible_id','user_id','main_equipment_id','updated_by','record_status','status','active','first_register'];
+                $childFields = ['name','brand','asset_code','model','serial_number','import_type_id','subcategory_id','location_department_id','location_details','manufacturer_company_id','supplier_company_id','maintainer_company_id','spec','production_year','price','contract','start_date','end_date','warranty_duration_days','warranty_condition','user_id','main_equipment_id','updated_by','record_status','status','active','first_register'];
                 $cols=[]; $placeholders=[]; $values=[];
                 foreach($childFields as $f){$cols[]=$f; $placeholders[]=":$f"; $values[":$f"]=$child[$f] ?? null;}
                 $cols[]='updated_at'; $placeholders[]='NOW()';
@@ -89,7 +89,7 @@ try{
                 $stmt=$dbh->prepare($sql);
                 $stmt->execute($p);
             } else {
-                $spareFields=['name','brand','asset_code','model','serial_number','import_type_id','spec','spare_subcate_id','price','contract','start_date','end_date','warranty_duration_days','warranty_condition','group_user_id','group_responsible_id','user_id','manufacturer_company_id','supplier_company_id','maintainer_company_id','production_year','location_department_id','location_details','first_register','active','equipment_id','updated_by'];
+                $spareFields=['name','brand','asset_code','model','serial_number','import_type_id','spec','spare_subcate_id','price','contract','start_date','end_date','warranty_duration_days','warranty_condition','user_id','manufacturer_company_id','supplier_company_id','maintainer_company_id','production_year','location_department_id','location_details','first_register','active','equipment_id','updated_by'];
                 $cols=[]; $placeholders=[]; $values=[];
                 foreach($spareFields as $f){$cols[]=$f; $placeholders[]=":$f"; $values[":$f"]=$spare[$f] ?? null;}
                 $cols[]='updated_at'; $placeholders[]='NOW()';

@@ -99,7 +99,7 @@ try {
 
     " . ($search ? $searchSql : "WHERE e.equipment_id IS NOT NULL") . "
     GROUP BY e.equipment_id
-    ORDER BY e.equipment_id
+    ORDER BY e.equipment_id Desc
     LIMIT :limit OFFSET :offset
 ";
 
