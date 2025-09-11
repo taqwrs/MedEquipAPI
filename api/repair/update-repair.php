@@ -16,7 +16,8 @@ try {
 
     $repair_id = $data['repair_id'] ?? null;
     $equipment_id = $data['equipment_id'] ?? null;
-    $symptom = $data['symptom'] ?? null;
+    $remark = $data['remark'] ?? null;
+    $title = $data['title'] ?? null;
     $location = $data['location'] ?? null;
     $status = $data['status'] ?? null;
     $repair_type_id = $data['repair_type_id'] ?? null;
@@ -34,9 +35,13 @@ try {
         $fields[] = "equipment_id = :equipment_id";
         $params[':equipment_id'] = $equipment_id;
     }
-    if ($symptom !== null) {
-        $fields[] = "symptom = :symptom";
-        $params[':symptom'] = $symptom;
+    if ($remark !== null) {
+        $fields[] = "remark = :remark";
+        $params[':remark'] = $remark;
+    }
+       if ($title !== null) {
+        $fields[] = "title = :title";
+        $params[':title'] = $title;
     }
     if ($location !== null) {
         $fields[] = "location = :location";
