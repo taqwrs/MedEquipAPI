@@ -15,25 +15,31 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || json_last_error() !== JSON_ERROR_NO
 try {
     $dbh->beginTransaction();
 
-    // Update main spare part data
-    $sql = "UPDATE spare_parts SET
-        name = :name, asset_code = :asset_code, import_type_id = :import_type_id,
-        spare_subcate_id = :spare_subcate_id, location_department_id = :location_department_id,
-        location_details = :location_details, production_year = :production_year, price = :price,
-        contract = :contract, start_date = :start_date, end_date = :end_date,
-        warranty_condition = :warranty_condition, maintainer_company_id = :maintainer_company_id,
-        supplier_company_id = :supplier_company_id, manufacturer_company_id = :manufacturer_company_id,
-        group_user_id = :group_user_id, group_responsible_id = :group_responsible_id,
-        status = :status, updated_by = :updated_by
-    WHERE spare_part_id = :spare_part_id";
+    // กำหนดฟิลด์ที่ต้องการอัปเดต
+    $fields = [
+        'name', 'asset_code', 'import_type_id', 'spare_subcate_id', 'location_department_id',
+        'location_details', 'production_year', 'price', 'contract', 'start_date', 'end_date',
+        'warranty_condition', 'maintainer_company_id', 'supplier_company_id', 'manufacturer_company_id',
+        'group_user_id', 'group_responsible_id', 'status', 'updated_by'
+    ];
 
-    $stmt = $dbh->prepare($sql);
-    foreach ($input as $k => $v) {
-        if (strpos($sql, ":$k") !== false) $stmt->bindValue(":$k", $v);
+    $setParts = [];
+    $params = [':spare_part_id' => $input['spare_part_id']];
+    foreach ($fields as $f) {
+        if (isset($input[$f])) {
+            $setParts[] = "$f=:$f";
+            $params[":$f"] = $input[$f];
+        }
     }
-    $stmt->execute();
+    $setParts[] = "updated_at=NOW()";
 
-    // Clear and re-insert files safely using prepared statement
+    if (!empty($setParts)) {
+        $sql = "UPDATE spare_parts SET " . implode(',', $setParts) . " WHERE spare_part_id = :spare_part_id";
+        $stmt = $dbh->prepare($sql);
+        $stmt->execute($params);
+    }
+
+    // ส่วนนี้สามารถใช้ได้เหมือนเดิม
     $delStmt = $dbh->prepare("DELETE FROM file_spare WHERE spare_part_id = :spare_part_id");
     $delStmt->bindValue(':spare_part_id', $input['spare_part_id']);
     $delStmt->execute();
