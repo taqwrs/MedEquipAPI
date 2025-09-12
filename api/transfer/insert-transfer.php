@@ -59,7 +59,7 @@ try {
     
     // เก็บข้อมูลเดิมของ equipment ก่อนการโอนย้าย
     $old_location_department_id = $equipment['old_location_department_id'];
-    $old_location_details = $equipment['old_location_details']; // *** ข้อมูล location_details เดิม ***
+    $old_location_details = $equipment['old_location_details'];// *** ข้อมูล location_details เดิม ***
     
     // ตรวจสอบ departments หากมีการระบุมา
     $deptFields = ['from_department_id', 'to_department_id', 'location_department_id'];
@@ -274,8 +274,8 @@ try {
     $stmt->bindParam(':location_details', $location_details);
     $stmt->bindParam(':old_subcategory_id', $old_subcategory_id, PDO::PARAM_INT);
     $stmt->bindParam(':new_subcategory_id', $new_subcategory_id, PDO::PARAM_INT);
-    $stmt->bindParam(':now_subcategory_id', $new_subcategory_id, PDO::PARAM_INT); // ชนิดปัจจุบันหลังการโอน
-    $stmt->bindParam(':status', $transfer_status, PDO::PARAM_INT); // 0=ชั่วคราว, 1=ถาวร
+    $stmt->bindParam(':now_subcategory_id', $new_subcategory_id, PDO::PARAM_INT);// ชนิดปัจจุบันหลังการโอน
+    $stmt->bindParam(':status', $transfer_status, PDO::PARAM_INT);// 0=ชั่วคราว, 1=ถาวร
     $stmt->bindParam(':old_location_department_id', $old_location_department_id, PDO::PARAM_INT);
     
     if (!$stmt->execute()) {
@@ -286,21 +286,23 @@ try {
     
     $transfer_id = $dbh->lastInsertId();
 
-    // *** แก้ไข: บันทึกลง history_transfer  ***
+    // *** บันทึกลง history_transfer พร้อมกับ status_transfer ***
     $historySQL = "INSERT INTO history_transfer (
         transfer_id, transfer_type, equipment_id, from_department_id, to_department_id, 
         transfer_date, reason, transfer_user_id, recipient_user_id, 
         trans_location_department_id, trans_location_details,
         old_subcategory_id, new_subcategory_id, now_subcategory_id,
         now_equip_location_department_id, now_equip_location_details,
-        old_location_department_id, old_equip_location_details, created_at
+        old_location_department_id, old_equip_location_details, 
+        status_transfer, created_at
     ) VALUES (
         :transfer_id, :transfer_type, :equipment_id, :from_department_id, :to_department_id,
         :transfer_date, :reason, :transfer_user_id, :recipient_user_id,
         :trans_location_department_id, :trans_location_details,
         :old_subcategory_id, :new_subcategory_id, :now_subcategory_id,
         :now_equip_location_department_id, :now_equip_location_details,
-        :old_location_department_id, :old_equip_location_details, NOW()
+        :old_location_department_id, :old_equip_location_details, 
+        :status_transfer, NOW()
     )";
     
     $historyStmt = $dbh->prepare($historySQL);
@@ -321,8 +323,8 @@ try {
     $historyStmt->bindParam(':now_equip_location_department_id', $location_dept_id, PDO::PARAM_INT);
     $historyStmt->bindParam(':now_equip_location_details', $location_details);
     $historyStmt->bindParam(':old_location_department_id', $old_location_department_id, PDO::PARAM_INT);
-    // *** เพิ่ม bind parameter สำหรับ old_equip_location_details ***
     $historyStmt->bindParam(':old_equip_location_details', $old_location_details);
+    $historyStmt->bindParam(':status_transfer', $transfer_status, PDO::PARAM_INT);
     
     if (!$historyStmt->execute()) {
         $dbh->rollBack();
@@ -338,6 +340,7 @@ try {
         "transfer_id" => (int)$transfer_id,
         "transfer_type" => $input['transfer_type'],
         "status" => $transfer_status,
+        "status_transfer" => $transfer_status, // เพิ่มข้อมูลใน response
         "old_subcategory_id" => (int)$old_subcategory_id,
         "new_subcategory_id" => (int)$new_subcategory_id,
         "now_subcategory_id" => (int)$new_subcategory_id,
