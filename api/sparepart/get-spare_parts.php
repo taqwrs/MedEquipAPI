@@ -19,7 +19,7 @@ try {
     $params = [];
     $searchSql = '';
     if ($search) {
-        $searchSql = "WHERE sp.name LIKE :search OR sp.asset_code LIKE :search OR sp.serial_number LIKE :search OR sp.brand LIKE :search";
+        $searchSql = "WHERE sp.name LIKE :search OR sp.asset_code LIKE :search OR sp.end_date LIKE :search OR sp.status LIKE :search";
         $params[':search'] = "%$search%";
     }
 
