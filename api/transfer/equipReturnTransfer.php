@@ -1,4 +1,5 @@
 <?php
+// equipReturnTransfer.php
 include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
@@ -27,10 +28,13 @@ try {
         exit;
     }
     
-    // ค้นหา transfer record
+    // ค้นหา transfer record พร้อมข้อมูลที่เกี่ยวข้อง
     $getTransfer = $dbh->prepare("
         SELECT et.transfer_id, et.transfer_type, et.equipment_id, et.old_subcategory_id, et.new_subcategory_id,
-               e.asset_code, e.active
+               et.from_department_id, et.to_department_id, et.transfer_date, et.reason, 
+               et.transfer_user_id, et.recipient_user_id, et.location_department_id, et.location_details,
+               et.old_location_department_id, et.status,
+               e.asset_code, e.active, e.subcategory_id as current_subcategory_id
         FROM equipment_transfers et
         LEFT JOIN equipments e ON et.equipment_id = e.equipment_id
         WHERE et.transfer_id = :transfer_id
@@ -45,7 +49,7 @@ try {
         exit;
     }
     
-    // ตรวจสอบว่าเป็นการโอนย้ายชั่วคราวเท่านั้น
+    // ตรวจสอบว่าเป็นการโอนย้ายชั่วคราวเท่านั้น (ข้อ 2.7)
     if ($transfer['transfer_type'] !== 'โอนย้ายชั่วคราว') {
         echo json_encode(["status" => "error", "message" => "Return is only allowed for temporary transfers (โอนย้ายชั่วคราว)"]);
         exit;
@@ -57,31 +61,34 @@ try {
         exit;
     }
     
+    // ตรวจสอบว่ายังไม่ได้โอนคืน (status = 0)
+    if ($transfer['status'] == 1) {
+        echo json_encode(["status" => "error", "message" => "Equipment has already been returned"]);
+        exit;
+    }
+    
     // ตรวจสอบว่ามี old_subcategory_id และ new_subcategory_id
     if (!$transfer['old_subcategory_id'] || !$transfer['new_subcategory_id']) {
         echo json_encode(["status" => "error", "message" => "Invalid transfer data: missing subcategory information"]);
         exit;
     }
 
+    // ดึงข้อมูลจาก history_transfer สำหรับข้อ 2.7.7
+    $getHistory = $dbh->prepare("
+        SELECT trans_location_department_id, trans_location_details, old_equip_location_details
+        FROM history_transfer 
+        WHERE transfer_id = :transfer_id AND status_transfer = 0
+        ORDER BY history_transfer_id DESC
+        LIMIT 1
+    ");
+    $getHistory->bindParam(':transfer_id', $input['transfer_id'], PDO::PARAM_INT);
+    $getHistory->execute();
+    $historyData = $getHistory->fetch(PDO::FETCH_ASSOC);
+
     // เริ่ม transaction
     $dbh->beginTransaction();
     
-    // ค้นหา group_user ที่สร้างขึ้นสำหรับการโอนย้ายชั่วคราวนี้
-    $tempGroupPattern = "ผู้ใช้งานโอนย้ายชั่วคราว(" . $transfer['asset_code'] . ")";
-    $getTempGroup = $dbh->prepare("
-        SELECT gu.group_user_id
-        FROM group_user gu
-        INNER JOIN relation_group rg ON gu.group_user_id = rg.group_user_id
-        WHERE rg.subcategory_id = :new_subcategory_id 
-        AND gu.group_name = :group_name 
-        AND gu.type = 'ผู้ใช้งาน'
-    ");
-    $getTempGroup->bindParam(':new_subcategory_id', $transfer['new_subcategory_id'], PDO::PARAM_INT);
-    $getTempGroup->bindParam(':group_name', $tempGroupPattern);
-    $getTempGroup->execute();
-    $tempGroups = $getTempGroup->fetchAll(PDO::FETCH_ASSOC);
-    
-    // 1. คืน equipment กลับไป old_subcategory_id
+    // ข้อ 2.7.1: คืน equipment กลับไป old_subcategory_id
     $returnEquipment = $dbh->prepare("
         UPDATE equipments 
         SET subcategory_id = :old_subcategory_id 
@@ -96,14 +103,30 @@ try {
         exit;
     }
     
-    // 2. ลบ relation_user ของ group_user ที่สร้างขึ้นสำหรับการโอนย้ายชั่วคราว
+    // ค้นหา group_user ที่สร้างขึ้นสำหรับการโอนย้ายชั่วคราวนี้ (ข้อ 2.7.2)
+    $tempGroupPattern = "ผู้ใช้งานโอนย้ายชั่วคราว(" . $transfer['asset_code'] . ")";
+    $getTempGroup = $dbh->prepare("
+        SELECT gu.group_user_id
+        FROM group_user gu
+        INNER JOIN relation_group rg ON gu.group_user_id = rg.group_user_id
+        WHERE rg.subcategory_id = :new_subcategory_id 
+        AND gu.group_name = :group_name 
+        AND gu.type = 'ผู้ใช้งาน'
+    ");
+    $getTempGroup->bindParam(':new_subcategory_id', $transfer['new_subcategory_id'], PDO::PARAM_INT);
+    $getTempGroup->bindParam(':group_name', $tempGroupPattern);
+    $getTempGroup->execute();
+    $tempGroups = $getTempGroup->fetchAll(PDO::FETCH_ASSOC);
+    
+    // ข้อ 2.7.4: ลบข้อมูลใน relation_user และ relation_group
     foreach ($tempGroups as $tempGroup) {
+        // ลบ relation_user
         $deleteRelationUser = $dbh->prepare("DELETE FROM relation_user WHERE group_user_id = :group_user_id");
         $deleteRelationUser->bindParam(':group_user_id', $tempGroup['group_user_id'], PDO::PARAM_INT);
         $deleteRelationUser->execute();
     }
     
-    // 3. ลบ relation_group ทั้งหมดที่เกี่ยวข้องกับ new_subcategory_id
+    // ลบ relation_group ที่เกี่ยวข้องกับ new_subcategory_id
     $deleteRelationGroup = $dbh->prepare("DELETE FROM relation_group WHERE subcategory_id = :new_subcategory_id");
     $deleteRelationGroup->bindParam(':new_subcategory_id', $transfer['new_subcategory_id'], PDO::PARAM_INT);
     
@@ -113,7 +136,7 @@ try {
         exit;
     }
     
-    // 4. ลบ group_user ที่สร้างขึ้นสำหรับการโอนย้ายชั่วคราว
+    // ข้อ 2.7.2: ลบ group_user ที่สร้างขึ้นสำหรับการโอนย้ายชั่วคราว
     foreach ($tempGroups as $tempGroup) {
         $deleteGroupUser = $dbh->prepare("DELETE FROM group_user WHERE group_user_id = :group_user_id");
         $deleteGroupUser->bindParam(':group_user_id', $tempGroup['group_user_id'], PDO::PARAM_INT);
@@ -125,7 +148,7 @@ try {
         }
     }
     
-    // 5. ลบ subcategory ที่สร้างขึ้นสำหรับการโอนย้ายชั่วคราว
+    // ข้อ 2.7.3: ลบ subcategory ที่สร้างขึ้นสำหรับการโอนย้ายชั่วคราว
     $deleteSubcategory = $dbh->prepare("DELETE FROM equipment_subcategories WHERE subcategory_id = :new_subcategory_id");
     $deleteSubcategory->bindParam(':new_subcategory_id', $transfer['new_subcategory_id'], PDO::PARAM_INT);
     
@@ -135,25 +158,135 @@ try {
         exit;
     }
     
-    // 6. อัปเดต equipment_transfers เพื่อทำเครื่องหมายว่าได้ทำการโอนคืนแล้ว
-    // เพิ่มคอลัมน์ returned_date และ returned_by หากต้องการติดตาม
-    $updateTransfer = $dbh->prepare("
+    // ข้อ 2.7.5, 2.7.6, 2.7.7: อัปเดต equipment_transfers
+    $updateTransferSQL = "
         UPDATE equipment_transfers 
-        SET reason = CONCAT(IFNULL(reason, ''), ' [RETURNED: ', NOW(), ']')
+        SET status = 1,
+            returned_date = NOW(),
+            now_subcategory_id = :old_subcategory_id";
+    
+    // ข้อ 2.7.7: อัปเดต location จาก history_transfer
+    if ($historyData) {
+        $updateTransferSQL .= ",
+            location_department_id = :trans_location_department_id,
+            location_details = :trans_location_details";
+    }
+    
+    $updateTransferSQL .= " WHERE transfer_id = :transfer_id";
+    
+    $updateTransfer = $dbh->prepare($updateTransferSQL);
+    $updateTransfer->bindParam(':old_subcategory_id', $transfer['old_subcategory_id'], PDO::PARAM_INT);
+    $updateTransfer->bindParam(':transfer_id', $input['transfer_id'], PDO::PARAM_INT);
+    
+    if ($historyData) {
+        $updateTransfer->bindParam(':trans_location_department_id', $historyData['trans_location_department_id'], PDO::PARAM_INT);
+        $updateTransfer->bindParam(':trans_location_details', $historyData['trans_location_details']);
+    }
+    
+    if (!$updateTransfer->execute()) {
+        $dbh->rollBack();
+        echo json_encode(["status" => "error", "message" => "Failed to update transfer status"]);
+        exit;
+    }
+
+    // ดึง returned_date และข้อมูลที่อัปเดตแล้ว
+    $getUpdatedTransfer = $dbh->prepare("
+        SELECT returned_date, location_department_id, location_details, now_subcategory_id 
+        FROM equipment_transfers 
         WHERE transfer_id = :transfer_id
     ");
-    $updateTransfer->bindParam(':transfer_id', $input['transfer_id'], PDO::PARAM_INT);
-    $updateTransfer->execute();
-    
-    // รีเซ็ต location กลับเป็นค่าเดิม (ถ้าต้องการ)
-    if (isset($input['reset_location']) && $input['reset_location'] === true) {
-        $resetLocation = $dbh->prepare("
+    $getUpdatedTransfer->bindParam(':transfer_id', $input['transfer_id'], PDO::PARAM_INT);
+    $getUpdatedTransfer->execute();
+    $updatedTransfer = $getUpdatedTransfer->fetch(PDO::FETCH_ASSOC);
+
+    // ข้อ 2.7.8: อัปเดต location ใน equipment table
+    if ($historyData) {
+        $updateEquipLocation = $dbh->prepare("
             UPDATE equipments 
-            SET location_department_id = NULL, location_details = NULL
+            SET location_department_id = :location_department_id,
+                location_details = :location_details
             WHERE equipment_id = :equipment_id
         ");
-        $resetLocation->bindParam(':equipment_id', $transfer['equipment_id'], PDO::PARAM_INT);
-        $resetLocation->execute();
+        $updateEquipLocation->bindParam(':location_department_id', $historyData['trans_location_department_id'], PDO::PARAM_INT);
+        $updateEquipLocation->bindParam(':location_details', $historyData['trans_location_details']);
+        $updateEquipLocation->bindParam(':equipment_id', $transfer['equipment_id'], PDO::PARAM_INT);
+        
+        if (!$updateEquipLocation->execute()) {
+            $dbh->rollBack();
+            echo json_encode(["status" => "error", "message" => "Failed to update equipment location"]);
+            exit;
+        }
+    }
+    
+    // ข้อ 2.7.9, 2.7.10: อัปเดต updated_by และ updated_at ใน equipment table
+    $updateEquipment = $dbh->prepare("
+        UPDATE equipments 
+        SET updated_by = :recipient_user_id,
+            updated_at = :returned_date
+        WHERE equipment_id = :equipment_id
+    ");
+    $updateEquipment->bindParam(':recipient_user_id', $transfer['recipient_user_id'], PDO::PARAM_INT);
+    $updateEquipment->bindParam(':returned_date', $updatedTransfer['returned_date']);
+    $updateEquipment->bindParam(':equipment_id', $transfer['equipment_id'], PDO::PARAM_INT);
+    
+    if (!$updateEquipment->execute()) {
+        $dbh->rollBack();
+        echo json_encode(["status" => "error", "message" => "Failed to update equipment updated_by and updated_at"]);
+        exit;
+    }
+    
+    // ข้อ 2.7.11: Insert ข้อมูลใหม่ลง history_transfer
+    $insertHistory = $dbh->prepare("
+        INSERT INTO history_transfer (
+            transfer_id, transfer_type, equipment_id, from_department_id, to_department_id,
+            transfer_date, reason, transfer_user_id, recipient_user_id, 
+            trans_location_department_id, trans_location_details,
+            old_subcategory_id, new_subcategory_id, 
+            now_equip_location_department_id, now_equip_location_details,
+            returned_date, old_location_department_id, now_subcategory_id,
+            old_equip_location_details, status_transfer, created_at, updated_at
+        ) VALUES (
+            :transfer_id, :transfer_type, :equipment_id, :from_department_id, :to_department_id,
+            :transfer_date, :reason, :transfer_user_id, :recipient_user_id,
+            :trans_location_department_id, :trans_location_details,
+            :old_subcategory_id, :new_subcategory_id,
+            :now_equip_location_department_id, :now_equip_location_details,
+            :returned_date, :old_location_department_id, :now_subcategory_id,
+            :old_equip_location_details, :status_transfer, NOW(), NOW()
+        )
+    ");
+    
+    $insertHistory->bindParam(':transfer_id', $transfer['transfer_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':transfer_type', $transfer['transfer_type']);
+    $insertHistory->bindParam(':equipment_id', $transfer['equipment_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':from_department_id', $transfer['from_department_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':to_department_id', $transfer['to_department_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':transfer_date', $transfer['transfer_date']);
+    $insertHistory->bindParam(':reason', $transfer['reason']);
+    $insertHistory->bindParam(':transfer_user_id', $transfer['transfer_user_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':recipient_user_id', $transfer['recipient_user_id'], PDO::PARAM_INT);
+    
+    // ใช้ข้อมูลจาก history เดิม หรือ NULL ถ้าไม่มี
+    $transLocDeptId = $historyData ? $historyData['trans_location_department_id'] : null;
+    $transLocDetails = $historyData ? $historyData['trans_location_details'] : null;
+    $oldEquipLocDetails = $historyData ? $historyData['old_equip_location_details'] : null;
+    
+    $insertHistory->bindParam(':trans_location_department_id', $transLocDeptId, PDO::PARAM_INT);
+    $insertHistory->bindParam(':trans_location_details', $transLocDetails);
+    $insertHistory->bindParam(':old_subcategory_id', $transfer['old_subcategory_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':new_subcategory_id', $transfer['new_subcategory_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':now_equip_location_department_id', $updatedTransfer['location_department_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':now_equip_location_details', $updatedTransfer['location_details']);
+    $insertHistory->bindParam(':returned_date', $updatedTransfer['returned_date']);
+    $insertHistory->bindParam(':old_location_department_id', $transfer['old_location_department_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':now_subcategory_id', $updatedTransfer['now_subcategory_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':old_equip_location_details', $oldEquipLocDetails);
+    $insertHistory->bindValue(':status_transfer', 1, PDO::PARAM_INT); // status = 1 เพราะเป็นการโอนคืน
+    
+    if (!$insertHistory->execute()) {
+        $dbh->rollBack();
+        echo json_encode(["status" => "error", "message" => "Failed to insert history record"]);
+        exit;
     }
 
     $dbh->commit();
@@ -166,7 +299,12 @@ try {
         "returned_to_subcategory_id" => (int)$transfer['old_subcategory_id'],
         "deleted_subcategory_id" => (int)$transfer['new_subcategory_id'],
         "deleted_temp_groups" => count($tempGroups),
-        "asset_code" => $transfer['asset_code']
+        "asset_code" => $transfer['asset_code'],
+        "returned_date" => $updatedTransfer['returned_date'],
+        "updated_location_department_id" => $historyData ? $historyData['trans_location_department_id'] : null,
+        "updated_location_details" => $historyData ? $historyData['trans_location_details'] : null,
+        "transfer_status" => 1, // โอนคืนแล้ว
+        "now_subcategory_id" => (int)$updatedTransfer['now_subcategory_id']
     ]);
 
 } catch (Exception $e) {

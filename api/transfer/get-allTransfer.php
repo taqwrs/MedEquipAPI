@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php"; 
+// get-allTransfer.php
 
 // กำหนด header สำหรับ response
 header("Content-Type: application/json; charset=UTF-8");
@@ -50,19 +51,31 @@ try {
             et.recipient_user_id,
             et.location_department_id,
             et.location_details,
+            et.old_subcategory_id,
+            et.new_subcategory_id,
+            et.now_subcategory_id,
+            et.status,
+            et.returned_date,
+            et.old_location_department_id,
             
             -- Equipment Information
             e.name AS equipment_name,
             e.asset_code,
-            e.subcategory_id,
+            e.location_department_id AS now_location_department_id,
+            e.location_details AS now_location_details,
             
-            -- Equipment Subcategory
-            esc.name AS subcategory_name,
-            esc.type AS subcategory_type,
-            esc.category_id,
+            -- Old Subcategory Information
+            esc_old.name AS old_subcategory_name,
+            esc_old.type AS old_subcategory_type,
+            esc_old.category_id,
             
-            -- Equipment Location Department
-            d_equip_loc.department_name AS location_department_name,
+            -- New Subcategory Information
+            esc_new.name AS new_subcategory_name,
+            esc_new.type AS new_subcategory_type,
+            
+            -- Now Subcategory Information
+            esc_now.name AS now_subcategory_name,
+            esc_now.type AS now_subcategory_type,
             
             -- From Department
             d_from.department_name AS from_department_name,
@@ -70,8 +83,14 @@ try {
             -- To Department  
             d_to.department_name AS to_department_name,
             
-            -- Transfer Location Department
-            d_transfer_loc.department_name AS transfer_location_department,
+            -- Transfer New Location Department
+            d_transfer_loc.department_name AS transfer_newlocation_department,
+            
+            -- Old Location Department (before transfer)
+            d_old_loc.department_name AS old_location_department_name,
+            
+            -- Now Location Department (current location in equipment table)
+            d_now_loc.department_name AS now_location_department_name,
             
             -- Transfer User Info
             u_transfer.full_name AS transfer_user_name,
@@ -84,14 +103,21 @@ try {
         -- JOIN Equipment
         INNER JOIN equipments e ON et.equipment_id = e.equipment_id
         
-        -- JOIN Equipment Subcategory
-        INNER JOIN equipment_subcategories esc ON e.subcategory_id = esc.subcategory_id
+        -- JOIN Old Subcategory
+        LEFT JOIN equipment_subcategories esc_old ON et.old_subcategory_id = esc_old.subcategory_id
+        
+        -- JOIN New Subcategory
+        LEFT JOIN equipment_subcategories esc_new ON et.new_subcategory_id = esc_new.subcategory_id
+        
+        -- JOIN Now Subcategory
+        LEFT JOIN equipment_subcategories esc_now ON et.now_subcategory_id = esc_now.subcategory_id
         
         -- JOIN Departments
-        LEFT JOIN departments d_equip_loc ON e.location_department_id = d_equip_loc.department_id
         LEFT JOIN departments d_from ON et.from_department_id = d_from.department_id
         LEFT JOIN departments d_to ON et.to_department_id = d_to.department_id
         LEFT JOIN departments d_transfer_loc ON et.location_department_id = d_transfer_loc.department_id
+        LEFT JOIN departments d_old_loc ON et.old_location_department_id = d_old_loc.department_id
+        LEFT JOIN departments d_now_loc ON e.location_department_id = d_now_loc.department_id
         
         -- JOIN Users
         LEFT JOIN users u_transfer ON et.transfer_user_id = u_transfer.ID
@@ -120,39 +146,77 @@ try {
     // ------------------------
     $formattedResults = [];
     foreach ($results as $row) {
-        // ดึง group ของ transfer_user (หลายกลุ่ม)
-        $transferUserGroups = getUserGroups($row['transfer_user_id'], $row['subcategory_id']);
+        // สร้าง status text description
+        $statusText = '';
+        if ($row['transfer_type'] === 'โอนย้ายชั่วคราว') {
+            $statusText = $row['status'] == 0 ? '0 ยังไม่คืน' : '1 คืนแล้ว';
+        } else {
+            $statusText = '1 ไม่ต้องคืน';
+        }
         
-        // ดึง group ของ recipient_user (หลายกลุ่ม)
-        $recipientUserGroups = getUserGroups($row['recipient_user_id'], $row['subcategory_id']);
+        // ดึง group ของ transfer_user (หลายกลุ่ม) - ใช้ old_subcategory_id
+        $transferUserGroups = getUserGroups($row['transfer_user_id'], $row['old_subcategory_id']);
+        
+        // ดึง group ของ recipient_user (หลายกลุ่ม) - ใช้ new_subcategory_id
+        $recipientUserGroups = getUserGroups($row['recipient_user_id'], $row['new_subcategory_id']);
         
         $formattedRow = [
             'transfer_id' => (int)$row['transfer_id'],
             'transfer_type' => $row['transfer_type'],
             'transfer_date' => $row['transfer_date'],
-            'reason' => $row['reason'],
+            'status' => $statusText,
             'equipment_id' => (int)$row['equipment_id'],
             'equipment_name' => $row['equipment_name'],
             'asset_code' => $row['asset_code'],
-            'subcategory_id' => (int)$row['subcategory_id'],
-            'subcategory_name' => $row['subcategory_name'],
-            'subcategory_type' => $row['subcategory_type'],
+            
+            // Old Subcategory (ก่อนโอน)
+            'old_subcategory_id' => $row['old_subcategory_id'] ? (int)$row['old_subcategory_id'] : null,
+            'old_subcategory_name' => $row['old_subcategory_name'],
+            'old_subcategory_type' => $row['old_subcategory_type'],
+            
+            // New Subcategory (หลังโอน)
+            'new_subcategory_id' => $row['new_subcategory_id'] ? (int)$row['new_subcategory_id'] : null,
+            'new_subcategory_name' => $row['new_subcategory_name'],
+            'new_subcategory_type' => $row['new_subcategory_type'],
+            
+            // Now Subcategory (ปัจจุบัน)
+            'now_subcategory_id' => $row['now_subcategory_id'] ? (int)$row['now_subcategory_id'] : null,
+            'now_subcategory_name' => $row['now_subcategory_name'],
+            'now_subcategory_type' => $row['now_subcategory_type'],
+            
             'category_id' => (int)$row['category_id'],
-            'location_department_id' => $row['location_department_id'] ? (int)$row['location_department_id'] : null,
-            'location_department_name' => $row['location_department_name'],
-            'location_details' => $row['location_details'],
+            
+            // Department Information
             'from_department_id' => $row['from_department_id'] ? (int)$row['from_department_id'] : null,
             'from_department_name' => $row['from_department_name'],
             'to_department_id' => $row['to_department_id'] ? (int)$row['to_department_id'] : null,
             'to_department_name' => $row['to_department_name'],
-            'transfer_location_department_id' => $row['location_department_id'] ? (int)$row['location_department_id'] : null,
-            'transfer_location_department' => $row['transfer_location_department'],
+            
+            // Old Location (ก่อนโอน - จากตาราง equipment_transfers)
+            'old_location_department_id' => $row['old_location_department_id'] ? (int)$row['old_location_department_id'] : null,
+            'old_location_department_name' => $row['old_location_department_name'],
+            'old_location_details' => $row['location_details'], // location_details จาก equipment เดิม
+            
+            // Transfer New Location (สถานที่ที่โอนไป - จากตาราง equipment_transfers)
+            'transfer_newlocation_department_id' => $row['location_department_id'] ? (int)$row['location_department_id'] : null,
+            'transfer_newlocation_department' => $row['transfer_newlocation_department'],
+            'transfer_newlocation_detail' => $row['location_details'], // location_details ที่โอนไป
+            
+            // Now Location (สถานที่ปัจจุบัน - จากตาราง equipments)
+            'now_location_department_id' => $row['now_location_department_id'] ? (int)$row['now_location_department_id'] : null,
+            'now_location_department_name' => $row['now_location_department_name'],
+            'now_location_details' => $row['now_location_details'],
+            
+            'reason' => $row['reason'],
+            'returned_date' => $row['returned_date'],
+            
             // ข้อมูล user ที่โอน
             'transfer_user' => [
                 'transfer_user_id' => $row['transfer_user_id'] ? (int)$row['transfer_user_id'] : null,
                 'transfer_user_name' => $row['transfer_user_name'],
                 'groups' => $transferUserGroups // คืนเป็น array ของกลุ่ม
             ],
+            
             // ข้อมูล user ที่รับ
             'recipient_user' => [
                 'recipient_user_id' => $row['recipient_user_id'] ? (int)$row['recipient_user_id'] : null,
