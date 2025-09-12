@@ -14,14 +14,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
 
     $data = json_decode(file_get_contents("php://input"), true);
-
     $equipment_id = $data['equipment_id'] ?? null;
     $user_id = $data['user_id'] ?? null;
     $remark = $data['remark'] ?? '';
     $title = $data['title'] ?? '';
     $request_date = $data['request_date'] ;
     $location = $data['location'] ?? '';
-    $status = $data['status'] ?? 'pending';
+    $status = $data['status'] ?? 'รอดำเนินการ';
     $repair_type_id = $data['repair_type_id'] ?? null;
 
     if (!$equipment_id || !$user_id || !$repair_type_id) {
