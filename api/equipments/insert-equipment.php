@@ -1,15 +1,20 @@
 <?php
 include "../config/jwt.php";
 
-// path สำหรับบันทึกไฟล์
-$uploadDirectory = 'C:/xampp/htdocs/back_equip/uploads/';
+// กำหนด path สำหรับบันทึกไฟล์ที่อัปโหลด
+// **สำคัญ:** แก้ไข path นี้ให้ตรงกับ server ของคุณ
+$uploadDirectory = 'C:\xampp\htdocs\back_equip\uploads'; 
+// กำหนด URL สำหรับไฟล์ที่บันทึก
 $baseUrl = 'http://localhost/back_equip/uploads/'; 
 
+// ตรวจสอบว่า request ที่ส่งมาเป็น JSON หรือไม่
+// ถ้าเป็น JSON จะใช้ $input แต่ถ้ามีการอัปโหลดไฟล์จะใช้ $_POST และ $_FILES
 $isJsonRequest = (strpos(strtolower(getenv("CONTENT_TYPE")), 'application/json') !== false);
 
 if ($isJsonRequest) {
     $input = json_decode(file_get_contents('php://input'), true);
 } else {
+    // กรณีเป็น multipart/form-data (อัปโหลดไฟล์)
     $input = $_POST;
 }
 
@@ -18,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// field จำเป็น
+// ตรวจ field จำเป็น
 $requiredFields = ['name', 'asset_code', 'updated_by'];
 foreach ($requiredFields as $f) {
     if (empty($input[$f])) {
@@ -51,7 +56,7 @@ try {
         }
     }
 
-    // warranty_duration_days
+    // คำนวณ warranty_duration_days
     if (!empty($input['start_date']) && !empty($input['end_date'])) {
         $start_date = new DateTime($input['start_date']);
         $end_date = new DateTime($input['end_date']);
@@ -61,21 +66,40 @@ try {
         $input['warranty_duration_days'] = null;
     }
 
-    // record_status
+    // ตรวจ record_status
     $validStatuses = ['draft', 'complete'];
     if (empty($input['record_status'])) {
-        $input['record_status'] = 'complete'; 
+        $input['record_status'] = 'complete'; // default
     } elseif (!in_array($input['record_status'], $validStatuses)) {
         throw new Exception("Invalid record_status, allowed values: draft, complete");
     }
-
     $allFields = [
-        'name','brand','asset_code','model','serial_number',
-        'import_type_id','subcategory_id','location_department_id','location_details',
-        'manufacturer_company_id','supplier_company_id','maintainer_company_id',
-        'spec','production_year','price','contract','start_date','end_date',
-        'warranty_duration_days','warranty_condition','user_id','updated_by',
-        'record_status','status','active','first_register'
+        'name',
+        'brand',
+        'asset_code',
+        'model',
+        'serial_number',
+        'import_type_id',
+        'subcategory_id',
+        'location_department_id',
+        'location_details',
+        'manufacturer_company_id',
+        'supplier_company_id',
+        'maintainer_company_id',
+        'spec',
+        'production_year',
+        'price',
+        'contract',
+        'start_date',
+        'end_date',
+        'warranty_duration_days',
+        'warranty_condition',
+        'user_id',
+        'updated_by',
+        'record_status',
+        'status',
+        'active',
+        'first_register'
     ];
 
     $cols = [];
@@ -84,6 +108,7 @@ try {
     foreach ($allFields as $f) {
         $cols[] = $f;
         $placeholders[] = ":$f";
+        // ถ้า active เป็น null ให้ default = 1
         if ($f === 'active' && !isset($input['active'])) {
             $values[":$f"] = 1;
         } else {
@@ -120,47 +145,64 @@ try {
         }
     }
 
-    // ------------------ Upload Files ------------------
+    // โค้ดที่แก้ไขและปรับปรุงใหม่เพื่อบันทึกไฟล์ทั้งหมด
     $fileTypes = [
         'contractFiles' => 'เอกสารสัญญา',
         'warrantyFiles' => 'เอกสาร Warranty',
-        'manualFiles'   => 'คู่มือ',
-        'deviceImages'  => 'รูปภาพเครื่อง',
+        'manualFiles' => 'คู่มือ',
+        'deviceImages' => 'รูปภาพเครื่อง',
     ];
 
-    foreach ($fileTypes as $fieldKey => $typeName) {
-        if (isset($_FILES[$fieldKey])) {
-            // multiple files
-            $fileArray = $_FILES[$fieldKey];
-            for ($i = 0; $i < count($fileArray['name']); $i++) {
-                if ($fileArray['error'][$i] === UPLOAD_ERR_OK) {
-                    $originalName = basename($fileArray['name'][$i]);
-                    $newFileName  = uniqid() . '-' . $originalName;
-                    $destination  = $uploadDirectory . $newFileName;
+    // บันทึกไฟล์และ URL
+    foreach ($fileTypes as $payloadKey => $dbTypeName) {
+        $fileInputName = str_replace('Files', 'File', $payloadKey);
+        $fileInputName = str_replace('Images', 'Image', $fileInputName);
 
-                    if (move_uploaded_file($fileArray['tmp_name'][$i], $destination)) {
-                        $fileUrl = $baseUrl . $newFileName;
-                        $stmt = $dbh->prepare("INSERT INTO file_equip (file_equip_name, equipment_id, equip_url, equip_type_name, upload_at) VALUES (:file_name, :eq_id, :equip_url, :type_name, NOW())");
-                        $stmt->execute([
-                            ':file_name' => $originalName,
-                            ':eq_id'     => $equipment_id,
-                            ':equip_url' => $fileUrl,
-                            ':type_name' => $typeName
-                        ]);
-                    }
+        // กรณีมีการอัปโหลดไฟล์จริงจากเครื่อง
+        if (isset($_FILES[$fileInputName])) {
+            $file = $_FILES[$fileInputName];
+            if ($file['error'] === UPLOAD_ERR_OK) {
+                $fileName = basename($file['name']);
+                $newFileName = uniqid() . '-' . $fileName;
+                $destination = $uploadDirectory . $newFileName;
+                
+                if (move_uploaded_file($file['tmp_name'], $destination)) {
+                    $fileUrl = $baseUrl . $newFileName;
+                    $stmt = $dbh->prepare("INSERT INTO file_equip (equipment_id, file_equip_name, equip_url, equip_type_name, upload_at) VALUES (:eq_id, :file_name, :equip_url, :type_name, NOW())");
+                    $stmt->execute([
+                        ':eq_id' => $equipment_id,
+                        ':file_name' => $fileName,
+                        ':equip_url' => $fileUrl,
+                        ':type_name' => $dbTypeName
+                    ]);
+                }
+            }
+        }
+        
+        // กรณีเป็นการส่ง URL จากภายนอก (ผ่าน JSON Payload)
+        if (isset($input[$payloadKey]['fileNames']) && is_array($input[$payloadKey]['fileNames'])) {
+            foreach ($input[$payloadKey]['fileNames'] as $fileName) {
+                if (!empty($fileName)) {
+                    $stmt = $dbh->prepare("INSERT INTO file_equip (equipment_id, file_equip_name, equip_url, equip_type_name, upload_at) VALUES (:eq_id, :file_name, :equip_url, :type_name, NOW())");
+                    $stmt->execute([
+                        ':eq_id' => $equipment_id,
+                        ':file_name' => $fileName,
+                        ':equip_url' => '', // กรณีไม่มี URL
+                        ':type_name' => $dbTypeName
+                    ]);
                 }
             }
         }
     }
 
-    // ------------------ URL จากภายนอก ------------------
+    // บันทึก URL รูปภาพอุปกรณ์แยกต่างหากจาก Payload
     if (!empty($input['deviceImageUrls']) && is_array($input['deviceImageUrls'])) {
         foreach ($input['deviceImageUrls'] as $url) {
             if (!empty($url)) {
-                $stmt = $dbh->prepare("INSERT INTO file_equip (file_equip_name, equipment_id, equip_url, equip_type_name, upload_at) VALUES (:file_name, :eq_id, :equip_url, :type_name, NOW())");
+                $stmt = $dbh->prepare("INSERT INTO file_equip (equipment_id, file_equip_name, equip_url, equip_type_name, upload_at) VALUES (:eq_id, :file_name, :equip_url, :type_name, NOW())");
                 $stmt->execute([
+                    ':eq_id' => $equipment_id,
                     ':file_name' => basename($url),
-                    ':eq_id'     => $equipment_id,
                     ':equip_url' => $url,
                     ':type_name' => 'รูปภาพเครื่อง'
                 ]);

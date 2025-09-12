@@ -17,7 +17,8 @@ try {
 
     $equipment_id = $data['equipment_id'] ?? null;
     $user_id = $data['user_id'] ?? null;
-    $symptom = $data['symptom'] ?? '';
+    $remark = $data['remark'] ?? '';
+    $title = $data['title'] ?? '';
     $request_date = $data['request_date'] ;
     $location = $data['location'] ?? '';
     $status = $data['status'] ?? 'pending';
@@ -29,14 +30,15 @@ try {
     }
 
     $query = "INSERT INTO repair 
-                (equipment_id, user_id, symptom, request_date, location, status, repair_type_id) 
+                (equipment_id, user_id, remark,title, request_date, location, status, repair_type_id) 
               VALUES 
-                (:equipment_id, :user_id, :symptom, :request_date, :location, :status, :repair_type_id)";
+                (:equipment_id, :user_id, :remark, :title,  :request_date, :location, :status, :repair_type_id)";
 
     $stmt = $dbh->prepare($query);
     $stmt->bindParam(':equipment_id', $equipment_id);
     $stmt->bindParam(':user_id', $user_id);
-    $stmt->bindParam(':symptom', $symptom);
+    $stmt->bindParam(':remark', $remark);
+    $stmt->bindParam(':title', $title);
     $stmt->bindParam(':request_date', $request_date);
     $stmt->bindParam(':location', $location);
     $stmt->bindParam(':status', $status);
