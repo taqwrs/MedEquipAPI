@@ -21,7 +21,7 @@ try {
 
     $repair_id = intval($data["repair_id"]);
 
-    // ================== ข้อมูลการแจ้งซ่อม ==================
+
     $sql = "SELECT r.*, e.name AS equipment_name, e.location_details, 
                    u.full_name AS user_name,
                    rt.name_type AS repair_type_name,
@@ -41,7 +41,6 @@ try {
         exit;
     }
 
-    // ================== ข้อมูลผลการซ่อม + อะไหล่ ==================
     $sql2 = "SELECT rr.*, sp.spare_part_id, sp.name AS spare_name
              FROM repair_result rr
              LEFT JOIN spare_parts sp ON sp.spare_part_id = rr.spare_part_id
