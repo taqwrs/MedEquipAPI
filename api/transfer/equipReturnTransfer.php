@@ -1,4 +1,5 @@
 <?php
+// equipReturnTransfer.php
 include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
@@ -136,15 +137,26 @@ try {
     }
     
     // 6. อัปเดต equipment_transfers เพื่อทำเครื่องหมายว่าได้ทำการโอนคืนแล้ว
-    // เพิ่มคอลัมน์ returned_date และ returned_by หากต้องการติดตาม
     $updateTransfer = $dbh->prepare("
         UPDATE equipment_transfers 
-        SET reason = CONCAT(IFNULL(reason, ''), ' [RETURNED: ', NOW(), ']')
+        SET status = 1,
+            returned_date = NOW(),
+            reason = CONCAT(IFNULL(reason, ''), ' [RETURNED: ', NOW(), ']')
         WHERE transfer_id = :transfer_id
     ");
     $updateTransfer->bindParam(':transfer_id', $input['transfer_id'], PDO::PARAM_INT);
-    $updateTransfer->execute();
-    
+    if (!$updateTransfer->execute()) {
+        $dbh->rollBack();
+        echo json_encode(["status" => "error", "message" => "Failed to update transfer status"]);
+        exit;
+    }
+
+    // ดึงค่า returned_date กลับมาเพื่อตอบ response
+    $getReturned = $dbh->prepare("SELECT returned_date FROM equipment_transfers WHERE transfer_id = :transfer_id");
+    $getReturned->bindParam(':transfer_id', $input['transfer_id'], PDO::PARAM_INT);
+    $getReturned->execute();
+    $returnedData = $getReturned->fetch(PDO::FETCH_ASSOC);
+
     // รีเซ็ต location กลับเป็นค่าเดิม (ถ้าต้องการ)
     if (isset($input['reset_location']) && $input['reset_location'] === true) {
         $resetLocation = $dbh->prepare("
@@ -166,7 +178,8 @@ try {
         "returned_to_subcategory_id" => (int)$transfer['old_subcategory_id'],
         "deleted_subcategory_id" => (int)$transfer['new_subcategory_id'],
         "deleted_temp_groups" => count($tempGroups),
-        "asset_code" => $transfer['asset_code']
+        "asset_code" => $transfer['asset_code'],
+        "returned_date" => $returnedData['returned_date']
     ]);
 
 } catch (Exception $e) {
