@@ -11,7 +11,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $dbh->beginTransaction();
-    $userId = $decoded->user_id ?? null;
+
+    // --- user_id จาก JWT หรือ fallback เป็น 1 ---
+    $userId = $decoded->user_id ?? 1;
 
     $requiredFields = ['name','asset_code'];
     $allFields = [
@@ -34,19 +36,19 @@ try {
         'deviceImages'=>'รูปภาพเครื่อง'
     ];
 
-    // check required
+    // --- ตรวจ required ---
     foreach($requiredFields as $f){
         if(empty($_POST[$f])) throw new Exception("Missing field: $f");
     }
 
-    // calc warranty
+    // --- คำนวณ warranty ---
     if(!empty($_POST['start_date']) && !empty($_POST['end_date'])){
         $start=new DateTime($_POST['start_date']);
         $end=new DateTime($_POST['end_date']);
         $_POST['warranty_duration_days']=$start->diff($end)->days;
     } else $_POST['warranty_duration_days']=null;
 
-    // insert equipments
+    // --- เตรียม insert ---
     $cols=[]; $placeholders=[]; $values=[];
     foreach($allFields as $f){
         if($f==='first_register'){ $cols[]=$f; $placeholders[]='NOW()'; continue;}
@@ -54,11 +56,12 @@ try {
         if($f==='active' && !isset($_POST['active'])) $values[":$f"]=1;
         elseif($f==='status' && !isset($_POST['status'])) $values[":$f"]='ใช้งาน';
         elseif($f==='record_status' && !isset($_POST['record_status'])) $values[":$f"]='complete';
-        elseif($f==='user_id'||$f==='updated_by') $values[":$f"]=$_POST[$f]??$userId;
-        else $values[":$f"]=$_POST[$f]??null;
+        elseif($f==='user_id'||$f==='updated_by') $values[":$f"]=$_POST[$f] ?? $userId;
+        else $values[":$f"]=$_POST[$f] ?? null;
     }
     $cols[]='updated_at'; $placeholders[]='NOW()';
 
+    // --- Execute insert ---
     $sql="INSERT INTO equipments(".implode(',',$cols).") VALUES(".implode(',',$placeholders).")";
     $stmt=$dbh->prepare($sql);
     foreach($values as $k=>$v) $stmt->bindValue($k,$v);
@@ -70,11 +73,9 @@ try {
         if(!empty($_POST[$relKey])){
             $arr = $_POST[$relKey];
             if(is_string($arr)) $arr=json_decode($arr,true);
-
             if(is_array($arr) && isset($arr[0]) && !is_array($arr[0])){
                 $arr = array_map(fn($id)=>[$relConfig['idField']=>$id], $arr);
             }
-
             foreach($arr as $item){
                 if(!empty($item[$relConfig['idField']])){
                     $stmt=$dbh->prepare("UPDATE {$relConfig['table']} 
@@ -88,7 +89,6 @@ try {
 
     // --- Files: upload และ URL ---
     foreach($fileTypes as $payloadKey=>$typeName){
-        // upload new files
         if(isset($_FILES[$payloadKey])){
             foreach($_FILES[$payloadKey]['name'] as $i=>$name){
                 if($_FILES[$payloadKey]['error'][$i]===UPLOAD_ERR_OK){
@@ -104,7 +104,6 @@ try {
             }
         }
 
-        // url references
         $urlField = $payloadKey.'Urls';
         if(!empty($_POST[$urlField])){
             $urls = $_POST[$urlField];

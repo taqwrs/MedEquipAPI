@@ -7,20 +7,13 @@ header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(["status" => "error", "message" => "POST method required"]);
+    echo json_encode(["success" => false, "message" => "POST method required"]);
     exit;
 }
 
 try {
     $data = json_decode(file_get_contents("php://input"), true);
-
     $repair_id = $data['repair_id'] ?? null;
-    $equipment_id = $data['equipment_id'] ?? null;
-    $remark = $data['remark'] ?? null;
-    $title = $data['title'] ?? null;
-    $location = $data['location'] ?? null;
-    $status = $data['status'] ?? null;
-    $repair_type_id = $data['repair_type_id'] ?? null;
 
     if (!$repair_id) {
         echo json_encode(["success" => false, "message" => "Missing repair_id"]);
@@ -28,48 +21,64 @@ try {
     }
 
 
+    $updatableFields = ['equipment_id', 'remark', 'title', 'location', 'status', 'repair_type_id'];
     $fields = [];
     $params = [':repair_id' => $repair_id];
 
-    if ($equipment_id !== null) {
-        $fields[] = "equipment_id = :equipment_id";
-        $params[':equipment_id'] = $equipment_id;
-    }
-    if ($remark !== null) {
-        $fields[] = "remark = :remark";
-        $params[':remark'] = $remark;
-    }
-       if ($title !== null) {
-        $fields[] = "title = :title";
-        $params[':title'] = $title;
-    }
-    if ($location !== null) {
-        $fields[] = "location = :location";
-        $params[':location'] = $location;
-    }
-    if ($status !== null) {
-        $fields[] = "status = :status";
-        $params[':status'] = $status;
-    }
-    if ($repair_type_id !== null) {
-        $fields[] = "repair_type_id = :repair_type_id";
-        $params[':repair_type_id'] = $repair_type_id;
+    foreach ($updatableFields as $field) {
+        if (isset($data[$field])) {
+            $fields[] = "$field = :$field";
+            $params[":$field"] = $data[$field];
+        }
     }
 
-    if (empty($fields)) {
-        echo json_encode(["success" => false, "message" => "No fields to update"]);
+    if (!empty($fields)) {
+
+        $query = "UPDATE repair SET " . implode(", ", $fields) . " WHERE repair_id = :repair_id";
+        $stmt = $dbh->prepare($query);
+        $stmt->execute($params);
+
+        echo json_encode([
+            "success" => true,
+            "message" => "Repair updated successfully"
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
-    $query = "UPDATE repair SET " . implode(", ", $fields) . " WHERE repair_id = :repair_id";
+    $query = "SELECT 
+        r.repair_id,
+        r.equipment_id,
+        e.name AS equipment_name,
+        e.asset_code,
+        r.title,
+        r.remark,
+        r.request_date,
+        r.location,
+        r.status AS repair_status,
+        u_reporter.full_name AS reporter,
+        rt.repair_type_id,                
+        rt.name_type AS repair_type,
+        gu.group_user_id,                 
+        gu.group_name AS responsible_group
+    FROM repair r
+    LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
+    LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
+    LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
+    LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
+    WHERE r.repair_id = :repair_id";
+
     $stmt = $dbh->prepare($query);
+    $stmt->execute([':repair_id' => $repair_id]);
+    $repair = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    $stmt->execute($params);
-
-    echo json_encode([
-        "success" => true,
-        "message" => "Repair updated successfully"
-    ], JSON_UNESCAPED_UNICODE);
+    if ($repair) {
+        echo json_encode([
+            "success" => true,
+            "data" => $repair
+        ], JSON_UNESCAPED_UNICODE);
+    } else {
+        echo json_encode(["success" => false, "message" => "Repair not found"]);
+    }
 
 } catch (Exception $e) {
     echo json_encode([
@@ -77,4 +86,3 @@ try {
         "message" => $e->getMessage()
     ]);
 }
-?>

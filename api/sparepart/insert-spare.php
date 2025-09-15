@@ -22,16 +22,17 @@ try {
         'supplier_company_id'=>['companies','company_id'],
         'maintainer_company_id'=>['companies','company_id'],
         'location_department_id'=>['departments','department_id'],
-        'spare_subcate_id'=>['spare_subcategories','spare_subcategory_id'],
+        'spare_subcategory_id'=>['spare_subcategories','spare_subcategory_id'],
         'import_type_id'=>['import_types','import_type_id']
     ];
     $allFields = [
-        'name','brand','asset_code','model','serial_number','spec',
-        'import_type_id','spare_subcate_id','location_department_id','location_details',
-        'production_year','price','contract','start_date','end_date','warranty_duration_days',
-        'warranty_condition','maintainer_company_id','supplier_company_id','manufacturer_company_id',
-        'record_status','status','active','user_id','updated_by','first_register'
-    ];
+    'name','brand','asset_code','model','serial_number','spec',
+    'import_type_id','spare_subcategory_id','location_department_id','location_details',
+    'production_year','price','contract','start_date','end_date','warranty_duration_days',
+    'warranty_condition','maintainer_company_id','supplier_company_id','manufacturer_company_id',
+    'record_status','status','active','user_id','updated_by','first_register'
+];
+
     $fileTypes = [
         'contractFiles'=>'เอกสารสัญญา',
         'warrantyFiles'=>'เอกสาร Warranty',

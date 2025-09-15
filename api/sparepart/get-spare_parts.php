@@ -56,7 +56,7 @@ SELECT
     ) AS filesInfo
 FROM spare_parts sp
 LEFT JOIN import_types it ON it.import_type_id = sp.import_type_id
-LEFT JOIN spare_subcategories sc ON sc.spare_subcategory_id = sp.spare_subcate_id
+LEFT JOIN spare_subcategories sc ON sc.spare_subcategory_id = sp.spare_subcategory_id
 LEFT JOIN departments d ON d.department_id = sp.location_department_id
 LEFT JOIN companies mc ON mc.company_id = sp.manufacturer_company_id
 LEFT JOIN companies scp ON scp.company_id = sp.supplier_company_id
@@ -69,7 +69,7 @@ LEFT JOIN (
     JOIN group_user gu ON gu.group_user_id = rg.group_user_id
     WHERE gu.type = 'ผู้ใช้งาน'
     GROUP BY rg.subcategory_id
-) rg_user ON rg_user.subcategory_id = sp.spare_subcate_id
+) rg_user ON rg_user.subcategory_id = sp.spare_subcategory_id
 LEFT JOIN group_user gu1 ON gu1.group_user_id = rg_user.group_user_id
 
 -- relation_group สำหรับผู้ดูแลหลัก
@@ -79,7 +79,7 @@ LEFT JOIN (
     JOIN group_user gu ON gu.group_user_id = rg.group_user_id
     WHERE gu.type = 'ผู้ดูแลหลัก'
     GROUP BY rg.subcategory_id
-) rg_responsible ON rg_responsible.subcategory_id = sp.spare_subcate_id
+) rg_responsible ON rg_responsible.subcategory_id = sp.spare_subcategory_id
 LEFT JOIN group_user gu2 ON gu2.group_user_id = rg_responsible.group_user_id
 
 -- ใช้ users.ID แทน user_id

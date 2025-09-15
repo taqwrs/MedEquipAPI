@@ -47,12 +47,11 @@ if (!in_array((int) $input['frequency_unit'], $allowed_frequency_unit)) {
 try {
     $dbh->beginTransaction();
 
-    // คำนวณ interval
+
     $startDate = new DateTime($input['start_date']);
     $endDate = new DateTime($input['end_date']);
     $intervalNumber = (int) $input['frequency_number'];
     $intervalUnit = (int) $input['frequency_unit'];
-
     $intervalCount = 0;
     $tempDate = clone $startDate;
     while ($tempDate <= $endDate) {

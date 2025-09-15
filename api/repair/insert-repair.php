@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-
+    $dbh->beginTransaction();
     $data = json_decode(file_get_contents("php://input"), true);
     $equipment_id = $data['equipment_id'] ?? null;
     $user_id = $data['user_id'] ?? null;
@@ -52,10 +52,10 @@ try {
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
-    echo json_encode([
-        "success" => false,
-        "message" => $e->getMessage()
-    ]);
+    if ($dbh->inTransaction())
+        $dbh->rollBack();
+    
+    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
 ?>
 
