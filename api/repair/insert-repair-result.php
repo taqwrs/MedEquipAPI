@@ -1,28 +1,34 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit(); }
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
 
 try {
     $repair_id      = $_POST['repair_id'] ?? null;
     $performed_date = $_POST['performed_date'] ?? null;
     $solution       = $_POST['solution'] ?? null;
     $cost           = $_POST['cost'] ?? null;
-    $status         = $_POST['status'] ?? null;
-    $remark           = $_POST['remark'] ?? null;
+    $status         = $_POST['status'] ?? null; 
+    $remark         = $_POST['remark'] ?? null;
     $spareParts     = $_POST['spareParts'] ?? [];
 
     if (!$repair_id || !$performed_date || !$solution || $cost === null || !$status) {
         throw new Exception("ข้อมูลไม่ครบถ้วน");
     }
 
+    $user_id = $_POST['user_id'] ?? null;
+    if (!$user_id) throw new Exception("ไม่พบ user_id");
+
     $dbh->beginTransaction();
 
-    // Insert repair_result
+
     $stmt = $dbh->prepare("
         INSERT INTO repair_result
         (repair_id, user_id, performed_date, solution, cost, status, remark)
@@ -35,11 +41,10 @@ try {
         ':solution'       => $solution,
         ':cost'           => $cost,
         ':status'         => $status,
-        ':remark'           => $remark,
+        ':remark'         => $remark,
     ]);
     $repair_result_id = $dbh->lastInsertId();
 
-    // Insert spare parts
     if (!empty($spareParts)) {
         $stmt_spare = $dbh->prepare("
             INSERT INTO spare_parts_used (repair_result_id, spare_part_id)
@@ -55,15 +60,15 @@ try {
         }
     }
 
-    // Upload files
+
     if (!empty($_FILES['files']['name'][0])) {
         $uploadDir = "uploads/repair_files/";
         if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
 
         $stmt_file = $dbh->prepare("
             INSERT INTO file_repair_result
-            (repair_log_id, repair_file_name, repair_file_url, repair_type_name)
-            VALUES (:repair_log_id, :repair_file_name, :repair_file_url, :repair_type_name)
+            (repair_result_id, repair_file_name, repair_file_url, repair_type_name)
+            VALUES (:repair_result_id, :repair_file_name, :repair_file_url, :repair_type_name)
         ");
 
         foreach ($_FILES['files']['name'] as $key => $name) {
@@ -74,7 +79,7 @@ try {
 
             if (move_uploaded_file($tmpName, $targetPath)) {
                 $stmt_file->execute([
-                    ':repair_log_id'    => $repair_result_id,
+                    ':repair_result_id'    => $repair_result_id,
                     ':repair_file_name' => $name,
                     ':repair_file_url'  => $targetPath,
                     ':repair_type_name' => "ไฟล์ซ่อม"
@@ -83,6 +88,9 @@ try {
         }
     }
 
+    $stmtUpdate = $dbh->prepare("UPDATE repair SET status = 'เสร็จสิ้น' WHERE repair_id = :repair_id");
+    $stmtUpdate->execute([':repair_id' => $repair_id]);
+
     $dbh->commit();
 
     echo json_encode([
@@ -90,9 +98,9 @@ try {
         "message" => "บันทึกผลการซ่อมเรียบร้อย",
         "repair_result_id" => $repair_result_id
     ]);
-
 } catch (Exception $e) {
-    if ($dbh->inTransaction()) $dbh->rollBack();
+    if ($dbh->inTransaction()) 
+        $dbh->rollBack();
     echo json_encode([
         "status" => "error",
         "message" => $e->getMessage()
