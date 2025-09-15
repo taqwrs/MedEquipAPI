@@ -73,7 +73,7 @@ try {
         exit;
     }
 
-    // ดึงข้อมูลจาก history_transfer สำหรับข้อ 2.7.7
+    // ข้อ 2.7.7 & 2.7.11: ดึงข้อมูลจาก history_transfer ที่ status_transfer = 0
     $getHistory = $dbh->prepare("
         SELECT trans_location_department_id, trans_location_details, old_equip_location_details
         FROM history_transfer 
@@ -159,17 +159,18 @@ try {
     }
     
     // ข้อ 2.7.5, 2.7.6, 2.7.7: อัปเดต equipment_transfers
+    // รวมข้อ 2.7.7 ที่ต้องอัปเดต location_department_id กับ location_details จาก history_transfer
     $updateTransferSQL = "
         UPDATE equipment_transfers 
         SET status = 1,
             returned_date = NOW(),
             now_subcategory_id = :old_subcategory_id";
     
-    // ข้อ 2.7.7: อัปเดต location จาก history_transfer
-    if ($historyData) {
+    // ข้อ 2.7.7: อัปเดต location จาก old_location_department_id ใน history_transfer และ old_equip_location_details ใน history_transfer
+    if ($historyData && $historyData['trans_location_department_id']) {
         $updateTransferSQL .= ",
-            location_department_id = :trans_location_department_id,
-            location_details = :trans_location_details";
+            location_department_id = :old_location_department_id,
+            location_details = :old_equip_location_details";
     }
     
     $updateTransferSQL .= " WHERE transfer_id = :transfer_id";
@@ -178,9 +179,9 @@ try {
     $updateTransfer->bindParam(':old_subcategory_id', $transfer['old_subcategory_id'], PDO::PARAM_INT);
     $updateTransfer->bindParam(':transfer_id', $input['transfer_id'], PDO::PARAM_INT);
     
-    if ($historyData) {
-        $updateTransfer->bindParam(':trans_location_department_id', $historyData['trans_location_department_id'], PDO::PARAM_INT);
-        $updateTransfer->bindParam(':trans_location_details', $historyData['trans_location_details']);
+    if ($historyData && $historyData['trans_location_department_id']) {
+        $updateTransfer->bindParam(':old_location_department_id', $historyData['trans_location_department_id'], PDO::PARAM_INT);
+        $updateTransfer->bindParam(':old_equip_location_details', $historyData['old_equip_location_details']);
     }
     
     if (!$updateTransfer->execute()) {
@@ -199,16 +200,17 @@ try {
     $getUpdatedTransfer->execute();
     $updatedTransfer = $getUpdatedTransfer->fetch(PDO::FETCH_ASSOC);
 
-    // ข้อ 2.7.8: อัปเดต location ใน equipment table
-    if ($historyData) {
+    // ข้อ 2.7.8: อัปเดต location_details กับ location_department_id ใน equipment table
+    // ใช้ข้อมูลจาก location_department_id และ location_details ใน equipment_transfers ที่อัปเดตแล้วในข้อ 2.7.7
+    if ($historyData && $historyData['trans_location_department_id']) {
         $updateEquipLocation = $dbh->prepare("
             UPDATE equipments 
             SET location_department_id = :location_department_id,
                 location_details = :location_details
             WHERE equipment_id = :equipment_id
         ");
-        $updateEquipLocation->bindParam(':location_department_id', $historyData['trans_location_department_id'], PDO::PARAM_INT);
-        $updateEquipLocation->bindParam(':location_details', $historyData['trans_location_details']);
+        $updateEquipLocation->bindParam(':location_department_id', $updatedTransfer['location_department_id'], PDO::PARAM_INT);
+        $updateEquipLocation->bindParam(':location_details', $updatedTransfer['location_details']);
         $updateEquipLocation->bindParam(':equipment_id', $transfer['equipment_id'], PDO::PARAM_INT);
         
         if (!$updateEquipLocation->execute()) {
@@ -266,7 +268,7 @@ try {
     $insertHistory->bindParam(':transfer_user_id', $transfer['transfer_user_id'], PDO::PARAM_INT);
     $insertHistory->bindParam(':recipient_user_id', $transfer['recipient_user_id'], PDO::PARAM_INT);
     
-    // ใช้ข้อมูลจาก history เดิม หรือ NULL ถ้าไม่มี
+    // ข้อ 2.7.11: ดึงข้อมูลจาก history_transfer ที่ transfer_id เดียวกันและ status_transfer = 0
     $transLocDeptId = $historyData ? $historyData['trans_location_department_id'] : null;
     $transLocDetails = $historyData ? $historyData['trans_location_details'] : null;
     $oldEquipLocDetails = $historyData ? $historyData['old_equip_location_details'] : null;
@@ -275,11 +277,16 @@ try {
     $insertHistory->bindParam(':trans_location_details', $transLocDetails);
     $insertHistory->bindParam(':old_subcategory_id', $transfer['old_subcategory_id'], PDO::PARAM_INT);
     $insertHistory->bindParam(':new_subcategory_id', $transfer['new_subcategory_id'], PDO::PARAM_INT);
+    
+    // ข้อ 2.7.11: now_equip_location_department_id และ now_equip_location_details ดึงจากข้อ 2.7.7 เมื่อทำเสร็จ
     $insertHistory->bindParam(':now_equip_location_department_id', $updatedTransfer['location_department_id'], PDO::PARAM_INT);
     $insertHistory->bindParam(':now_equip_location_details', $updatedTransfer['location_details']);
+    
     $insertHistory->bindParam(':returned_date', $updatedTransfer['returned_date']);
     $insertHistory->bindParam(':old_location_department_id', $transfer['old_location_department_id'], PDO::PARAM_INT);
     $insertHistory->bindParam(':now_subcategory_id', $updatedTransfer['now_subcategory_id'], PDO::PARAM_INT);
+    
+    // ข้อ 2.7.11: old_equip_location_details ดึงจาก history_transfer ที่ transfer_id เดียวกันและ status_transfer = 0
     $insertHistory->bindParam(':old_equip_location_details', $oldEquipLocDetails);
     $insertHistory->bindValue(':status_transfer', 1, PDO::PARAM_INT); // status = 1 เพราะเป็นการโอนคืน
     
@@ -301,8 +308,8 @@ try {
         "deleted_temp_groups" => count($tempGroups),
         "asset_code" => $transfer['asset_code'],
         "returned_date" => $updatedTransfer['returned_date'],
-        "updated_location_department_id" => $historyData ? $historyData['trans_location_department_id'] : null,
-        "updated_location_details" => $historyData ? $historyData['trans_location_details'] : null,
+        "updated_location_department_id" => $updatedTransfer['location_department_id'],
+        "updated_location_details" => $updatedTransfer['location_details'],
         "transfer_status" => 1, // โอนคืนแล้ว
         "now_subcategory_id" => (int)$updatedTransfer['now_subcategory_id']
     ]);
