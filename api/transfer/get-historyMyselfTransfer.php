@@ -103,7 +103,13 @@ try {
                 "user_id" => $user_info['user_id'],
                 "user_name" => $user_info['full_name'],
                 "โอนย้ายชั่วคราว" => [],
-                "โอนย้ายถาวร" => []
+                "โอนย้ายถาวร" => [],
+                "summary" => [
+                    "โอนย้ายถาวร_ผู้โอน" => 0,
+                    "โอนย้ายถาวร_ผู้รับ" => 0,
+                    "โอนย้ายชั่วคราว_ผู้โอน" => 0,
+                    "โอนย้ายชั่วคราว_ผู้รับ" => 0
+                ]
             ]
         ], JSON_UNESCAPED_UNICODE);
         exit;
@@ -111,6 +117,12 @@ try {
 
     $temporary_transfers = [];
     $permanent_transfers = [];
+
+    // ตัวนับ
+    $count_permanent_sender = 0;
+    $count_permanent_recipient = 0;
+    $count_temporary_sender = 0;
+    $count_temporary_recipient = 0;
 
     foreach ($transfers as $transfer) {
         $is_sender = ($transfer['transfer_user_id'] == $u_id);
@@ -146,8 +158,18 @@ try {
 
         if ($transfer['transfer_type'] == 'โอนย้ายชั่วคราว') {
             $temporary_transfers[] = $transfer_item;
+            if ($is_sender) {
+                $count_temporary_sender++;
+            } else {
+                $count_temporary_recipient++;
+            }
         } else if ($transfer['transfer_type'] == 'โอนย้ายถาวร') {
             $permanent_transfers[] = $transfer_item;
+            if ($is_sender) {
+                $count_permanent_sender++;
+            } else {
+                $count_permanent_recipient++;
+            }
         }
     }
 
@@ -156,7 +178,13 @@ try {
         "user_id" => $user_info['user_id'],
         "user_name" => $user_info['full_name'],
         "โอนย้ายชั่วคราว" => $temporary_transfers,
-        "โอนย้ายถาวร" => $permanent_transfers
+        "โอนย้ายถาวร" => $permanent_transfers,
+        "summary" => [
+            "โอนย้ายถาวร_ผู้โอน" => $count_permanent_sender,
+            "โอนย้ายถาวร_ผู้รับ" => $count_permanent_recipient,
+            "โอนย้ายชั่วคราว_ผู้โอน" => $count_temporary_sender,
+            "โอนย้ายชั่วคราว_ผู้รับ" => $count_temporary_recipient
+        ]
     ];
 
     echo json_encode([
