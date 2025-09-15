@@ -1,6 +1,6 @@
 <?php
 include "../config/jwt.php";
-//เครื่องมือที่อยู่ในความรับผิดชอบของผู้ดูแลหลัก
+//เครื่องมือที่สิทธิ์โอนย้ายจริงๆ คือไม่ได้โอนย้ายไปในใคร 
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -37,29 +37,51 @@ try {
     
     // Query หาเครื่องมือที่ user มีสิทธิ์โอนย้าย
     // โดยต้องเป็น ผู้ดูแลหลัก และ equipment ต้อง active = 1
+    // และตรวจสอบสถานะใน equipment_transfers ด้วย
     $sql = "
         SELECT DISTINCT
             e.equipment_id,
             e.name,
             e.asset_code,
+            e.brand,
+            e.model,
+            e.serial_number,
             e.subcategory_id,
             es.name as subcategory_name,
             e.location_department_id,
             e.location_details,
-            e.brand,
-            e.model,
-            e.serial_number,
             e.status,
-            d.department_name as location_department_name
+            e.spec,
+            e.production_year,
+            e.price,
+            d.department_name as location_department_name,
+            CASE 
+                WHEN et.equipment_id IS NULL THEN 'available'
+                WHEN et.status != 0 THEN 'available'
+                ELSE 'in_transfer'
+            END as transfer_status
         FROM equipments e
         INNER JOIN equipment_subcategories es ON e.subcategory_id = es.subcategory_id
         INNER JOIN relation_group rg ON es.subcategory_id = rg.subcategory_id
         INNER JOIN group_user gu ON rg.group_user_id = gu.group_user_id
         INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
         LEFT JOIN departments d ON e.location_department_id = d.department_id
+        LEFT JOIN (
+            SELECT equipment_id, status
+            FROM equipment_transfers et1
+            WHERE et1.transfer_id = (
+                SELECT MAX(et2.transfer_id)
+                FROM equipment_transfers et2
+                WHERE et2.equipment_id = et1.equipment_id
+            )
+        ) et ON e.equipment_id = et.equipment_id
         WHERE ru.u_id = :u_id 
         AND gu.type = 'ผู้ดูแลหลัก'
         AND e.active = 1
+        AND (
+            et.equipment_id IS NULL 
+            OR et.status != 0
+        )
         ORDER BY e.asset_code ASC
     ";
     
@@ -76,22 +98,26 @@ try {
             "equipment_id" => (int)$equipment['equipment_id'],
             "name" => $equipment['name'],
             "asset_code" => $equipment['asset_code'],
+            "brand" => $equipment['brand'],
+            "model" => $equipment['model'],
+            "serial_number" => $equipment['serial_number'],
             "subcategory_id" => (int)$equipment['subcategory_id'],
             "subcategory_name" => $equipment['subcategory_name'],
             "location_department_id" => $equipment['location_department_id'] ? (int)$equipment['location_department_id'] : null,
             "location_department_name" => $equipment['location_department_name'],
             "location_details" => $equipment['location_details'],
-            "brand" => $equipment['brand'],
-            "model" => $equipment['model'],
-            "serial_number" => $equipment['serial_number'],
-            "status" => $equipment['status']
+            "status" => $equipment['status'],
+            "spec" => $equipment['spec'],
+            "production_year" => $equipment['production_year'],
+            "price" => $equipment['price'],
+            "transfer_status" => $equipment['transfer_status']
         ];
     }
     
     // Response ตาม format ที่ต้องการ
     echo json_encode([
         "status" => "ok",
-        "message" => "Equipment list retrieved successfully",
+        "message" => "Equipment list for transfer retrieved successfully",
         "data" => [
             "u_id" => (int)$user['ID'],
             "user_id" => $user['user_id'],

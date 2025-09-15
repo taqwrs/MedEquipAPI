@@ -294,7 +294,7 @@ try {
         old_subcategory_id, new_subcategory_id, now_subcategory_id,
         now_equip_location_department_id, now_equip_location_details,
         old_location_department_id, old_equip_location_details, 
-        status_transfer, created_at
+        status_transfer, updated_at
     ) VALUES (
         :transfer_id, :transfer_type, :equipment_id, :from_department_id, :to_department_id,
         :transfer_date, :reason, :transfer_user_id, :recipient_user_id,
