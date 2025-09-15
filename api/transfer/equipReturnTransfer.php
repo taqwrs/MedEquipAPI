@@ -75,7 +75,8 @@ try {
 
     // ข้อ 2.7.7 & 2.7.11: ดึงข้อมูลจาก history_transfer ที่ status_transfer = 0
     $getHistory = $dbh->prepare("
-        SELECT trans_location_department_id, trans_location_details, old_equip_location_details
+        SELECT trans_location_department_id, trans_location_details, 
+               old_location_department_id, old_equip_location_details
         FROM history_transfer 
         WHERE transfer_id = :transfer_id AND status_transfer = 0
         ORDER BY history_transfer_id DESC
@@ -159,15 +160,15 @@ try {
     }
     
     // ข้อ 2.7.5, 2.7.6, 2.7.7: อัปเดต equipment_transfers
-    // รวมข้อ 2.7.7 ที่ต้องอัปเดต location_department_id กับ location_details จาก history_transfer
+    // ข้อ 2.7.7: อัปเดต location จาก old_location_department_id และ old_equip_location_details ใน history_transfer
     $updateTransferSQL = "
         UPDATE equipment_transfers 
         SET status = 1,
             returned_date = NOW(),
             now_subcategory_id = :old_subcategory_id";
     
-    // ข้อ 2.7.7: อัปเดต location จาก old_location_department_id ใน history_transfer และ old_equip_location_details ใน history_transfer
-    if ($historyData && $historyData['trans_location_department_id']) {
+    // แก้ไข: ใช้ old_location_department_id และ old_equip_location_details จาก history_transfer
+    if ($historyData && $historyData['old_location_department_id']) {
         $updateTransferSQL .= ",
             location_department_id = :old_location_department_id,
             location_details = :old_equip_location_details";
@@ -179,8 +180,8 @@ try {
     $updateTransfer->bindParam(':old_subcategory_id', $transfer['old_subcategory_id'], PDO::PARAM_INT);
     $updateTransfer->bindParam(':transfer_id', $input['transfer_id'], PDO::PARAM_INT);
     
-    if ($historyData && $historyData['trans_location_department_id']) {
-        $updateTransfer->bindParam(':old_location_department_id', $historyData['trans_location_department_id'], PDO::PARAM_INT);
+    if ($historyData && $historyData['old_location_department_id']) {
+        $updateTransfer->bindParam(':old_location_department_id', $historyData['old_location_department_id'], PDO::PARAM_INT);
         $updateTransfer->bindParam(':old_equip_location_details', $historyData['old_equip_location_details']);
     }
     
@@ -190,7 +191,7 @@ try {
         exit;
     }
 
-    // ดึง returned_date และข้อมูลที่อัปเดตแล้ว
+    // ดึง returned_date และข้อมูลที่อัปเดตแล้วจากการทำข้อ 2.7.7
     $getUpdatedTransfer = $dbh->prepare("
         SELECT returned_date, location_department_id, location_details, now_subcategory_id 
         FROM equipment_transfers 
@@ -202,7 +203,7 @@ try {
 
     // ข้อ 2.7.8: อัปเดต location_details กับ location_department_id ใน equipment table
     // ใช้ข้อมูลจาก location_department_id และ location_details ใน equipment_transfers ที่อัปเดตแล้วในข้อ 2.7.7
-    if ($historyData && $historyData['trans_location_department_id']) {
+    if ($historyData && $historyData['old_location_department_id']) {
         $updateEquipLocation = $dbh->prepare("
             UPDATE equipments 
             SET location_department_id = :location_department_id,
@@ -246,7 +247,7 @@ try {
             old_subcategory_id, new_subcategory_id, 
             now_equip_location_department_id, now_equip_location_details,
             returned_date, old_location_department_id, now_subcategory_id,
-            old_equip_location_details, status_transfer, created_at, updated_at
+            old_equip_location_details, status_transfer, updated_at
         ) VALUES (
             :transfer_id, :transfer_type, :equipment_id, :from_department_id, :to_department_id,
             :transfer_date, :reason, :transfer_user_id, :recipient_user_id,
@@ -254,7 +255,7 @@ try {
             :old_subcategory_id, :new_subcategory_id,
             :now_equip_location_department_id, :now_equip_location_details,
             :returned_date, :old_location_department_id, :now_subcategory_id,
-            :old_equip_location_details, :status_transfer, NOW(), NOW()
+            :old_equip_location_details, :status_transfer, NOW()
         )
     ");
     
