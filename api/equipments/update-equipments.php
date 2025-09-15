@@ -64,14 +64,38 @@ try {
         $stmt = $dbh->prepare($sql);
         $stmt->execute($params);
     }
+
     // --- Child Equipments ---
+    // รับค่า childs จาก POST และตรวจสอบว่าเป็น array
     $childs = !empty($_POST['child_equipments']) ? json_decode($_POST['child_equipments'], true) : [];
-    if (!is_array($childs))
+    if (!is_array($childs)) {
         $childs = [];
-    foreach ($childs as $child_id) {
-        $sql = "UPDATE equipments 
-            SET main_equipment_id=:main_id, updated_by=:updated_by, updated_at=NOW() 
-            WHERE equipment_id=:child_id";
+    }
+
+    // ดึงรายการอุปกรณ์ย่อยเดิมของอุปกรณ์หลักนี้
+    $stmt = $dbh->prepare("SELECT equipment_id FROM equipments WHERE main_equipment_id = :main_id");
+    $stmt->execute([':main_id' => $equipment_id]);
+    $old_child_equipments = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+
+    // อัปเดตอุปกรณ์ย่อยที่ถูกนำออก: ตั้งค่า main_equipment_id เป็น NULL
+    $removed_childs = array_diff($old_child_equipments, $childs);
+    if (!empty($removed_childs)) {
+        $placeholders = implode(',', array_fill(0, count($removed_childs), '?'));
+        $sql = "UPDATE equipments SET main_equipment_id = NULL WHERE equipment_id IN ($placeholders)";
+        $stmt = $dbh->prepare($sql);
+        $stmt->execute($removed_childs);
+    }
+
+    // อัปเดตอุปกรณ์ย่อยที่ถูกเพิ่มหรือย้าย: ตั้งค่า main_equipment_id ใหม่
+    $added_childs = array_diff($childs, $old_child_equipments);
+    foreach ($added_childs as $child_id) {
+        // เงื่อนไข: อุปกรณ์หลักจะไปเป็นอุปกรณ์ย่อยของตัวเองไม่ได้
+        if ($child_id == $equipment_id) {
+            throw new Exception("อุปกรณ์หลักไม่สามารถเป็นอุปกรณ์ย่อยของตัวเองได้");
+        }
+        
+        // ล้างความสัมพันธ์เดิมของอุปกรณ์ย่อยก่อน
+        $sql = "UPDATE equipments SET main_equipment_id = :main_id, updated_by = :updated_by, updated_at = NOW() WHERE equipment_id = :child_id";
         $stmt = $dbh->prepare($sql);
         $stmt->execute([
             ':main_id' => $equipment_id,
@@ -79,15 +103,32 @@ try {
             ':child_id' => $child_id
         ]);
     }
-
+    
     // --- Spare Parts ---
+    // รับค่า spares จาก POST และตรวจสอบว่าเป็น array
     $spares = !empty($_POST['spare_parts']) ? json_decode($_POST['spare_parts'], true) : [];
-    if (!is_array($spares))
+    if (!is_array($spares)) {
         $spares = [];
-    foreach ($spares as $spare_id) {
-        $sql = "UPDATE spare_parts 
-            SET equipment_id=:main_id, updated_by=:updated_by, updated_at=NOW() 
-            WHERE spare_part_id=:spare_id";
+    }
+
+    // ดึงรายการอะไหล่เดิมของอุปกรณ์หลักนี้
+    $stmt = $dbh->prepare("SELECT spare_part_id FROM spare_parts WHERE equipment_id = :main_id");
+    $stmt->execute([':main_id' => $equipment_id]);
+    $old_spare_parts = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+
+    // อัปเดตอะไหล่ที่ถูกนำออก: ตั้งค่า equipment_id เป็น NULL
+    $removed_spares = array_diff($old_spare_parts, $spares);
+    if (!empty($removed_spares)) {
+        $placeholders = implode(',', array_fill(0, count($removed_spares), '?'));
+        $sql = "UPDATE spare_parts SET equipment_id = NULL WHERE spare_part_id IN ($placeholders)";
+        $stmt = $dbh->prepare($sql);
+        $stmt->execute($removed_spares);
+    }
+    
+    // อัปเดตอะไหล่ที่ถูกเพิ่มหรือย้าย: ตั้งค่า equipment_id ใหม่
+    $added_spares = array_diff($spares, $old_spare_parts);
+    foreach ($added_spares as $spare_id) {
+        $sql = "UPDATE spare_parts SET equipment_id = :main_id, updated_by = :updated_by, updated_at = NOW() WHERE spare_part_id = :spare_id";
         $stmt = $dbh->prepare($sql);
         $stmt->execute([
             ':main_id' => $equipment_id,
@@ -101,9 +142,7 @@ try {
         $files = json_decode($_POST['filesInfo'], true) ?: [];
         foreach ($files as $file) {
             if (!empty($file['equip_url']) && !empty($file['equip_type_name'])) {
-                $stmt = $dbh->prepare("INSERT INTO file_equip 
-                    (equipment_id,file_equip_name,equip_url,equip_type_name,upload_at) 
-                    VALUES (:eid,:name,:url,:type,NOW())");
+                $stmt = $dbh->prepare("INSERT INTO file_equip (equipment_id,file_equip_name,equip_url,equip_type_name,upload_at) VALUES (:eid,:name,:url,:type,NOW())");
                 $stmt->execute([
                     ':eid' => $equipment_id,
                     ':name' => $file['file_equip_name'] ?? basename($file['equip_url']),
@@ -123,9 +162,7 @@ try {
             $fileName = uniqid('file_') . '_' . basename($name);
             move_uploaded_file($tmp_name, $uploadDir . $fileName);
 
-            $sql = "INSERT INTO file_equip 
-                (file_equip_name,equip_url,equip_type_name,equipment_id,upload_at) 
-                VALUES (:file_equip_name,:equip_url,:equip_type_name,:equipment_id,NOW())";
+            $sql = "INSERT INTO file_equip (file_equip_name,equip_url,equip_type_name,equipment_id,upload_at) VALUES (:file_equip_name,:equip_url,:equip_type_name,:equipment_id,NOW())";
             $stmt = $dbh->prepare($sql);
             $stmt->execute([
                 ':file_equip_name' => $name,
@@ -139,7 +176,8 @@ try {
     $dbh->commit();
     echo json_encode(["status" => "success", "message" => "Update successfully", "equipment_id" => $equipment_id]);
 } catch (Exception $e) {
-    if ($dbh->inTransaction())
+    if ($dbh->inTransaction()) {
         $dbh->rollBack();
+    }
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }

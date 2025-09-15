@@ -26,7 +26,7 @@ try {
         'name','asset_code','import_type_id','spare_subcate_id','location_department_id',
         'location_details','production_year','price','contract','start_date','end_date',
         'warranty_condition','maintainer_company_id','supplier_company_id','manufacturer_company_id',
-        'group_user_id','group_responsible_id','status'
+        'status'
     ];
 
     $setParts = [];
