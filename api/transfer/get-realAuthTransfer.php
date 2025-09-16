@@ -1,6 +1,7 @@
 <?php
 include "../config/jwt.php";
-//เครื่องมือที่สิทธิ์โอนย้ายจริงๆ คือไม่ได้โอนย้ายไปในใคร 
+//เครื่องมือที่สิทธิ์โอนย้ายจริงๆ ผู้ดูแลหลักตาม u_id ที่ login อยู่ และไม่ได้โอนย้ายชั่วคราวให้ใคร
+
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -15,14 +16,19 @@ try {
         exit;
     }
 
-    // รับ parameter จาก URL
-    $u_id = isset($_GET['u_id']) ? (int)$_GET['u_id'] : null;
+    // แก้ไขส่วนนี้: ดึง u_id จาก JWT token แทน GET parameter
+    //  jwt.php ได้ตั้งค่า $decoded และ validate token แล้ว
+    // และมีตัวแปร global หรือ สามารถเข้าถึงข้อมูล user จาก JWT ได้
+    
+    // ดึง u_id จาก JWT token
+    $u_id = $decoded->data->ID; // 
     
     if (!$u_id) {
-        echo json_encode(["status" => "error", "message" => "u_id parameter is required"]);
+        echo json_encode(["status" => "error", "message" => "User ID not found in token"]);
         exit;
     }
     
+    // ส่วนที่เหลือเหมือนเดิม
     // ตรวจสอบว่า u_id มีอยู่ในระบบ
     $checkUser = $dbh->prepare("SELECT ID, user_id, full_name, department_id FROM users WHERE ID = :u_id");
     $checkUser->bindParam(':u_id', $u_id, PDO::PARAM_INT);
@@ -31,7 +37,7 @@ try {
     $user = $checkUser->fetch(PDO::FETCH_ASSOC);
     
     if (!$user) {
-        echo json_encode(["status" => "error", "message" => "User not found"]);
+        echo json_encode(["status" => "error", "message" => "User not found or inactive"]);
         exit;
     }
     
@@ -57,8 +63,8 @@ try {
             d.department_name as location_department_name,
             CASE 
                 WHEN et.equipment_id IS NULL THEN 'available'
-                WHEN et.status != 0 THEN 'available'
-                ELSE 'in_transfer'
+                WHEN et.status = 0 THEN 'in_transfer'
+                ELSE 'available'
             END as transfer_status
         FROM equipments e
         INNER JOIN equipment_subcategories es ON e.subcategory_id = es.subcategory_id
@@ -67,14 +73,12 @@ try {
         INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
         LEFT JOIN departments d ON e.location_department_id = d.department_id
         LEFT JOIN (
-            SELECT equipment_id, status
-            FROM equipment_transfers et1
-            WHERE et1.transfer_id = (
-                SELECT MAX(et2.transfer_id)
-                FROM equipment_transfers et2
-                WHERE et2.equipment_id = et1.equipment_id
-            )
-        ) et ON e.equipment_id = et.equipment_id
+            SELECT 
+                equipment_id, 
+                status,
+                ROW_NUMBER() OVER (PARTITION BY equipment_id ORDER BY transfer_id DESC) as rn
+            FROM equipment_transfers
+        ) et ON e.equipment_id = et.equipment_id AND et.rn = 1
         WHERE ru.u_id = :u_id 
         AND gu.type = 'ผู้ดูแลหลัก'
         AND e.active = 1
@@ -82,7 +86,7 @@ try {
             et.equipment_id IS NULL 
             OR et.status != 0
         )
-        ORDER BY e.asset_code ASC
+        ORDER BY e.equipment_id DESC
     ";
     
     $stmt = $dbh->prepare($sql);
@@ -108,8 +112,8 @@ try {
             "location_details" => $equipment['location_details'],
             "status" => $equipment['status'],
             "spec" => $equipment['spec'],
-            "production_year" => $equipment['production_year'],
-            "price" => $equipment['price'],
+            "production_year" => $equipment['production_year'] ? (int)$equipment['production_year'] : null,
+            "price" => $equipment['price'] ? (float)$equipment['price'] : null,
             "transfer_status" => $equipment['transfer_status']
         ];
     }

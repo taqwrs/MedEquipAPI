@@ -1,6 +1,6 @@
 <?php
-// equipReturnTransfer.php
 include "../config/jwt.php";
+//การโอนคืน เฉพาะการโอนย้ายประเภท ชั่วคราว 
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
