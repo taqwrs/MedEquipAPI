@@ -1,5 +1,5 @@
 <?php
-// API สำหรับดึงข้อมูลเครื่องมือที่โอนย้ายชั่วคราว
+// API สำหรับดึงข้อมูลเครื่องมือที่โอนย้ายชั่วคราว ที่ต้องคืน
 include "../config/jwt.php";
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");

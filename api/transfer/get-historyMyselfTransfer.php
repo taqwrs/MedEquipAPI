@@ -1,5 +1,7 @@
 <?php
-include "../config/jwt.php"; // $decoded จาก JWT ถูก validate แล้ว
+include "../config/jwt.php"; 
+// ประวัติการโอนย้ายที่เกี่ยวข้องกับ u_id ที่ login อยู่
+
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
