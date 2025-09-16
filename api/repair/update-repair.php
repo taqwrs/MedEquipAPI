@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
+    $dbh->beginTransaction();
     $data = json_decode(file_get_contents("php://input"), true);
     $repair_id = $data['repair_id'] ?? null;
 
@@ -20,23 +21,25 @@ try {
         exit;
     }
 
-
+    // ฟิลด์ที่อนุญาตให้ update
     $updatableFields = ['equipment_id', 'remark', 'title', 'location', 'status', 'repair_type_id'];
     $fields = [];
     $params = [':repair_id' => $repair_id];
 
     foreach ($updatableFields as $field) {
-        if (isset($data[$field])) {
+        // เปลี่ยนจาก isset() เป็น array_key_exists() เพื่อให้ update status แม้ค่าเป็น null หรือ ""
+        if (array_key_exists($field, $data)) {
             $fields[] = "$field = :$field";
             $params[":$field"] = $data[$field];
         }
     }
 
     if (!empty($fields)) {
-
         $query = "UPDATE repair SET " . implode(", ", $fields) . " WHERE repair_id = :repair_id";
         $stmt = $dbh->prepare($query);
         $stmt->execute($params);
+
+        $dbh->commit();
 
         echo json_encode([
             "success" => true,
@@ -45,6 +48,7 @@ try {
         exit;
     }
 
+    // -------------------- ส่วน SELECT เดิม --------------------
     $query = "SELECT 
         r.repair_id,
         r.equipment_id,
@@ -81,8 +85,8 @@ try {
     }
 
 } catch (Exception $e) {
-    echo json_encode([
-        "success" => false,
-        "message" => $e->getMessage()
-    ]);
+    if ($dbh->inTransaction())
+        $dbh->rollBack();
+    
+    echo json_encode(["success" => false, "message" => $e->getMessage()]);
 }

@@ -28,10 +28,11 @@ try {
         exit;
     }
 
+    // insert repair request
     $query = "INSERT INTO repair 
-                (equipment_id, user_id, remark,title, request_date, location, status, repair_type_id) 
+                (equipment_id, user_id, remark, title, request_date, location, status, repair_type_id) 
               VALUES 
-                (:equipment_id, :user_id, :remark, :title,  :request_date, :location, :status, :repair_type_id)";
+                (:equipment_id, :user_id, :remark, :title, :request_date, :location, :status, :repair_type_id)";
 
     $stmt = $dbh->prepare($query);
     $stmt->bindParam(':equipment_id', $equipment_id);
@@ -45,10 +46,18 @@ try {
 
     $stmt->execute();
 
+    $update = "UPDATE equipments SET status = 'ซ่อม' WHERE equipment_id = :equipment_id";
+    $stmt2 = $dbh->prepare($update);
+    $stmt2->bindParam(':equipment_id', $equipment_id);
+    $stmt2->execute();
+
+    $dbh->commit();
+
     echo json_encode([
         "success" => true,
-        "message" => "Repair request inserted successfully",
-        "repair_id" => $dbh->lastInsertId()
+        "message" => "Repair request inserted successfully และอัปเดตสถานะอุปกรณ์เรียบร้อย",
+        "repair_id" => $dbh->lastInsertId(),
+        "repair_status" => $status  
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
@@ -58,4 +67,3 @@ try {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
 ?>
-

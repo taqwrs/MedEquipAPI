@@ -30,7 +30,7 @@ try {
     LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
     LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
     LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
-    ORDER BY r.request_date DESC";
+    ORDER BY r.repair_id DESC";
 
     $stmt = $dbh->query($query);
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);

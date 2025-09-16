@@ -45,6 +45,7 @@ try {
     ]);
     $repair_result_id = $dbh->lastInsertId();
 
+ 
     if (!empty($spareParts)) {
         $stmt_spare = $dbh->prepare("
             INSERT INTO spare_parts_used (repair_result_id, spare_part_id)
@@ -60,7 +61,7 @@ try {
         }
     }
 
-
+    // Upload ไฟล์ซ่อม
     if (!empty($_FILES['files']['name'][0])) {
         $uploadDir = "uploads/repair_files/";
         if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
@@ -79,7 +80,7 @@ try {
 
             if (move_uploaded_file($tmpName, $targetPath)) {
                 $stmt_file->execute([
-                    ':repair_result_id'    => $repair_result_id,
+                    ':repair_result_id' => $repair_result_id,
                     ':repair_file_name' => $name,
                     ':repair_file_url'  => $targetPath,
                     ':repair_type_name' => "ไฟล์ซ่อม"
@@ -88,8 +89,25 @@ try {
         }
     }
 
-    $stmtUpdate = $dbh->prepare("UPDATE repair SET status = 'เสร็จสิ้น' WHERE repair_id = :repair_id");
+    // อัปเดตสถานะการซ่อม
+    $stmtUpdate = $dbh->prepare("
+        UPDATE repair 
+        SET status = 'เสร็จสิ้น' 
+        WHERE repair_id = :repair_id
+    ");
     $stmtUpdate->execute([':repair_id' => $repair_id]);
+
+    // ถ้าผลการซ่อมคือ 'ซ่อมได้' ให้อัปเดตสถานะอุปกรณ์เป็น 'ใช้งาน'
+    if ($status === 'ซ่อมได้') {
+        $stmtEquip = $dbh->prepare("
+            UPDATE equipments 
+            SET status = 'ใช้งาน'
+            WHERE equipment_id = (
+                SELECT equipment_id FROM repair WHERE repair_id = :repair_id
+            )
+        ");
+        $stmtEquip->execute([':repair_id' => $repair_id]);
+    }
 
     $dbh->commit();
 

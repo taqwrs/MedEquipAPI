@@ -11,36 +11,31 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$input = json_decode(file_get_contents("php://input"), true);
-if (!isset($input['writeoff_id'])) {
-    echo json_encode(["status" => "error", "message" => "writeoff_id is required"]);
-    exit;
-}
-
-$writeoff_id = intval($input['writeoff_id']);
-
 try {
+
     $query = "
-        SELECT w.*, e.name AS equipment_name, u.full_name AS requester_name, a.full_name AS approver_name, wt.name AS writeoff_type_name
+        SELECT w.*, e.name AS equipment_name, u.full_name AS requester_name, 
+               a.full_name AS approver_name, wt.name AS writeoff_type_name
         FROM write_offs w
         LEFT JOIN equipments e ON w.equipment_id = e.equipment_id
         LEFT JOIN users u ON w.user_id = u.user_id
         LEFT JOIN users a ON w.approved_by = a.user_id
         LEFT JOIN writeoff_types wt ON w.writeoff_types_id = wt.writeoff_types_id
-        WHERE w.writeoff_id = :writeoff_id
+        ORDER BY w.writeoff_id DESC
     ";
 
     $stmt = $dbh->prepare($query);
-    $stmt->bindParam(':writeoff_id', $writeoff_id, PDO::PARAM_INT);
     $stmt->execute();
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    $writeoffs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if (!$result) {
-        echo json_encode(["status" => "error", "message" => "Data not found"]);
-        exit;
+
+    foreach ($writeoffs as &$wo) {
+        $stmtFile = $dbh->prepare("SELECT file_writeoffs_id, File_name, url, type_name FROM file_writeoffs WHERE writeoff_id = ?");
+        $stmtFile->execute([$wo['writeoff_id']]);
+        $wo['files'] = $stmtFile->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    echo json_encode(["status" => "success", "data" => $result]);
+    echo json_encode(["status" => "success", "data" => $writeoffs]);
 
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
