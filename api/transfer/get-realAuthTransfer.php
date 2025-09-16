@@ -16,30 +16,11 @@ try {
     }
 
     // แก้ไขส่วนนี้: ดึง u_id จาก JWT token แทน GET parameter
-    // สมมติว่า jwt.php ได้ตั้งค่า $decoded และ validate token แล้ว
+    //  jwt.php ได้ตั้งค่า $decoded และ validate token แล้ว
     // และมีตัวแปร global หรือ สามารถเข้าถึงข้อมูล user จาก JWT ได้
     
-    // ถ้า jwt.php ไม่มีการ decode อัตโนมัติ อาจต้องเพิ่มโค้ดนี้:
-    /*
-    $headers = apache_request_headers();
-    $token = isset($headers['Authorization']) ? $headers['Authorization'] : (isset($headers['authorization']) ? $headers['authorization'] : null);
-    
-    if (!$token) {
-        echo json_encode(["status" => "error", "message" => "Token not provided"]);
-        exit;
-    }
-    
-    $token = str_replace('Bearer ', '', $token);
-    $decoded = checkExp($token); // ใช้ฟังก์ชันจาก jwt.php
-    
-    if (!$decoded) {
-        echo json_encode(["status" => "error", "message" => "Token expired or invalid"]);
-        exit;
-    }
-    */
-    
     // ดึง u_id จาก JWT token
-    $u_id = $decoded->data->ID; // หรือใช้ตัวแปรที่ jwt.php ตั้งค่าไว้
+    $u_id = $decoded->data->ID; // 
     
     if (!$u_id) {
         echo json_encode(["status" => "error", "message" => "User ID not found in token"]);
