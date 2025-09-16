@@ -1,6 +1,6 @@
 <?php
 include "../config/jwt.php";
-//insert-transfer.php
+//การโอนย้าย 
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");

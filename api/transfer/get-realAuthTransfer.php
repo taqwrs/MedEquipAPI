@@ -1,6 +1,6 @@
 <?php
 include "../config/jwt.php";
-//เครื่องมือที่สิทธิ์โอนย้ายจริงๆ คือไม่ได้โอนย้ายไปในใคร 
+//เครื่องมือที่สิทธิ์โอนย้ายจริงๆ ผู้ดูแลหลักตาม u_id ที่ login อยู่ และไม่ได้โอนย้ายชั่วคราวให้ใคร
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -14,39 +14,30 @@ try {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
         exit;
     }
-
-    // แก้ไขส่วนนี้: ดึง u_id จาก JWT token แทน GET parameter
-    // สมมติว่า jwt.php ได้ตั้งค่า $decoded และ validate token แล้ว
-    // และมีตัวแปร global หรือ สามารถเข้าถึงข้อมูล user จาก JWT ได้
-    
-    // ถ้า jwt.php ไม่มีการ decode อัตโนมัติ อาจต้องเพิ่มโค้ดนี้:
-    /*
-    $headers = apache_request_headers();
-    $token = isset($headers['Authorization']) ? $headers['Authorization'] : (isset($headers['authorization']) ? $headers['authorization'] : null);
-    
-    if (!$token) {
-        echo json_encode(["status" => "error", "message" => "Token not provided"]);
-        exit;
-    }
-    
-    $token = str_replace('Bearer ', '', $token);
-    $decoded = checkExp($token); // ใช้ฟังก์ชันจาก jwt.php
-    
-    if (!$decoded) {
-        echo json_encode(["status" => "error", "message" => "Token expired or invalid"]);
-        exit;
-    }
-    */
     
     // ดึง u_id จาก JWT token
-    $u_id = $decoded->data->ID; // หรือใช้ตัวแปรที่ jwt.php ตั้งค่าไว้
+    $u_id = $decoded->data->ID; // 
     
     if (!$u_id) {
         echo json_encode(["status" => "error", "message" => "User ID not found in token"]);
         exit;
     }
     
-    // ส่วนที่เหลือเหมือนเดิม
+    // ดึง ENUM values ของ transfer_type จากตาราง
+    // ------------------------
+    $enumSql = "SHOW COLUMNS FROM equipment_transfers LIKE 'transfer_type'";
+    $enumStmt = $dbh->prepare($enumSql);
+    $enumStmt->execute();
+    $enumRow = $enumStmt->fetch(PDO::FETCH_ASSOC);
+     
+    // ใช้ regex แยกค่าที่อยู่ใน ENUM('value1','value2',...)
+    $enumValues = [];
+    if ($enumRow && preg_match("/^enum\((.*)\)$/", $enumRow['Type'], $matches)) {
+        if (!empty($matches[1])) {
+            $enumValues = str_getcsv($matches[1], ',', "'");
+        }
+    }
+    
     // ตรวจสอบว่า u_id มีอยู่ในระบบ
     $checkUser = $dbh->prepare("SELECT ID, user_id, full_name, department_id FROM users WHERE ID = :u_id");
     $checkUser->bindParam(':u_id', $u_id, PDO::PARAM_INT);
@@ -59,9 +50,8 @@ try {
         exit;
     }
     
-    // Query หาเครื่องมือที่ user มีสิทธิ์โอนย้าย
-    // โดยต้องเป็น ผู้ดูแลหลัก และ equipment ต้อง active = 1
-    // และตรวจสอบสถานะใน equipment_transfers ด้วย
+    // Query หาเครื่องมือที่ user มีสิทธิ์โอนย้าย โดยต้องเป็น ผู้ดูแลหลัก และ equipment ต้อง active = 1
+    // และตรวจสอบสถานะใน equipment_transfers ด้วยว่าไม่ได้โอนชั่วคราวให้ใคร
     $sql = "
         SELECT DISTINCT
             e.equipment_id,
@@ -104,7 +94,7 @@ try {
             et.equipment_id IS NULL 
             OR et.status != 0
         )
-        ORDER BY e.asset_code ASC
+        ORDER BY e.equipment_id DESC
     ";
     
     $stmt = $dbh->prepare($sql);
@@ -136,7 +126,7 @@ try {
         ];
     }
     
-    // Response ตาม format ที่ต้องการ
+    // Response ตาม format ที่ต้องการ พร้อมเพิ่ม transfer_types
     echo json_encode([
         "status" => "ok",
         "message" => "Equipment list for transfer retrieved successfully",
@@ -146,6 +136,7 @@ try {
             "user_name" => $user['full_name'],
             "department_id" => $user['department_id'] ? (int)$user['department_id'] : null,
             "total_equipment" => count($equipment_list),
+            "transfer_types" => $enumValues, // เพิ่ม ENUM values ของ transfer_type
             "equipment_authTransfer" => $equipment_list
         ]
     ], JSON_UNESCAPED_UNICODE);

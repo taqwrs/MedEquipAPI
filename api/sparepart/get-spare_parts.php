@@ -91,6 +91,7 @@ LEFT JOIN equipments e ON e.equipment_id = sp.equipment_id
 
 $searchSql
 GROUP BY sp.spare_part_id
+ORDER BY sp.spare_part_id Desc
 LIMIT :limit OFFSET :offset
 ";
 

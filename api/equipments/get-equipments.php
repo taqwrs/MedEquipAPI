@@ -16,6 +16,7 @@ $search = trim($input['search'] ?? '');
 $page = (int) ($input['page'] ?? 1);
 $limit = (int) ($input['limit'] ?? 5);
 $offset = ($page - 1) * $limit;
+$useLimit = $limit > 0;
 
 try {
     $params = [];

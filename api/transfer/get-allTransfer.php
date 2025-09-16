@@ -1,6 +1,6 @@
 <?php
 include "../config/jwt.php"; 
-// get-allTransfer.php
+// get-allTransfer การโอนย้ายทั้งหมด
 
 // กำหนด header สำหรับ response
 header("Content-Type: application/json; charset=UTF-8");
