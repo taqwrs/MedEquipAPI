@@ -14,10 +14,6 @@ try {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
         exit;
     }
-
-    // แก้ไขส่วนนี้: ดึง u_id จาก JWT token แทน GET parameter
-    //  jwt.php ได้ตั้งค่า $decoded และ validate token แล้ว
-    // และมีตัวแปร global หรือ สามารถเข้าถึงข้อมูล user จาก JWT ได้
     
     // ดึง u_id จาก JWT token
     $u_id = $decoded->data->ID; // 
@@ -40,9 +36,8 @@ try {
         exit;
     }
     
-    // Query หาเครื่องมือที่ user มีสิทธิ์โอนย้าย
-    // โดยต้องเป็น ผู้ดูแลหลัก และ equipment ต้อง active = 1
-    // และตรวจสอบสถานะใน equipment_transfers ด้วย
+    // Query หาเครื่องมือที่ user มีสิทธิ์โอนย้าย โดยต้องเป็น ผู้ดูแลหลัก และ equipment ต้อง active = 1
+    // และตรวจสอบสถานะใน equipment_transfers ด้วยว่าไม่ได้โอนชั่วคราวให้ใคร
     $sql = "
         SELECT DISTINCT
             e.equipment_id,

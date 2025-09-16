@@ -150,7 +150,7 @@ try {
                 'returned' => (int)$res2['total_returned']         // 1.2
             ]
         ],
-        'total_equipment' => count($equipment_list)
+        'total_equipment' => count($equipment_list)//จำนวนรับโอนย้ายชั่วคราว
     ];
     
     echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
