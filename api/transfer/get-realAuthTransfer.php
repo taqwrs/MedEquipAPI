@@ -23,7 +23,21 @@ try {
         exit;
     }
     
-    // ส่วนที่เหลือเหมือนเดิม
+    // ดึง ENUM values ของ transfer_type จากตาราง
+    // ------------------------
+    $enumSql = "SHOW COLUMNS FROM equipment_transfers LIKE 'transfer_type'";
+    $enumStmt = $dbh->prepare($enumSql);
+    $enumStmt->execute();
+    $enumRow = $enumStmt->fetch(PDO::FETCH_ASSOC);
+     
+    // ใช้ regex แยกค่าที่อยู่ใน ENUM('value1','value2',...)
+    $enumValues = [];
+    if ($enumRow && preg_match("/^enum\((.*)\)$/", $enumRow['Type'], $matches)) {
+        if (!empty($matches[1])) {
+            $enumValues = str_getcsv($matches[1], ',', "'");
+        }
+    }
+    
     // ตรวจสอบว่า u_id มีอยู่ในระบบ
     $checkUser = $dbh->prepare("SELECT ID, user_id, full_name, department_id FROM users WHERE ID = :u_id");
     $checkUser->bindParam(':u_id', $u_id, PDO::PARAM_INT);
@@ -112,7 +126,7 @@ try {
         ];
     }
     
-    // Response ตาม format ที่ต้องการ
+    // Response ตาม format ที่ต้องการ พร้อมเพิ่ม transfer_types
     echo json_encode([
         "status" => "ok",
         "message" => "Equipment list for transfer retrieved successfully",
@@ -122,6 +136,7 @@ try {
             "user_name" => $user['full_name'],
             "department_id" => $user['department_id'] ? (int)$user['department_id'] : null,
             "total_equipment" => count($equipment_list),
+            "transfer_types" => $enumValues, // เพิ่ม ENUM values ของ transfer_type
             "equipment_authTransfer" => $equipment_list
         ]
     ], JSON_UNESCAPED_UNICODE);
