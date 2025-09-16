@@ -108,7 +108,8 @@ try {
                     "โอนย้ายถาวร_ผู้โอน" => 0,
                     "โอนย้ายถาวร_ผู้รับ" => 0,
                     "โอนย้ายชั่วคราว_ผู้โอน" => 0,
-                    "โอนย้ายชั่วคราว_ผู้รับ" => 0
+                    "โอนย้ายชั่วคราว_ผู้รับ" => 0,
+                    "โอนย้ายชั่วคราว_ผู้รับ_status0" => 0
                 ]
             ]
         ], JSON_UNESCAPED_UNICODE);
@@ -123,10 +124,11 @@ try {
     $count_permanent_recipient = 0;
     $count_temporary_sender = 0;
     $count_temporary_recipient = 0;
+    $count_temporary_recipient_status0 = 0;
 
     foreach ($transfers as $transfer) {
         $is_sender = ($transfer['transfer_user_id'] == $u_id);
-        
+
         $transfer_item = [
             "equipment_id" => (int)$transfer['equipment_id'],
             "name" => $transfer['equipment_name'],
@@ -162,6 +164,10 @@ try {
                 $count_temporary_sender++;
             } else {
                 $count_temporary_recipient++;
+                // เพิ่มตัวนับ status = 0
+                if ($transfer['recipient_user_id'] == $u_id && $transfer['status_transfer'] == 0) {
+                    $count_temporary_recipient_status0++;
+                }
             }
         } else if ($transfer['transfer_type'] == 'โอนย้ายถาวร') {
             $permanent_transfers[] = $transfer_item;
@@ -183,7 +189,8 @@ try {
             "โอนย้ายถาวร_ผู้โอน" => $count_permanent_sender,
             "โอนย้ายถาวร_ผู้รับ" => $count_permanent_recipient,
             "โอนย้ายชั่วคราว_ผู้โอน" => $count_temporary_sender,
-            "โอนย้ายชั่วคราว_ผู้รับ" => $count_temporary_recipient
+            "โอนย้ายชั่วคราว_ผู้รับ" => $count_temporary_recipient,
+            "โอนย้ายชั่วคราว_ผู้รับ_status0" => $count_temporary_recipient_status0
         ]
     ];
 
