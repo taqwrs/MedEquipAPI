@@ -15,14 +15,38 @@ try {
         exit;
     }
 
-    // รับ parameter จาก URL
-    $u_id = isset($_GET['u_id']) ? (int)$_GET['u_id'] : null;
+    // แก้ไขส่วนนี้: ดึง u_id จาก JWT token แทน GET parameter
+    // สมมติว่า jwt.php ได้ตั้งค่า $decoded และ validate token แล้ว
+    // และมีตัวแปร global หรือ สามารถเข้าถึงข้อมูล user จาก JWT ได้
     
-    if (!$u_id) {
-        echo json_encode(["status" => "error", "message" => "u_id parameter is required"]);
+    // ถ้า jwt.php ไม่มีการ decode อัตโนมัติ อาจต้องเพิ่มโค้ดนี้:
+    /*
+    $headers = apache_request_headers();
+    $token = isset($headers['Authorization']) ? $headers['Authorization'] : (isset($headers['authorization']) ? $headers['authorization'] : null);
+    
+    if (!$token) {
+        echo json_encode(["status" => "error", "message" => "Token not provided"]);
         exit;
     }
     
+    $token = str_replace('Bearer ', '', $token);
+    $decoded = checkExp($token); // ใช้ฟังก์ชันจาก jwt.php
+    
+    if (!$decoded) {
+        echo json_encode(["status" => "error", "message" => "Token expired or invalid"]);
+        exit;
+    }
+    */
+    
+    // ดึง u_id จาก JWT token
+    $u_id = $decoded->data->ID; // หรือใช้ตัวแปรที่ jwt.php ตั้งค่าไว้
+    
+    if (!$u_id) {
+        echo json_encode(["status" => "error", "message" => "User ID not found in token"]);
+        exit;
+    }
+    
+    // ส่วนที่เหลือเหมือนเดิม
     // ตรวจสอบว่า u_id มีอยู่ในระบบ
     $checkUser = $dbh->prepare("SELECT ID, user_id, full_name, department_id FROM users WHERE ID = :u_id");
     $checkUser->bindParam(':u_id', $u_id, PDO::PARAM_INT);
@@ -31,7 +55,7 @@ try {
     $user = $checkUser->fetch(PDO::FETCH_ASSOC);
     
     if (!$user) {
-        echo json_encode(["status" => "error", "message" => "User not found"]);
+        echo json_encode(["status" => "error", "message" => "User not found or inactive"]);
         exit;
     }
     
@@ -57,8 +81,8 @@ try {
             d.department_name as location_department_name,
             CASE 
                 WHEN et.equipment_id IS NULL THEN 'available'
-                WHEN et.status != 0 THEN 'available'
-                ELSE 'in_transfer'
+                WHEN et.status = 0 THEN 'in_transfer'
+                ELSE 'available'
             END as transfer_status
         FROM equipments e
         INNER JOIN equipment_subcategories es ON e.subcategory_id = es.subcategory_id
@@ -67,14 +91,12 @@ try {
         INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
         LEFT JOIN departments d ON e.location_department_id = d.department_id
         LEFT JOIN (
-            SELECT equipment_id, status
-            FROM equipment_transfers et1
-            WHERE et1.transfer_id = (
-                SELECT MAX(et2.transfer_id)
-                FROM equipment_transfers et2
-                WHERE et2.equipment_id = et1.equipment_id
-            )
-        ) et ON e.equipment_id = et.equipment_id
+            SELECT 
+                equipment_id, 
+                status,
+                ROW_NUMBER() OVER (PARTITION BY equipment_id ORDER BY transfer_id DESC) as rn
+            FROM equipment_transfers
+        ) et ON e.equipment_id = et.equipment_id AND et.rn = 1
         WHERE ru.u_id = :u_id 
         AND gu.type = 'ผู้ดูแลหลัก'
         AND e.active = 1
@@ -108,8 +130,8 @@ try {
             "location_details" => $equipment['location_details'],
             "status" => $equipment['status'],
             "spec" => $equipment['spec'],
-            "production_year" => $equipment['production_year'],
-            "price" => $equipment['price'],
+            "production_year" => $equipment['production_year'] ? (int)$equipment['production_year'] : null,
+            "price" => $equipment['price'] ? (float)$equipment['price'] : null,
             "transfer_status" => $equipment['transfer_status']
         ];
     }
