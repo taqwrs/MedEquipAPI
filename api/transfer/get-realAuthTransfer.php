@@ -2,7 +2,6 @@
 include "../config/jwt.php";
 //เครื่องมือที่สิทธิ์โอนย้ายจริงๆ ผู้ดูแลหลักตาม u_id ที่ login อยู่ และไม่ได้โอนย้ายชั่วคราวให้ใคร
 
-
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET");
