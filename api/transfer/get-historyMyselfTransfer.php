@@ -7,6 +7,11 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
+// ฟังก์ชันแปลงวันที่เป็น DD-MM-YYYY
+function formatDate($date) {
+    return $date ? date("d/m/Y", strtotime($date)) : null;
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
@@ -162,7 +167,6 @@ try {
         "โอนย้ายชั่วคราว_ผู้รับ" => 0
     ];
 
-    
     foreach ($transfers as $t) {
         $is_sender = ($t['transfer_user_id'] == $u_id);
         
@@ -189,12 +193,12 @@ try {
                 "asset_code" => $t['asset_code'],
                 "from_department_id" => $t['from_department_id'] ? (int)$t['from_department_id'] : null,
                 "to_department_id" => $t['to_department_id'] ? (int)$t['to_department_id'] : null,
-                "transfer_date" => $t['transfer_date'],
-                "returned_date" => $t['returned_date'],
+                "transfer_date" => formatDate($t['transfer_date']),
+                "returned_date" => formatDate($t['returned_date']),
                 "reason" => $t['reason'],
                 "transfer_user_id" => (int)$t['transfer_user_id'],
                 "recipient_user_id" => (int)$t['recipient_user_id'],
-                "updated_at" => $t['updated_at'],
+                "updated_at" => formatDate($t['updated_at']),
                 "now_equip_location_department_id" => $t['now_equip_location_department_id'] ? (int)$t['now_equip_location_department_id'] : null,
                 "now_equip_location_department_name" => $t['now_equip_location_department_name'],
                 "now_equip_location_details" => $t['now_equip_location_details'],
@@ -238,12 +242,12 @@ try {
                 "asset_code" => $t['asset_code'],
                 "from_department_id" => $t['from_department_id'] ? (int)$t['from_department_id'] : null,
                 "to_department_id" => $t['to_department_id'] ? (int)$t['to_department_id'] : null,
-                "transfer_date" => $t['transfer_date'],
-                "returned_date" => $t['returned_date'],
+                "transfer_date" => formatDate($t['transfer_date']),
+                "returned_date" => formatDate($t['returned_date']),
                 "reason" => $t['reason'],
                 "transfer_user_id" => (int)$t['transfer_user_id'],
                 "recipient_user_id" => (int)$t['recipient_user_id'],
-                "updated_at" => $t['updated_at'],
+                "updated_at" => formatDate($t['updated_at']),
                 "now_equip_location_department_id" => $t['now_equip_location_department_id'] ? (int)$t['now_equip_location_department_id'] : null,
                 "now_equip_location_department_name" => $t['now_equip_location_department_name'],
                 "now_equip_location_details" => $t['now_equip_location_details'],
