@@ -45,21 +45,21 @@ try {
 
     // บันทึกลง DB
     $stmt = $dbh->prepare("
-        INSERT INTO calibration_result 
-        (details_cal_id, user_id, equipment_id, performed_date, result, remarks, reason, send_repair)
-        VALUES 
-        (:details_cal_id, :user_id, :equipment_id, :performed_date, :result, :remarks, :reason, :send_repair)
-    ");
-    $stmt->execute([
-        ":details_cal_id" => $details_cal_id,
-        ":user_id" => $user_id,
-        ":equipment_id" => $equipment_id,
-        ":performed_date" => $performed_date,
-        ":result" => $result,
-        ":remarks" => $remarks,
-        ":reason" => $reason,
-        ":send_repair" => $send_repair
-    ]);
+    INSERT INTO calibration_result 
+    (details_cal_id, user_id, equipment_id, performed_date, result, remarks, reason, send_repair)
+    VALUES 
+    (:details_cal_id, :user_id, :equipment_id, :performed_date, :result, :remarks, :reason, :send_repair)
+");
+$stmt->execute([
+    ":details_cal_id" => $details_cal_id,
+    ":user_id" => $user_id,
+    ":equipment_id" => $equipment_id,
+    ":performed_date" => $performed_date,
+    ":result" => $result,
+    ":remarks" => ($remarks === "null" || !$remarks) ? null : $remarks,
+    ":reason" => ($reason === "null" || !$reason) ? null : $reason,
+    ":send_repair" => $send_repair
+]);
 
     $cal_result_id = $dbh->lastInsertId();
 

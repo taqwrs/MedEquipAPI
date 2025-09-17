@@ -12,6 +12,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
+    // อ่าน input JSON จาก React
+    $input = json_decode(file_get_contents("php://input"), true);
+    $search = $input['search'] ?? '';
+    $statusFilter = $input['status'] ?? '';
 
     $query = "
         SELECT w.*, e.name AS equipment_name, u.full_name AS requester_name, 
@@ -21,11 +25,34 @@ try {
         LEFT JOIN users u ON w.user_id = u.user_id
         LEFT JOIN users a ON w.approved_by = a.user_id
         LEFT JOIN writeoff_types wt ON w.writeoff_types_id = wt.writeoff_types_id
-        ORDER BY w.writeoff_id DESC
+        WHERE 1
     ";
 
+    $params = [];
+
+    // Search filter
+    if ($search !== '') {
+        $query .= " AND (e.name LIKE ? OR w.asset_number LIKE ?)";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+    }
+
+    // Status filter
+    $statusMap = [
+        'waiting' => 'รออนุมัติ',
+        'approved' => 'อนุมัติแล้ว',
+        'rejected' => 'ไม่อนุมัติ',
+    ];
+
+    if ($statusFilter !== '' && isset($statusMap[$statusFilter])) {
+        $query .= " AND w.status = ?";
+        $params[] = $statusMap[$statusFilter];
+    }
+
+    $query .= " ORDER BY w.writeoff_id DESC";
+
     $stmt = $dbh->prepare($query);
-    $stmt->execute();
+    $stmt->execute($params);
     $writeoffs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 

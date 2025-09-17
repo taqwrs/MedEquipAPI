@@ -18,6 +18,7 @@ try {
     $status         = $_POST['status'] ?? null; 
     $remark         = $_POST['remark'] ?? null;
     $spareParts     = $_POST['spareParts'] ?? [];
+    $next_action    = $_POST['next_action'] ?? null;
 
     if (!$repair_id || !$performed_date || !$solution || $cost === null || !$status) {
         throw new Exception("ข้อมูลไม่ครบถ้วน");
@@ -26,13 +27,18 @@ try {
     $user_id = $_POST['user_id'] ?? null;
     if (!$user_id) throw new Exception("ไม่พบ user_id");
 
+    // ✅ ถ้า "ซ่อมไม่ได้" แต่ไม่เลือก next_action → error
+    if ($status === "ซ่อมไม่ได้" && !$next_action) {
+        throw new Exception("กรุณาเลือกการดำเนินการต่อไป (next_action)");
+    }
+
     $dbh->beginTransaction();
 
-
+    // ✅ Insert ผลการซ่อม
     $stmt = $dbh->prepare("
         INSERT INTO repair_result
-        (repair_id, user_id, performed_date, solution, cost, status, remark)
-        VALUES (:repair_id, :user_id, :performed_date, :solution, :cost, :status, :remark)
+        (repair_id, user_id, performed_date, solution, cost, status, remark, next_action)
+        VALUES (:repair_id, :user_id, :performed_date, :solution, :cost, :status, :remark, :next_action)
     ");
     $stmt->execute([
         ':repair_id'      => $repair_id,
@@ -42,10 +48,11 @@ try {
         ':cost'           => $cost,
         ':status'         => $status,
         ':remark'         => $remark,
+        ':next_action'    => $status === "ซ่อมไม่ได้" ? $next_action : null
     ]);
     $repair_result_id = $dbh->lastInsertId();
 
- 
+    // ✅ บันทึกอะไหล่
     if (!empty($spareParts)) {
         $stmt_spare = $dbh->prepare("
             INSERT INTO spare_parts_used (repair_result_id, spare_part_id)
@@ -61,7 +68,7 @@ try {
         }
     }
 
-    // Upload ไฟล์ซ่อม
+    // ✅ Upload ไฟล์
     if (!empty($_FILES['files']['name'][0])) {
         $uploadDir = "uploads/repair_files/";
         if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
@@ -89,7 +96,7 @@ try {
         }
     }
 
-    // อัปเดตสถานะการซ่อม
+
     $stmtUpdate = $dbh->prepare("
         UPDATE repair 
         SET status = 'เสร็จสิ้น' 
@@ -97,8 +104,9 @@ try {
     ");
     $stmtUpdate->execute([':repair_id' => $repair_id]);
 
-    // ถ้าผลการซ่อมคือ 'ซ่อมได้' ให้อัปเดตสถานะอุปกรณ์เป็น 'ใช้งาน'
-    if ($status === 'ซ่อมได้') {
+  
+    if ($status === 'ซ่อมเสร็จ') {
+
         $stmtEquip = $dbh->prepare("
             UPDATE equipments 
             SET status = 'ใช้งาน'
@@ -107,7 +115,7 @@ try {
             )
         ");
         $stmtEquip->execute([':repair_id' => $repair_id]);
-    }
+    } 
 
     $dbh->commit();
 
