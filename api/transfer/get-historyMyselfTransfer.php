@@ -25,6 +25,10 @@ try {
         exit;
     }
 
+    // รับพารามิเตอร์การค้นหาและกรอง
+    $searchText = $_GET['search'] ?? '';
+    $filterType = $_GET['filter'] ?? '';
+
     // ตรวจสอบว่าผู้ใช้งานมีอยู่จริง
     $checkUser = $dbh->prepare("SELECT ID, user_id, full_name, department_id FROM users WHERE ID = :u_id");
     $checkUser->bindParam(':u_id', $u_id, PDO::PARAM_INT);
@@ -34,6 +38,29 @@ try {
     if (!$user) {
         echo json_encode(["status" => "error", "message" => "User not found or inactive"]);
         exit;
+    }
+
+    // สร้าง WHERE clause สำหรับการค้นหา
+    $searchCondition = '';
+    $filterCondition = '';
+    $params = [':u_id' => $u_id];
+
+    if (!empty($searchText)) {
+        $searchCondition = "AND (
+            e.name LIKE :search OR 
+            e.asset_code LIKE :search OR 
+            d_now_location.department_name LIKE :search OR
+            ht.status_transfer LIKE :search
+        )";
+        $params[':search'] = '%' . $searchText . '%';
+    }
+
+    if (!empty($filterType)) {
+        if ($filterType === 'borrow') {
+            $filterCondition = "AND ht.transfer_type = 'โอนย้ายชั่วคราว'";
+        } elseif ($filterType === 'transfer') {
+            $filterCondition = "AND ht.transfer_type = 'โอนย้ายถาวร'";
+        }
     }
 
     // Query ประวัติการโอนย้ายของผู้ใช้งานที่ login
@@ -149,12 +176,19 @@ try {
                            AND perm_now_admin.rn = 1 
                            AND ht.transfer_type = 'โอนย้ายถาวร'
         
-        WHERE ht.transfer_user_id = :u_id OR ht.recipient_user_id = :u_id
+        WHERE (ht.transfer_user_id = :u_id OR ht.recipient_user_id = :u_id)
+        {$searchCondition}
+        {$filterCondition}
         ORDER BY ht.history_transfer_id DESC
     ";
 
     $stmt = $dbh->prepare($sql);
-    $stmt->bindParam(':u_id', $u_id, PDO::PARAM_INT);
+    
+    // Bind parameters
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
+    }
+    
     $stmt->execute();
     $transfers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
