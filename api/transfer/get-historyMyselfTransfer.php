@@ -40,7 +40,7 @@ try {
         exit;
     }
 
-    // สร้าง WHERE clause สำหรับการค้นหา
+    // สร้าง WHERE clause สำหรับการค้นหา (ปรับปรุงให้ครอบคลุมมากขึ้น)
     $searchCondition = '';
     $filterCondition = '';
     $params = [':u_id' => $u_id];
@@ -50,7 +50,12 @@ try {
             e.name LIKE :search OR 
             e.asset_code LIKE :search OR 
             d_now_location.department_name LIKE :search OR
-            ht.status_transfer LIKE :search
+            ht.status_transfer LIKE :search OR
+            ht.now_equip_location_details LIKE :search OR
+            d_from.department_name LIKE :search OR
+            d_to.department_name LIKE :search OR
+            u_transfer.full_name LIKE :search OR
+            u_recipient.full_name LIKE :search
         )";
         $params[':search'] = '%' . $searchText . '%';
     }
