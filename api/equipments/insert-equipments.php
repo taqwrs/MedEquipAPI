@@ -1,9 +1,6 @@
 <?php
 include "../config/jwt.php";
 
-$uploadDirectory = 'C:/xampp/htdocs/back_equip/uploads/';
-$baseUrl = 'http://localhost/back_equip/uploads/';
-
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(["status"=>"error","message"=>"POST method only"]);
     exit;
@@ -21,19 +18,12 @@ try {
         'import_type_id','subcategory_id','location_department_id','location_details',
         'manufacturer_company_id','supplier_company_id','maintainer_company_id',
         'production_year','price','contract','start_date','end_date','warranty_duration_days',
-        'warranty_condition','user_id','updated_by','record_status','status','active','first_register'
+        'warranty_condition','user_id','updated_by','record_status','details','status','active','first_register'
     ];
 
     $relations = [
         'child_equipments'=>['table'=>'equipments','fk'=>'main_equipment_id','idField'=>'equipment_id'],
         'spare_parts'=>['table'=>'spare_parts','fk'=>'equipment_id','idField'=>'spare_part_id']
-    ];
-
-    $fileTypes = [
-        'contractFiles'=>'เอกสารสัญญา',
-        'warrantyFiles'=>'เอกสาร Warranty',
-        'manualFiles'=>'คู่มือ',
-        'deviceImages'=>'รูปภาพเครื่อง'
     ];
 
     // --- ตรวจ required ---
@@ -82,38 +72,6 @@ try {
                                          SET {$relConfig['fk']}=:main, updated_by=:updated_by, updated_at=NOW() 
                                          WHERE {$relConfig['idField']}=:id");
                     $stmt->execute([':main'=>$equipId,':id'=>$item[$relConfig['idField']],':updated_by'=>$userId]);
-                }
-            }
-        }
-    }
-
-    // --- Files: upload และ URL ---
-    foreach($fileTypes as $payloadKey=>$typeName){
-        if(isset($_FILES[$payloadKey])){
-            foreach($_FILES[$payloadKey]['name'] as $i=>$name){
-                if($_FILES[$payloadKey]['error'][$i]===UPLOAD_ERR_OK){
-                    $newName=uniqid().'-'.basename($name);
-                    $dest=$uploadDirectory.$newName;
-                    if(move_uploaded_file($_FILES[$payloadKey]['tmp_name'][$i],$dest)){
-                        $stmt=$dbh->prepare("INSERT INTO file_equip 
-                            (equipment_id,file_equip_name,equip_url,equip_type_name,upload_at) 
-                            VALUES (:id,:name,:url,:type,NOW())");
-                        $stmt->execute([':id'=>$equipId,':name'=>$name,':url'=>$baseUrl.$newName,':type'=>$typeName]);
-                    }
-                }
-            }
-        }
-
-        $urlField = $payloadKey.'Urls';
-        if(!empty($_POST[$urlField])){
-            $urls = $_POST[$urlField];
-            if(is_string($urls)) $urls=json_decode($urls,true);
-            if(is_array($urls)){
-                foreach($urls as $url){
-                    $stmt=$dbh->prepare("INSERT INTO file_equip 
-                        (equipment_id,file_equip_name,equip_url,equip_type_name,upload_at) 
-                        VALUES (:id,:name,:url,:type,NOW())");
-                    $stmt->execute([':id'=>$equipId,':name'=>basename($url),':url'=>$url,':type'=>$typeName]);
                 }
             }
         }
