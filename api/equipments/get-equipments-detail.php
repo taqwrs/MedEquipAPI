@@ -131,7 +131,7 @@ try {
     }
     
     // ลบ Key ที่ไม่จำเป็นออกไป (ทางเลือก)
-    unset($data['main_equipment_name'], $data['main_equipment_asset_code']);
+    // unset($data['main_equipment_name'], $data['main_equipment_asset_code']);
 
 
     echo json_encode([
