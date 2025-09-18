@@ -19,16 +19,13 @@ try {
     $where = [];
     $params = [];
 
-    // ✅ Search
     if ($search !== "") {
         $where[] = "(r.remark LIKE ? OR r.location LIKE ? OR u_reporter.full_name LIKE ? OR e.asset_code LIKE ? OR e.name LIKE ?)";
         $params = array_merge($params, array_fill(0, 5, "%$search%"));
     }
 
-    // ✅ Filter สถานะ
     if ($statusFilter !== "") {
         if ($statusFilter === "ซ่อมเสร็จ" || $statusFilter === "ซ่อมไม่ได้") {
-            // กรองจาก repair_result (สถานะล่าสุด)
             $where[] = "EXISTS (
                 SELECT 1 FROM repair_result rr
                 WHERE rr.repair_id = r.repair_id
@@ -38,7 +35,6 @@ try {
             )";
             $params[] = $statusFilter;
         } else {
-            // กรองจาก repair table
             $where[] = "r.status = ?";
             $params[] = $statusFilter;
         }
@@ -46,6 +42,7 @@ try {
 
     $whereSQL = $where ? "WHERE " . implode(" AND ", $where) : "";
 
+    // 1️⃣ ดึง repair ข้อมูลหลัก
     $query = "SELECT 
         r.repair_id,
         r.equipment_id,
@@ -71,7 +68,27 @@ try {
     $stmt->execute($params);
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // 2️⃣ นับจำนวนครั้งซ่อมรวมต่อเครื่องมือ
+    $sqlCounter = "SELECT 
+                        e.equipment_id,
+                        COUNT(rr.repair_result_id) AS repair_count
+                   FROM equipments e
+                   LEFT JOIN repair r ON e.equipment_id = r.equipment_id
+                   LEFT JOIN repair_result rr ON r.repair_id = rr.repair_id
+                   GROUP BY e.equipment_id";
+    $stmtCounter = $dbh->prepare($sqlCounter);
+    $stmtCounter->execute();
+    $equipmentCounts = $stmtCounter->fetchAll(PDO::FETCH_ASSOC);
+
+    $equipmentRepairs = [];
+    foreach ($equipmentCounts as $eq) {
+        $equipmentRepairs[$eq['equipment_id']] = $eq['repair_count'];
+    }
+
+    // 3️⃣ ดึง repair_results และใส่ counter
     foreach ($repairs as &$repair) {
+        $repair['counter'] = $equipmentRepairs[$repair['equipment_id']] ?? 0;
+
         $sql2 = "SELECT 
                     rr.repair_result_id,
                     rr.user_id AS responsible_id,
