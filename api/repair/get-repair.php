@@ -12,6 +12,40 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
+    $input = json_decode(file_get_contents("php://input"), true);
+    $search = isset($input['search']) ? trim($input['search']) : "";
+    $statusFilter = isset($input['status_filter']) ? trim($input['status_filter']) : "";
+
+    $where = [];
+    $params = [];
+
+    // ✅ Search
+    if ($search !== "") {
+        $where[] = "(r.remark LIKE ? OR r.location LIKE ? OR u_reporter.full_name LIKE ? OR e.asset_code LIKE ? OR e.name LIKE ?)";
+        $params = array_merge($params, array_fill(0, 5, "%$search%"));
+    }
+
+    // ✅ Filter สถานะ
+    if ($statusFilter !== "") {
+        if ($statusFilter === "ซ่อมเสร็จ" || $statusFilter === "ซ่อมไม่ได้") {
+            // กรองจาก repair_result (สถานะล่าสุด)
+            $where[] = "EXISTS (
+                SELECT 1 FROM repair_result rr
+                WHERE rr.repair_id = r.repair_id
+                AND rr.status = ?
+                ORDER BY rr.repair_result_id DESC
+                LIMIT 1
+            )";
+            $params[] = $statusFilter;
+        } else {
+            // กรองจาก repair table
+            $where[] = "r.status = ?";
+            $params[] = $statusFilter;
+        }
+    }
+
+    $whereSQL = $where ? "WHERE " . implode(" AND ", $where) : "";
+
     $query = "SELECT 
         r.repair_id,
         r.equipment_id,
@@ -30,9 +64,11 @@ try {
     LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
     LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
     LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
+    $whereSQL
     ORDER BY r.repair_id DESC";
 
-    $stmt = $dbh->query($query);
+    $stmt = $dbh->prepare($query);
+    $stmt->execute($params);
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($repairs as &$repair) {
@@ -51,36 +87,11 @@ try {
                  LEFT JOIN users u_responsible ON rr.user_id = u_responsible.user_id
                  LEFT JOIN spare_parts_used spu ON rr.repair_result_id = spu.repair_result_id
                  LEFT JOIN spare_parts sp ON spu.spare_part_id = sp.spare_part_id
-                 WHERE rr.repair_id = ?";
+                 WHERE rr.repair_id = ?
+                 ORDER BY rr.repair_result_id ASC";
         $stmt2 = $dbh->prepare($sql2);
         $stmt2->execute([$repair['repair_id']]);
-        $repairResults = $stmt2->fetchAll(PDO::FETCH_ASSOC);
-
-        $results = [];
-        foreach ($repairResults as $row) {
-
-            $stmtFiles = $dbh->prepare("SELECT repair_file_name, repair_file_url, repair_type_name
-                                        FROM file_repair_result
-                                        WHERE repair_result_id = ?");
-            $stmtFiles->execute([$row['repair_result_id']]);
-            $files = $stmtFiles->fetchAll(PDO::FETCH_ASSOC);
-
-            $results[] = [
-                "repair_result_id" => $row["repair_result_id"],
-                "responsible_id"   => $row["responsible_id"],
-                "responsible_name" => $row["responsible_name"],
-                "performed_date"   => $row["performed_date"],
-                "solution"         => $row["solution"],
-                "cost"             => $row["cost"],
-                "status"           => $row["status"],
-                "remark"           => $row["remark"],
-                "spare_part_id"    => $row["spare_part_id"],
-                "spare_name"       => $row["spare_name"],
-                "files"            => $files
-            ];
-        }
-
-        $repair['repair_results'] = $results;
+        $repair['repair_results'] = $stmt2->fetchAll(PDO::FETCH_ASSOC);
     }
 
     echo json_encode([

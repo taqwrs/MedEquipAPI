@@ -27,14 +27,12 @@ try {
     $user_id = $_POST['user_id'] ?? null;
     if (!$user_id) throw new Exception("ไม่พบ user_id");
 
-    // ✅ ถ้า "ซ่อมไม่ได้" แต่ไม่เลือก next_action → error
     if ($status === "ซ่อมไม่ได้" && !$next_action) {
         throw new Exception("กรุณาเลือกการดำเนินการต่อไป (next_action)");
     }
 
     $dbh->beginTransaction();
 
-    // ✅ Insert ผลการซ่อม
     $stmt = $dbh->prepare("
         INSERT INTO repair_result
         (repair_id, user_id, performed_date, solution, cost, status, remark, next_action)
@@ -52,7 +50,6 @@ try {
     ]);
     $repair_result_id = $dbh->lastInsertId();
 
-    // ✅ บันทึกอะไหล่
     if (!empty($spareParts)) {
         $stmt_spare = $dbh->prepare("
             INSERT INTO spare_parts_used (repair_result_id, spare_part_id)
@@ -68,7 +65,7 @@ try {
         }
     }
 
-    // ✅ Upload ไฟล์
+
     if (!empty($_FILES['files']['name'][0])) {
         $uploadDir = "uploads/repair_files/";
         if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
