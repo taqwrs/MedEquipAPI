@@ -7,70 +7,44 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-// ฟังก์ชันแปลงวันที่เป็น DD-MM-YYYY
-function formatDate($date) {
-    return $date ? date("d/m/Y", strtotime($date)) : null;
-}
-
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
         exit;
     }
 
-    // ดึง u_id จาก JWT token
     $u_id = $decoded->data->ID ?? null;
-    if (!$u_id) {
-        echo json_encode(["status" => "error", "message" => "User ID not found in token"]);
-        exit;
-    }
+    if (!$u_id) throw new Exception("User ID not found");
 
-    // รับพารามิเตอร์การค้นหาและกรอง
-    $searchText = $_GET['search'] ?? '';
-    $filterType = $_GET['filter'] ?? '';
+    $searchText  = $_GET['search'] ?? '';
+    $filterType  = $_GET['filter'] ?? '';
 
-    // ตรวจสอบว่าผู้ใช้งานมีอยู่จริง
-    $checkUser = $dbh->prepare("SELECT ID, user_id, full_name, department_id FROM users WHERE ID = :u_id");
-    $checkUser->bindParam(':u_id', $u_id, PDO::PARAM_INT);
-    $checkUser->execute();
-    $user = $checkUser->fetch(PDO::FETCH_ASSOC);
-
-    if (!$user) {
-        echo json_encode(["status" => "error", "message" => "User not found or inactive"]);
-        exit;
-    }
-
-    // สร้าง WHERE clause สำหรับการค้นหา (ปรับปรุงให้ครอบคลุมมากขึ้น)
     $searchCondition = '';
     $filterCondition = '';
     $params = [':u_id' => $u_id];
 
+    // Search
     if (!empty($searchText)) {
         $searchCondition = "AND (
             e.name LIKE :search OR 
             e.asset_code LIKE :search OR 
-            d_now_location.department_name LIKE :search OR
-            ht.status_transfer LIKE :search OR
-            ht.now_equip_location_details LIKE :search OR
             d_from.department_name LIKE :search OR
             d_to.department_name LIKE :search OR
-            u_transfer.full_name LIKE :search OR
-            u_recipient.full_name LIKE :search
+            d_now_location.department_name LIKE :search OR
+            ht.status_transfer LIKE :search
         )";
         $params[':search'] = '%' . $searchText . '%';
     }
 
+    // Filter
     if (!empty($filterType)) {
-        if ($filterType === 'borrow') {
-            $filterCondition = "AND ht.transfer_type = 'โอนย้ายชั่วคราว'";
-        } elseif ($filterType === 'transfer') {
-            $filterCondition = "AND ht.transfer_type = 'โอนย้ายถาวร'";
-        }
+        if ($filterType === 'borrow') $filterCondition = "AND ht.transfer_type = 'โอนย้ายชั่วคราว'";
+        if ($filterType === 'transfer') $filterCondition = "AND ht.transfer_type = 'โอนย้ายถาวร'";
     }
 
-    // Query ประวัติการโอนย้ายของผู้ใช้งานที่ login
+    // Query รายละเอียด (เอา LIMIT และ OFFSET ออก)
     $sql = "
-        SELECT DISTINCT
+         SELECT DISTINCT
             ht.history_transfer_id,
             ht.transfer_id,
             ht.transfer_type,
@@ -188,144 +162,67 @@ try {
     ";
 
     $stmt = $dbh->prepare($sql);
-    
-    // Bind parameters
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
-    }
-    
+    foreach ($params as $k => $v) $stmt->bindValue($k, $v);
     $stmt->execute();
-    $transfers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $temporary = [];
-    $permanent = [];
-    $summary = [
-        "โอนย้ายถาวร_ผู้โอน" => 0,
-        "โอนย้ายถาวร_ผู้รับ" => 0,
-        "โอนย้ายชั่วคราว_ผู้โอน" => 0,
-        "โอนย้ายชั่วคราว_ผู้รับ" => 0
-    ];
-
-    foreach ($transfers as $t) {
-        $is_sender = ($t['transfer_user_id'] == $u_id);
-        
-        if ($t['transfer_type'] === 'โอนย้ายชั่วคราว') {
-            // โครงสร้างสำหรับโอนย้ายชั่วคราว
-            $administrators = null;
-            if ($t['old_admin_id']) {
-                $administrators = [
-                    "old_admin" => [
-                        "admin_id" => (int)$t['old_admin_id'],
-                        "admin_user_id" => $t['old_admin_user_id'],
-                        "admin_name" => $t['old_admin_name'],
-                        "admin_department" => $t['old_admin_department']
-                    ]
-                ];
-            }
-            
-            $item = [
-                "history_transfer_id" => (int)$t['history_transfer_id'],
-                "transfer_id" => $t['transfer_id'],
-                "transfer_type" => $t['transfer_type'],
-                "equipment_id" => (int)$t['equipment_id'],
-                "name" => $t['equipment_name'],
-                "asset_code" => $t['asset_code'],
-                "from_department_id" => $t['from_department_id'] ? (int)$t['from_department_id'] : null,
-                "to_department_id" => $t['to_department_id'] ? (int)$t['to_department_id'] : null,
-                "transfer_date" => formatDate($t['transfer_date']),
-                "returned_date" => formatDate($t['returned_date']),
-                "reason" => $t['reason'],
-                "transfer_user_id" => (int)$t['transfer_user_id'],
-                "recipient_user_id" => (int)$t['recipient_user_id'],
-                "updated_at" => formatDate($t['updated_at']),
-                "now_equip_location_department_id" => $t['now_equip_location_department_id'] ? (int)$t['now_equip_location_department_id'] : null,
-                "now_equip_location_department_name" => $t['now_equip_location_department_name'],
-                "now_equip_location_details" => $t['now_equip_location_details'],
-                "old_subcategory_id" => $t['old_subcategory_id'] ? (int)$t['old_subcategory_id'] : null,
-                "old_subcategory_name" => $t['old_subcategory_name'],
-                "status_transfer" => $t['status_transfer'],
-                "transfer_user_name" => $t['transfer_user_name'],
-                "recipient_user_name" => $t['recipient_user_name'],
-                "from_department" => $t['from_department_name'],
-                "to_department" => $t['to_department_name'],
-                "status" => $t['status_transfer'],
-                "user_role" => $is_sender ? "ผู้โอน" : "ผู้รับ",
-                "install_location" => $t['now_equip_location_details'] ?: "-",
-                "administrators จากold_subcategory_id" => $administrators
-            ];
-            
-            $temporary[] = $item;
-            if ($is_sender) $summary["โอนย้ายชั่วคราว_ผู้โอน"]++;
-            else $summary["โอนย้ายชั่วคราว_ผู้รับ"]++;
-            
-        } else {
-            // โครงสร้างสำหรับโอนย้ายถาวร
-            $administrators = null;
-            if ($t['now_admin_id']) {
-                $administrators = [
-                    "new_admin" => [
-                        "admin_id" => (int)$t['now_admin_id'],
-                        "admin_user_id" => $t['now_admin_user_id'],
-                        "admin_name" => $t['now_admin_name'],
-                        "admin_department" => $t['now_admin_department']
-                    ]
-                ];
-            }
-            
-            $item = [
-                "history_transfer_id" => (int)$t['history_transfer_id'],
-                "transfer_id" => $t['transfer_id'],
-                "transfer_type" => $t['transfer_type'],
-                "equipment_id" => (int)$t['equipment_id'],
-                "name" => $t['equipment_name'],
-                "asset_code" => $t['asset_code'],
-                "from_department_id" => $t['from_department_id'] ? (int)$t['from_department_id'] : null,
-                "to_department_id" => $t['to_department_id'] ? (int)$t['to_department_id'] : null,
-                "transfer_date" => formatDate($t['transfer_date']),
-                "returned_date" => formatDate($t['returned_date']),
-                "reason" => $t['reason'],
-                "transfer_user_id" => (int)$t['transfer_user_id'],
-                "recipient_user_id" => (int)$t['recipient_user_id'],
-                "updated_at" => formatDate($t['updated_at']),
-                "now_equip_location_department_id" => $t['now_equip_location_department_id'] ? (int)$t['now_equip_location_department_id'] : null,
-                "now_equip_location_department_name" => $t['now_equip_location_department_name'],
-                "now_equip_location_details" => $t['now_equip_location_details'],
-                "now_subcategory_id" => $t['now_subcategory_id'] ? (int)$t['now_subcategory_id'] : null,
-                "now_subcategory_name" => $t['now_subcategory_name'],
-                "status_transfer" => $t['status_transfer'],
-                "transfer_user_name" => $t['transfer_user_name'],
-                "recipient_user_name" => $t['recipient_user_name'],
-                "from_department" => $t['from_department_name'],
-                "to_department" => $t['to_department_name'],
-                "status" => $t['status_transfer'],
-                "user_role" => $is_sender ? "ผู้โอน" : "ผู้รับ",
-                "install_location" => $t['now_equip_location_details'] ?: "-",
-                "administrators จากnow_subcategory_id" => $administrators
-            ];
-            
-            $permanent[] = $item;
-            if ($is_sender) $summary["โอนย้ายถาวร_ผู้โอน"]++;
-            else $summary["โอนย้ายถาวร_ผู้รับ"]++;
+    // Filter status ตาม transfer_type
+    $filteredRows = array_filter($rows, function($row) {
+        if ($row['transfer_type'] === 'โอนย้ายถาวร') {
+            return $row['status_transfer'] == 1; // ไม่ต้องคืน
+        } elseif ($row['transfer_type'] === 'โอนย้ายชั่วคราว') {
+            return true; // คืนหรือยังไม่คืน อยู่ที่ status 0/1
         }
-    }
+        return false;
+    });
 
+    // เพิ่มข้อมูล main_admin ใน response
+    $finalData = array_map(function($row) {
+        // กำหนดข้อมูลผู้ดูแลหลักตามประเภทการโอนย้าย
+        $mainAdmin = null;
+        
+        if ($row['transfer_type'] === 'โอนย้ายชั่วคราว') {
+            // ใช้ข้อมูล old_admin สำหรับโอนย้ายชั่วคราว
+            if ($row['old_admin_name']) {
+                $mainAdmin = [
+                    'admin_id' => $row['old_admin_id'],
+                    'admin_user_id' => $row['old_admin_user_id'],
+                    'admin_name' => $row['old_admin_name'],
+                    'admin_department' => $row['old_admin_department']
+                ];
+            }
+        } elseif ($row['transfer_type'] === 'โอนย้ายถาวร') {
+            // ใช้ข้อมูล now_admin สำหรับโอนย้ายถาวร
+            if ($row['now_admin_name']) {
+                $mainAdmin = [
+                    'admin_id' => $row['now_admin_id'],
+                    'admin_user_id' => $row['now_admin_user_id'],
+                    'admin_name' => $row['now_admin_name'],
+                    'admin_department' => $row['now_admin_department']
+                ];
+            }
+        }
+        
+        // เพิ่ม main_admin ลงใน row
+        $row['main_admin'] = $mainAdmin;
+        
+        // เพิ่มสถานะที่แสดงผลให้ชัดเจน
+        if ($row['transfer_type'] === 'โอนย้ายถาวร') {
+            $row['status_display'] = 'ไม่ต้องคืน';
+        } elseif ($row['transfer_type'] === 'โอนย้ายชั่วคราว') {
+            $row['status_display'] = ($row['status_transfer'] == 0) ? 'ยังไม่คืน' : 'คืนแล้ว';
+        }
+        
+        return $row;
+    }, array_values($filteredRows));
+
+    // ไม่ต้อง pagination แล้ว
     echo json_encode([
         "status" => "success",
-        "data" => [
-            "u_id" => (int)$user['ID'],
-            "user_id" => $user['user_id'],
-            "user_name" => $user['full_name'],
-            "โอนย้ายชั่วคราว" => $temporary,
-            "โอนย้ายถาวร" => $permanent,
-            "summary" => $summary
-        ]
+        "total" => count($finalData),
+        "data" => $finalData
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        "status" => "error",
-        "message" => "เกิดข้อผิดพลาด: " . $e->getMessage()
-    ], JSON_UNESCAPED_UNICODE);
+    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>
