@@ -23,10 +23,10 @@ try {
 
     // Fields for partial update
     $fields = [
-        'name','asset_code','import_type_id','spare_subcate_id','location_department_id',
+        'name','asset_code','import_type_id','spare_subcategory_id','location_department_id',
         'location_details','production_year','price','contract','start_date','end_date',
         'warranty_condition','maintainer_company_id','supplier_company_id','manufacturer_company_id',
-        'status'
+        'status','record_status','spec','model','brand','serial_number','details'
     ];
 
     $setParts = [];
@@ -45,30 +45,6 @@ try {
         $sql = "UPDATE spare_parts SET " . implode(',', $setParts) . " WHERE spare_part_id=:spare_part_id";
         $stmt = $dbh->prepare($sql);
         $stmt->execute($params);
-    }
-
-    // Handle files from FormData ($_FILES)
-    if (!empty($_FILES['file_spare'])) {
-        $uploadDir = 'uploads/';
-        foreach ($_FILES['file_spare']['name'] as $index => $name) {
-            $tmp_name = $_FILES['file_spare']['tmp_name'][$index];
-            $typeName = $_POST['spare_type_name'][$index] ?? null;
-            $fileName = $_FILES['file_spare']['name'][$index];
-
-            // move uploaded file
-            $targetPath = $uploadDir . uniqid('file_') . '_' . basename($fileName);
-            move_uploaded_file($tmp_name, $targetPath);
-
-            $sql = "INSERT INTO file_spare (spare_part_id, spare_url, spare_type_name, file_spare_name, updated_at)
-                    VALUES (:spare_part_id, :spare_url, :spare_type_name, :file_spare_name, NOW())";
-            $stmt = $dbh->prepare($sql);
-            $stmt->execute([
-                ':spare_part_id' => $spare_part_id,
-                ':spare_url' => $targetPath,
-                ':spare_type_name' => $typeName,
-                ':file_spare_name' => $fileName
-            ]);
-        }
     }
 
     $dbh->commit();

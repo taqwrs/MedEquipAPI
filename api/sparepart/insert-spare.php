@@ -1,9 +1,6 @@
 <?php
 include "../config/jwt.php";
 
-$uploadDirectory = 'C:\xampp\htdocs\back_equip\uploads\\';
-$baseUrl = 'http://localhost/back_equip/uploads/';
-
 $isJsonRequest = (strpos(strtolower(getenv("CONTENT_TYPE")), 'application/json') !== false);
 $input = $isJsonRequest ? json_decode(file_get_contents('php://input'), true) : $_POST;
 
@@ -32,13 +29,6 @@ try {
     'warranty_condition','maintainer_company_id','supplier_company_id','manufacturer_company_id',
     'record_status','status','active','user_id','updated_by','first_register'
 ];
-
-    $fileTypes = [
-        'contractFiles'=>'เอกสารสัญญา',
-        'warrantyFiles'=>'เอกสาร Warranty',
-        'manualFiles'=>'คู่มือ',
-        'spareImages'=>'รูปภาพอะไหล่'
-    ];
 
     // ------------------ CHECK REQUIRED ------------------
     foreach($requiredFields as $f){
@@ -83,43 +73,6 @@ try {
     foreach($values as $k=>$v) $stmt->bindValue($k,$v);
     $stmt->execute();
     $spareId = $dbh->lastInsertId();
-
-    // ------------------ FILES ------------------
-    foreach($fileTypes as $payloadKey=>$typeName){
-        // 1. อัปโหลดจากเครื่อง
-        if(isset($_FILES[$payloadKey])){
-            foreach($_FILES[$payloadKey]['name'] as $i=>$name){
-                if($_FILES[$payloadKey]['error'][$i]===UPLOAD_ERR_OK){
-                    $newName=uniqid().'-'.basename($name);
-                    $dest=$uploadDirectory.$newName;
-                    if(move_uploaded_file($_FILES[$payloadKey]['tmp_name'][$i],$dest)){
-                        $stmt=$dbh->prepare("INSERT INTO file_spare (spare_part_id,file_spare_name,spare_url,spare_type_name) VALUES (:id,:name,:url,:type)");
-                        $stmt->execute([':id'=>$spareId,':name'=>$name,':url'=>$baseUrl.$newName,':type'=>$typeName]);
-                    }
-                }
-            }
-        }
-
-        // 2. URL
-        $urlField = $payloadKey.'Urls'; // เช่น spareImagesUrls, contractFilesUrls
-        if(!empty($input[$urlField])){
-            $urls = $input[$urlField];
-            if(is_string($urls)) $urls=json_decode($urls,true);
-            if(is_array($urls)){
-                foreach($urls as $url){
-                    if(!empty($url)){
-                        $stmt=$dbh->prepare("INSERT INTO file_spare (spare_part_id,file_spare_name,spare_url,spare_type_name) VALUES (:id,:name,:url,:type)");
-                        $stmt->execute([
-                            ':id'=>$spareId,
-                            ':name'=>basename($url),
-                            ':url'=>$url,
-                            ':type'=>$typeName
-                        ]);
-                    }
-                }
-            }
-        }
-    }
 
     $dbh->commit();
     echo json_encode(["status"=>"success","message"=>"Spare part inserted","id"=>$spareId,"record_status"=>$input['record_status']]);

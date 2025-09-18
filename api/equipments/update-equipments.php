@@ -37,6 +37,7 @@ try {
         'user_id',
         'status',
         'record_status',
+        'details',
         'first_register',
         'location_details',
         'spec',
@@ -135,42 +136,6 @@ try {
             ':updated_by' => $updated_by,
             ':spare_id' => $spare_id
         ]);
-    }
-
-    // --- Files ---
-    if (!empty($_POST['filesInfo'])) {
-        $files = json_decode($_POST['filesInfo'], true) ?: [];
-        foreach ($files as $file) {
-            if (!empty($file['equip_url']) && !empty($file['equip_type_name'])) {
-                $stmt = $dbh->prepare("INSERT INTO file_equip (equipment_id,file_equip_name,equip_url,equip_type_name,upload_at) VALUES (:eid,:name,:url,:type,NOW())");
-                $stmt->execute([
-                    ':eid' => $equipment_id,
-                    ':name' => $file['file_equip_name'] ?? basename($file['equip_url']),
-                    ':url' => $file['equip_url'],
-                    ':type' => $file['equip_type_name']
-                ]);
-            }
-        }
-    }
-
-    // --- Upload new files ---
-    if (!empty($_FILES['file_equip'])) {
-        foreach ($_FILES['file_equip']['name'] as $index => $name) {
-            $tmp_name = $_FILES['file_equip']['tmp_name'][$index];
-            $typeName = $_POST['equip_type_name'][$index] ?? 'ไฟล์แนบ';
-            $uploadDir = 'uploads/';
-            $fileName = uniqid('file_') . '_' . basename($name);
-            move_uploaded_file($tmp_name, $uploadDir . $fileName);
-
-            $sql = "INSERT INTO file_equip (file_equip_name,equip_url,equip_type_name,equipment_id,upload_at) VALUES (:file_equip_name,:equip_url,:equip_type_name,:equipment_id,NOW())";
-            $stmt = $dbh->prepare($sql);
-            $stmt->execute([
-                ':file_equip_name' => $name,
-                ':equip_url' => $uploadDir . $fileName,
-                ':equip_type_name' => $typeName,
-                ':equipment_id' => $equipment_id
-            ]);
-        }
     }
 
     $dbh->commit();
