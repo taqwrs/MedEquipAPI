@@ -19,7 +19,7 @@ try {
         $stmt = $dbh->prepare("
             SELECT equipment_id, name, brand, model, asset_code, status, location_details, subcategory_id
             FROM equipments
-            ORDER BY name
+            ORDER BY subcategory_id
         ");
         $stmt->execute();
         $equipments = $stmt->fetchAll(PDO::FETCH_ASSOC);
