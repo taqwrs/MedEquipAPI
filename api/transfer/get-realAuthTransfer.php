@@ -29,8 +29,7 @@ try {
         AND e.active = 1
         AND (
             et.equipment_id IS NULL 
-            OR et.status != 0
-        )";
+            OR et.status != 0 )";
     
     $searchWhere = '';
     $params = [':u_id' => $u_id];
@@ -61,16 +60,14 @@ try {
         ) et ON e.equipment_id = et.equipment_id AND et.rn = 1
         WHERE $baseWhere $searchWhere
     ";
-    
-    // Count total items
+
     $countStmt = $dbh->prepare("SELECT COUNT(DISTINCT e.equipment_id) as total $joinTables");
     foreach ($params as $key => $value) {
         $countStmt->bindValue($key, $value);
     }
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
-    
-    // Get paginated data
+
     $dataStmt = $dbh->prepare("
         SELECT DISTINCT
             e.equipment_id,
