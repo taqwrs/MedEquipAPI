@@ -47,30 +47,35 @@ if (!in_array((int) $input['frequency_unit'], $allowed_frequency_unit)) {
 try {
     $dbh->beginTransaction();
 
-
     $startDate = new DateTime($input['start_date']);
     $endDate = new DateTime($input['end_date']);
     $intervalNumber = (int) $input['frequency_number'];
     $intervalUnit = (int) $input['frequency_unit'];
-    $intervalCount = 0;
-    $tempDate = clone $startDate;
-    while ($tempDate <= $endDate) {
-        $intervalCount++;
-        switch ($intervalUnit) {
-            case 1:
-                $tempDate->add(new DateInterval('P' . $intervalNumber . 'D'));
-                break;
-            case 2:
-                $tempDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D'));
-                break;
-            case 3:
-                $tempDate->add(new DateInterval('P' . $intervalNumber . 'M'));
-                break;
-            case 4:
-                $tempDate->add(new DateInterval('P' . $intervalNumber . 'Y'));
-                break;
+
+    if ($input['frequency_type'] === 'รอบเดียว') {
+        $intervalCount = 1; 
+    } else {
+        $intervalCount = 0;
+        $tempDate = clone $startDate;
+        while ($tempDate <= $endDate) {
+            $intervalCount++;
+            switch ($intervalUnit) {
+                case 1:
+                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'D'));
+                    break;
+                case 2:
+                    $tempDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D'));
+                    break;
+                case 3:
+                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'M'));
+                    break;
+                case 4:
+                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'Y'));
+                    break;
+            }
         }
     }
+
 
     $stmt = $dbh->prepare("INSERT INTO calibration_plans 
     (plan_name, user_id, group_user_id, company_id, frequency_number, frequency_unit, frequency_type, interval_count, contract, start_waranty, start_date, end_date, cost_type, price, type_cal, is_active)
@@ -96,29 +101,36 @@ try {
         ':is_active' => $input['is_active'] ?? 1
     ]);
 
-
     $plan_id = $dbh->lastInsertId();
 
     $detailsStmt = $dbh->prepare("INSERT INTO details_calibration_plans (plan_id,start_date) VALUES (:plan_id,:start_date)");
-    $scheduledDate = clone $startDate;
-    for ($i = 1; $i <= $intervalCount; $i++) {
+
+    if ($input['frequency_type'] === 'รอบเดียว') {
         $detailsStmt->execute([
             ':plan_id' => $plan_id,
-            ':start_date' => $scheduledDate->format('Y-m-d')
+            ':start_date' => $startDate->format('Y-m-d')
         ]);
-        switch ($intervalUnit) {
-            case 1:
-                $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'D'));
-                break;
-            case 2:
-                $scheduledDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D'));
-                break;
-            case 3:
-                $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'M'));
-                break;
-            case 4:
-                $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'Y'));
-                break;
+    } else {
+        $scheduledDate = clone $startDate;
+        for ($i = 1; $i <= $intervalCount; $i++) {
+            $detailsStmt->execute([
+                ':plan_id' => $plan_id,
+                ':start_date' => $scheduledDate->format('Y-m-d')
+            ]);
+            switch ($intervalUnit) {
+                case 1:
+                    $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'D'));
+                    break;
+                case 2:
+                    $scheduledDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D'));
+                    break;
+                case 3:
+                    $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'M'));
+                    break;
+                case 4:
+                    $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'Y'));
+                    break;
+            }
         }
     }
 

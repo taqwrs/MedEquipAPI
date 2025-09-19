@@ -30,14 +30,13 @@ try {
 
     $params = [];
 
-    // Search filter
+
     if ($search !== '') {
         $query .= " AND (e.name LIKE ? OR w.asset_number LIKE ?)";
         $params[] = "%$search%";
         $params[] = "%$search%";
     }
 
-    // Status filter
     $statusMap = [
         'waiting' => 'รออนุมัติ',
         'approved' => 'อนุมัติแล้ว',
@@ -49,7 +48,13 @@ try {
         $params[] = $statusMap[$statusFilter];
     }
 
-    $query .= " ORDER BY w.writeoff_id DESC";
+    $query .= " ORDER BY 
+    CASE 
+        WHEN w.status = 'รออนุมัติ' THEN 0
+        ELSE 1
+    END,
+    w.writeoff_id DESC";
+
 
     $stmt = $dbh->prepare($query);
     $stmt->execute($params);
@@ -61,7 +66,6 @@ try {
         $stmtFile->execute([$wo['writeoff_id']]);
         $wo['files'] = $stmtFile->fetchAll(PDO::FETCH_ASSOC);
     }
-
     echo json_encode(["status" => "success", "data" => $writeoffs]);
 
 } catch (Exception $e) {

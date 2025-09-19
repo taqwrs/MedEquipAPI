@@ -1,30 +1,35 @@
 <?php
-include "../config/jwt.php"; 
-// ประวัติการโอนย้ายที่เกี่ยวข้องกับ u_id ที่ login อยู่
+include "../config/jwt.php";
+// ประวัติการโอนย้ายที่เกี่ยวข้องกับ u_id ที่ login อยู่ (แบบมี pagination)
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(["status" => "error", "message" => "POST method only"]);
+    exit;
+}
+
 try {
-    if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-        echo json_encode(["status" => "error", "message" => "Method not allowed"]);
-        exit;
-    }
-
     $u_id = $decoded->data->ID ?? null;
-    if (!$u_id) throw new Exception("User ID not found");
+    if (!$u_id)
+        throw new Exception("User ID not found");
 
-    $searchText  = $_GET['search'] ?? '';
-    $filterType  = $_GET['filter'] ?? '';
+    $input = json_decode(file_get_contents('php://input'), true);
+    $search = trim($input['search'] ?? '');
+    $filterType = trim($input['filter'] ?? '');
+    $page = (int) ($input['page'] ?? 1);
+    $limit = (int) ($input['limit'] ?? 5);
+    $offset = ($page - 1) * $limit;
+    $useLimit = $limit > 0;
 
     $searchCondition = '';
     $filterCondition = '';
     $params = [':u_id' => $u_id];
 
-    // Search
-    if (!empty($searchText)) {
+    if (!empty($search)) {
         $searchCondition = "AND (
             e.name LIKE :search OR 
             e.asset_code LIKE :search OR 
@@ -33,18 +38,47 @@ try {
             d_now_location.department_name LIKE :search OR
             ht.status_transfer LIKE :search
         )";
-        $params[':search'] = '%' . $searchText . '%';
+        $params[':search'] = "%$search%";
     }
 
-    // Filter
+    // Filter condition
     if (!empty($filterType)) {
-        if ($filterType === 'borrow') $filterCondition = "AND ht.transfer_type = 'โอนย้ายชั่วคราว'";
-        if ($filterType === 'transfer') $filterCondition = "AND ht.transfer_type = 'โอนย้ายถาวร'";
+        if ($filterType === 'borrow')
+            $filterCondition = "AND ht.transfer_type = 'โอนย้ายชั่วคราว'";
+        if ($filterType === 'transfer')
+            $filterCondition = "AND ht.transfer_type = 'โอนย้ายถาวร'";
     }
 
-    // Query รายละเอียด (เอา LIMIT และ OFFSET ออก)
+    // Base WHERE condition with status filtering
+    $baseWhere = "WHERE (ht.transfer_user_id = :u_id OR ht.recipient_user_id = :u_id)
+        AND (
+            (ht.transfer_type = 'โอนย้ายถาวร' AND ht.status_transfer = 1) OR
+            (ht.transfer_type = 'โอนย้ายชั่วคราว')
+        )
+        {$searchCondition}
+        {$filterCondition}";
+
+    // Count total items first
+    $countSql = "
+        SELECT COUNT(DISTINCT ht.history_transfer_id) as total
+        FROM history_transfer ht
+        LEFT JOIN equipments e ON ht.equipment_id = e.equipment_id
+        LEFT JOIN departments d_from ON ht.from_department_id = d_from.department_id
+        LEFT JOIN departments d_to ON ht.to_department_id = d_to.department_id
+        LEFT JOIN departments d_now_location ON ht.now_equip_location_department_id = d_now_location.department_id
+        {$baseWhere}
+    ";
+
+    $countStmt = $dbh->prepare($countSql);
+    foreach ($params as $k => $v)
+        $countStmt->bindValue($k, $v);
+    $countStmt->execute();
+    $totalItems = (int) $countStmt->fetchColumn();
+    $totalPages = $useLimit ? ceil($totalItems / $limit) : 1;
+
+    // Main query with all data and pagination
     $sql = "
-         SELECT DISTINCT
+        SELECT DISTINCT
             ht.history_transfer_id,
             ht.transfer_id,
             ht.transfer_type,
@@ -67,7 +101,7 @@ try {
             -- ข้อมูลเครื่องมือ
             e.name AS equipment_name,
             e.asset_code,
-            
+
             -- ข้อมูลผู้ใช้
             u_transfer.full_name AS transfer_user_name,
             u_recipient.full_name AS recipient_user_name,
@@ -155,32 +189,34 @@ try {
                            AND perm_now_admin.rn = 1 
                            AND ht.transfer_type = 'โอนย้ายถาวร'
         
-        WHERE (ht.transfer_user_id = :u_id OR ht.recipient_user_id = :u_id)
-        {$searchCondition}
-        {$filterCondition}
+        {$baseWhere}
         ORDER BY ht.history_transfer_id DESC
     ";
 
+    // เพิ่ม LIMIT เฉพาะเมื่อ useLimit = true
+    if ($useLimit) {
+        $sql .= " LIMIT :limit OFFSET :offset";
+    }
+
+    // Execute main query
     $stmt = $dbh->prepare($sql);
-    foreach ($params as $k => $v) $stmt->bindValue($k, $v);
+    foreach ($params as $k => $v)
+        $stmt->bindValue($k, $v);
+
+    // Bind pagination parameters เฉพาะเมื่อ useLimit = true
+    if ($useLimit) {
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    }
+
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Filter status ตาม transfer_type
-    $filteredRows = array_filter($rows, function($row) {
-        if ($row['transfer_type'] === 'โอนย้ายถาวร') {
-            return $row['status_transfer'] == 1; // ไม่ต้องคืน
-        } elseif ($row['transfer_type'] === 'โอนย้ายชั่วคราว') {
-            return true; // คืนหรือยังไม่คืน อยู่ที่ status 0/1
-        }
-        return false;
-    });
-
-    // เพิ่มข้อมูล main_admin ใน response
-    $finalData = array_map(function($row) {
+    // Process data with main_admin information
+    $finalData = array_map(function ($row) {
         // กำหนดข้อมูลผู้ดูแลหลักตามประเภทการโอนย้าย
         $mainAdmin = null;
-        
+
         if ($row['transfer_type'] === 'โอนย้ายชั่วคราว') {
             // ใช้ข้อมูล old_admin สำหรับโอนย้ายชั่วคราว
             if ($row['old_admin_name']) {
@@ -202,27 +238,37 @@ try {
                 ];
             }
         }
-        
-        // เพิ่ม main_admin ลงใน row
+
         $row['main_admin'] = $mainAdmin;
-        
+
         // เพิ่มสถานะที่แสดงผลให้ชัดเจน
         if ($row['transfer_type'] === 'โอนย้ายถาวร') {
             $row['status_display'] = 'ไม่ต้องคืน';
         } elseif ($row['transfer_type'] === 'โอนย้ายชั่วคราว') {
             $row['status_display'] = ($row['status_transfer'] == 0) ? 'ยังไม่คืน' : 'คืนแล้ว';
         }
-        
         return $row;
-    }, array_values($filteredRows));
+    }, $rows);
 
-    // ไม่ต้อง pagination แล้ว
-    echo json_encode([
+    $response = [
         "status" => "success",
-        "total" => count($finalData),
         "data" => $finalData
-    ], JSON_UNESCAPED_UNICODE);
+    ];
+
+    if ($useLimit) {
+        $response["pagination"] = [
+            "totalItems" => $totalItems,
+            "totalPages" => $totalPages,
+            "currentPage" => $page,
+            "limit" => $limit
+        ];
+    } else {
+        $response["total"] = count($finalData);
+    }
+
+    echo json_encode($response, JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
+?>

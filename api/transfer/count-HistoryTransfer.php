@@ -14,14 +14,14 @@ try {
         SELECT
             SUM(CASE WHEN transfer_type='โอนย้ายถาวร' AND transfer_user_id=:u_id THEN 1 ELSE 0 END) AS permanent_transfer_by_me,
             SUM(CASE WHEN transfer_type='โอนย้ายถาวร' AND recipient_user_id=:u_id THEN 1 ELSE 0 END) AS permanent_received_by_me,
-            SUM(CASE WHEN transfer_type='โอนย้ายชั่วคราว' AND transfer_user_id=:u_id THEN 1 ELSE 0 END) AS temporary_transfer_by_me,
-            SUM(CASE WHEN transfer_type='โอนย้ายชั่วคราว' AND recipient_user_id=:u_id THEN 1 ELSE 0 END) AS temporary_received_by_me
+            SUM(CASE WHEN transfer_type='โอนย้ายชั่วคราว' AND transfer_user_id=:u_id AND status_transfer=0 THEN 1 ELSE 0 END) AS temporary_transfer_by_me,
+            SUM(CASE WHEN transfer_type='โอนย้ายชั่วคราว' AND recipient_user_id=:u_id AND status_transfer=0 THEN 1 ELSE 0 END) AS temporary_received_by_me
         FROM history_transfer
         WHERE transfer_user_id=:u_id OR recipient_user_id=:u_id
     ";
 
     $stmt = $dbh->prepare($sql);
-    $stmt->bindValue(':u_id', $u_id);
+    $stmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
     $stmt->execute();
     $summary = $stmt->fetch(PDO::FETCH_ASSOC);
 
