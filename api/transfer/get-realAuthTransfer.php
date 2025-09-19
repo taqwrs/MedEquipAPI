@@ -12,7 +12,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-    // Get user ID from JWT token
     $u_id = $decoded->data->ID ?? null;
     if (!$u_id) {
         throw new Exception("User ID not found");
@@ -24,12 +23,14 @@ try {
     $limit = max(1, (int)($input['limit'] ?? 5));
     $offset = ($page - 1) * $limit;
     
-    // Base query conditions
     $baseWhere = "
         ru.u_id = :u_id 
         AND gu.type = 'ผู้ดูแลหลัก'
         AND e.active = 1
-    ";
+        AND (
+            et.equipment_id IS NULL 
+            OR et.status != 0
+        )";
     
     $searchWhere = '';
     $params = [':u_id' => $u_id];
@@ -51,6 +52,13 @@ try {
         INNER JOIN group_user gu ON rg.group_user_id = gu.group_user_id
         INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
         LEFT JOIN departments d ON e.location_department_id = d.department_id
+        LEFT JOIN (
+            SELECT 
+                equipment_id, 
+                status,
+                ROW_NUMBER() OVER (PARTITION BY equipment_id ORDER BY transfer_id DESC) as rn
+            FROM equipment_transfers
+        ) et ON e.equipment_id = et.equipment_id AND et.rn = 1
         WHERE $baseWhere $searchWhere
     ";
     
@@ -77,8 +85,12 @@ try {
             e.serial_number,
             e.status,
             d.department_name as location_department_name,
-            e.updated_at
-            
+            e.updated_at,
+            CASE 
+                WHEN et.equipment_id IS NULL THEN 'available'
+                WHEN et.status = 0 THEN 'in_transfer'
+                ELSE 'available'
+            END as transfer_status
         $joinTables
         ORDER BY e.updated_at DESC
         LIMIT :limit OFFSET :offset
@@ -105,7 +117,8 @@ try {
             "brand" => $row['brand'],
             "model" => $row['model'],
             "serial_number" => $row['serial_number'],
-            "status" => $row['status']
+            "status" => $row['status'],
+            "transfer_status" => $row['transfer_status']
         ];
     }
     
