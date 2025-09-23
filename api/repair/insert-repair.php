@@ -6,12 +6,10 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
-
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(["status" => "error", "message" => "POST method required"]);
@@ -40,11 +38,11 @@ try {
         exit;
     }
 
-
+    // เพิ่ม field active
     $query = "INSERT INTO repair 
-                (equipment_id, user_id, remark, title, request_date, location, status, repair_type_id) 
+                (equipment_id, user_id, remark, title, request_date, location, status, repair_type_id, active) 
               VALUES 
-                (:equipment_id, :user_id, :remark, :title, :request_date, :location, :status, :repair_type_id)";
+                (:equipment_id, :user_id, :remark, :title, :request_date, :location, :status, :repair_type_id, :active)";
 
     $stmt = $dbh->prepare($query);
     $stmt->bindParam(':equipment_id', $equipment_id);
@@ -55,8 +53,11 @@ try {
     $stmt->bindParam(':location', $location);
     $stmt->bindParam(':status', $status);
     $stmt->bindParam(':repair_type_id', $repair_type_id);
-    $stmt->execute();
 
+    $active = 1; // กำหนด active เป็น 1
+    $stmt->bindParam(':active', $active);
+
+    $stmt->execute();
 
     $update = "UPDATE equipments 
                SET status = 'ซ่อม' 
