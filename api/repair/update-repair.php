@@ -21,34 +21,30 @@ try {
         exit;
     }
 
-    // ฟิลด์ที่อนุญาตให้ update
     $updatableFields = ['equipment_id', 'remark', 'title', 'location', 'status', 'repair_type_id'];
     $fields = [];
     $params = [':repair_id' => $repair_id];
 
     foreach ($updatableFields as $field) {
-        // เปลี่ยนจาก isset() เป็น array_key_exists() เพื่อให้ update status แม้ค่าเป็น null หรือ ""
         if (array_key_exists($field, $data)) {
             $fields[] = "$field = :$field";
             $params[":$field"] = $data[$field];
         }
     }
 
+    // ตรวจสอบว่ามีค่า active ส่งมาหรือไม่
+    if (array_key_exists('active', $data)) {
+        $fields[] = "active = :active";
+        $params[':active'] = $data['active'] ? 1 : 0; // แปลงเป็น 1 หรือ 0
+    }
+
     if (!empty($fields)) {
         $query = "UPDATE repair SET " . implode(", ", $fields) . " WHERE repair_id = :repair_id";
         $stmt = $dbh->prepare($query);
         $stmt->execute($params);
-
-        $dbh->commit();
-
-        echo json_encode([
-            "success" => true,
-            "message" => "Repair updated successfully"
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
     }
 
-    // -------------------- ส่วน SELECT เดิม --------------------
+    // ดึงข้อมูล repair ล่าสุด
     $query = "SELECT 
         r.repair_id,
         r.equipment_id,
@@ -59,6 +55,7 @@ try {
         r.request_date,
         r.location,
         r.status AS repair_status,
+        r.active,
         u_reporter.full_name AS reporter,
         rt.repair_type_id,                
         rt.name_type AS repair_type,
@@ -75,9 +72,12 @@ try {
     $stmt->execute([':repair_id' => $repair_id]);
     $repair = $stmt->fetch(PDO::FETCH_ASSOC);
 
+    $dbh->commit();
+
     if ($repair) {
         echo json_encode([
             "success" => true,
+            "message" => "Repair updated successfully",
             "data" => $repair
         ], JSON_UNESCAPED_UNICODE);
     } else {
@@ -90,3 +90,4 @@ try {
     
     echo json_encode(["success" => false, "message" => $e->getMessage()]);
 }
+?>
