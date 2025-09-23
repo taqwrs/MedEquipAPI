@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 try {
     $sql = "
         SELECT equipment_id, name, asset_code, main_equipment_id
-        FROM equipments
+        FROM equipments order by equipment_id Desc
     ";
 
     $stmt = $dbh->prepare($sql);
