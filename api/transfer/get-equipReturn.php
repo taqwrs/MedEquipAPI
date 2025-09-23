@@ -7,16 +7,13 @@ header("Access-Control-Allow-Methods: GET");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 $method = $_SERVER['REQUEST_METHOD'];
-
 try {
     if ($method !== 'GET') {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
         exit;
     }
-    
-    // ดึง u_id จาก JWT token
+
     $u_id = $decoded->data->ID ?? null;
-    
     if (!$u_id) {
         echo json_encode(["status" => "error", "message" => "User ID not found in token"]);
         exit;
@@ -38,8 +35,7 @@ try {
     
     $userData = $checkUser->fetch(PDO::FETCH_ASSOC);
     
-    // -------------------------------------------
-    // ส่วนดึงข้อมูลรายการเครื่องมือ
+    // ส่วนดึงข้อมูลรายการเครื่องมือ พร้อมชื่อแผนก
     $sql = "
         SELECT DISTINCT
             e.equipment_id,
@@ -52,7 +48,13 @@ try {
             et.transfer_id,
             et.transfer_date,
             et.reason,
-            et.status
+            et.status,
+            et.from_department_id,
+            from_dept.department_name AS from_department_name,
+            et.to_department_id,
+            to_dept.department_name AS to_department_name,
+            et.location_department_id,
+            loc_dept.department_name AS location_department_name
         FROM users u
         INNER JOIN relation_user ru ON u.ID = ru.u_id
         INNER JOIN group_user gu ON ru.group_user_id = gu.group_user_id 
@@ -64,6 +66,9 @@ try {
         INNER JOIN equipments e ON et.equipment_id = e.equipment_id
         INNER JOIN equipment_subcategories es ON et.now_subcategory_id = es.subcategory_id
         LEFT JOIN users transfer_user ON et.transfer_user_id = transfer_user.ID
+        LEFT JOIN departments from_dept ON et.from_department_id = from_dept.department_id
+        LEFT JOIN departments to_dept ON et.to_department_id = to_dept.department_id
+        LEFT JOIN departments loc_dept ON et.location_department_id = loc_dept.department_id
         WHERE u.ID = :u_id
             AND et.status = 'active'
         ORDER BY e.equipment_id
@@ -88,13 +93,17 @@ try {
             'transfer_id' => (int)$equipment['transfer_id'],
             'transfer_date' => $equipment['transfer_date'],
             'reason' => $equipment['reason'],
-            'status' => $equipment['status']
+            'status' => $equipment['status'],
+            'from_department_id' => $equipment['from_department_id'] ? (int)$equipment['from_department_id'] : null,
+            'from_department_name' => $equipment['from_department_name'],
+            'to_department_id' => $equipment['to_department_id'] ? (int)$equipment['to_department_id'] : null,
+            'to_department_name' => $equipment['to_department_name'],
+            'location_department_id' => $equipment['location_department_id'] ? (int)$equipment['location_department_id'] : null,
+            'location_department_name' => $equipment['location_department_name']
         ];
     }
     
     // -------------------------------------------
-    // ส่วน summary (1.1, 1.2, 1.3)
-    
     // 1.1 ยังไม่ได้โอนคืน (status = 0)
     $sql_not_returned = "
         SELECT COUNT(equipment_id) AS total_not_returned
@@ -146,11 +155,11 @@ try {
             'equipment_list' => $equipment_list,
             'summary' => [
                 'total_temp_transfer' => (int)$res3['total_temp_transfer'], // 1.3
-                'not_returned' => (int)$res1['total_not_returned'], // 1.1
-                'returned' => (int)$res2['total_returned']         // 1.2
+                'not_returned' => (int)$res1['total_not_returned'],         // 1.1
+                'returned' => (int)$res2['total_returned']                 // 1.2
             ]
         ],
-        'total_equipment' => count($equipment_list)//จำนวนรับโอนย้ายชั่วคราว
+        'total_equipment' => count($equipment_list) //จำนวนรับโอนย้ายชั่วคราว
     ];
     
     echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
