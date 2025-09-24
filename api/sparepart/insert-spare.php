@@ -27,7 +27,7 @@ try {
     'import_type_id','spare_subcategory_id','location_department_id','location_details',
     'production_year','price','contract','start_date','end_date','warranty_duration_days',
     'warranty_condition','maintainer_company_id','supplier_company_id','manufacturer_company_id',
-    'record_status','status','active','user_id','updated_by','first_register'
+    'record_status','details','status','active','user_id','updated_by','first_register'
 ];
 
     // ------------------ CHECK REQUIRED ------------------

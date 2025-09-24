@@ -19,21 +19,20 @@ try {
     $uploadDir = __DIR__ . "/../file-upload/file_spare/";
 
     $files = $_FILES['file_spare'] ?? null;
-    if (!$files) {
-        throw new Exception("No file uploaded");
-    }
+    // ตรวจสอบว่ามีไฟล์อัปโหลดหรือไม่
+    if ($files && $files['name'][0] !== "") {
 
-    // ถ้าเป็น single file → แปลงเป็น array
-    if (!is_array($files['name'])) {
-        $files = [
-            'name' => [$files['name']],
-            'type' => [$files['type']],
-            'tmp_name' => [$files['tmp_name']],
-            'error' => [$files['error']],
-            'size' => [$files['size']],
-        ];
+        // ถ้าเป็น single file → แปลงเป็น array
+        if (!is_array($files['name'])) {
+            $files = [
+                'name' => [$files['name']],
+                'type' => [$files['type']],
+                'tmp_name' => [$files['tmp_name']],
+                'error' => [$files['error']],
+                'size' => [$files['size']],
+            ];
+        }
     }
-
     foreach ($files['name'] as $key => $name) {
         if ($files['error'][$key] === UPLOAD_ERR_OK) {
             $tmp = $files['tmp_name'][$key];
