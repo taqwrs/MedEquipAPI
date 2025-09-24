@@ -1,5 +1,5 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -15,15 +15,16 @@ try {
         $stmt->execute();
         $subcategories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-  
+
         $stmt = $dbh->prepare("
-            SELECT equipment_id, name, brand, model, asset_code, status, location_details, subcategory_id
-            FROM equipments
-            ORDER BY subcategory_id
-        ");
+        SELECT equipment_id, name, brand, model, asset_code, status, location_details, subcategory_id
+        FROM equipments
+        WHERE status IN ('ใช้งาน', 'คลัง') AND active = 1
+        ORDER BY subcategory_id
+");
         $stmt->execute();
         $equipments = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $subcategoriesWithEquipments = array_map(function($sub) use ($equipments) {
+        $subcategoriesWithEquipments = array_map(function ($sub) use ($equipments) {
             $sub['equipments'] = array_values(array_filter($equipments, fn($eq) => $eq['subcategory_id'] == $sub['subcategory_id']));
             return $sub;
         }, $subcategories);

@@ -32,10 +32,10 @@ try {
         }
     }
 
-    // ตรวจสอบว่ามีค่า active ส่งมาหรือไม่
+
     if (array_key_exists('active', $data)) {
         $fields[] = "active = :active";
-        $params[':active'] = $data['active'] ? 1 : 0; // แปลงเป็น 1 หรือ 0
+        $params[':active'] = $data['active'] ? 1 : 0; 
     }
 
     if (!empty($fields)) {
@@ -44,7 +44,7 @@ try {
         $stmt->execute($params);
     }
 
-    // ดึงข้อมูล repair ล่าสุด
+
     $query = "SELECT 
         r.repair_id,
         r.equipment_id,

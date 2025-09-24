@@ -13,10 +13,6 @@ $roundId = isset($_GET['round_id']) ? intval($_GET['round_id']) : null;
 $viewType = isset($_GET['viewType']) ? $_GET['viewType'] : null;
 
 try {
-    if (!$dbh) {
-        throw new Exception("Database connection failed");
-    }
-
     $result = [];
 
     if ($viewType === "allRoundsOfEquipment" && $equipmentId) {
@@ -54,7 +50,7 @@ try {
                 $rounds[] = [
                     'round' => $idx + 1,
                     'details_cal_id' => $row['details_cal_id'],
-                    'cal_result_id' => $row['cal_result_id'], // ✅ ส่งเพิ่มตรงนี้
+                    'cal_result_id' => $row['cal_result_id'],
                     'plan_name' => $plan['plan_name'],
                     'status' => $row['result'],
                     'remark' => $row['remarks'] ?: '-',
