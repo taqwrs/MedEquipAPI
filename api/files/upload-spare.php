@@ -47,6 +47,10 @@ try {
                 throw new Exception("Upload failed: $name");
 
             $url = "/file-upload/file_spare/$newName";
+            // $typeName = trim($_POST['spare_type_name'][$key] ?? "");
+            // if ($typeName === "") {
+            //     throw new Exception("spare_type_name ห้ามว่างสำหรับไฟล์: $name");
+            // }
             $typeName = $_POST['spare_type_name'][$key] ?? "";
             $stmt = $dbh->prepare("INSERT INTO file_spare(file_spare_name, spare_part_id, spare_url, spare_type_name, upload_at) VALUES (?, ?, ?, ?, NOW())");
             $stmt->execute([$name, $spare_part_id, $url, $typeName]);

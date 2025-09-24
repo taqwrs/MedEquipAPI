@@ -42,7 +42,6 @@ try {
 
     $whereSQL = $where ? "WHERE " . implode(" AND ", $where) : "";
 
-    // 1️⃣ ดึง repair ข้อมูลหลัก
     $query = "SELECT 
         r.repair_id,
         r.equipment_id,
@@ -62,13 +61,14 @@ try {
     LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
     LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
     $whereSQL
+    Where r.active = 1
     ORDER BY r.repair_id DESC";
 
     $stmt = $dbh->prepare($query);
     $stmt->execute($params);
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // 2️⃣ นับจำนวนครั้งซ่อมรวมต่อเครื่องมือ
+
     $sqlCounter = "SELECT 
                         e.equipment_id,
                         COUNT(rr.repair_result_id) AS repair_count
@@ -85,7 +85,7 @@ try {
         $equipmentRepairs[$eq['equipment_id']] = $eq['repair_count'];
     }
 
-    // 3️⃣ ดึง repair_results และใส่ counter
+
     foreach ($repairs as &$repair) {
         $repair['counter'] = $equipmentRepairs[$repair['equipment_id']] ?? 0;
 
