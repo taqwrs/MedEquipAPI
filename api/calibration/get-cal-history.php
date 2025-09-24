@@ -13,10 +13,16 @@ $roundId = isset($_GET['round_id']) ? intval($_GET['round_id']) : null;
 $viewType = isset($_GET['viewType']) ? $_GET['viewType'] : null;
 
 try {
+    if (!$dbh) {
+        throw new Exception("Database connection failed");
+    }
+
     $result = [];
 
+    // แสดงรอบทั้งหมดของอุปกรณ์
     if ($viewType === "allRoundsOfEquipment" && $equipmentId) {
 
+        // ดึงแผนสอบเทียบของอุปกรณ์
         $stmtPlans = $dbh->prepare("
             SELECT cp.plan_id, cp.plan_name
             FROM calibration_plans cp
@@ -29,11 +35,12 @@ try {
         $stmtEq = $dbh->prepare("SELECT name FROM equipments WHERE equipment_id = :equipment_id");
         $stmtEq->execute([':equipment_id' => $equipmentId]);
         $eqData = $stmtEq->fetch(PDO::FETCH_ASSOC);
-        $equipmentName = $eqData['name'] ?? "เครื่องหมายเลข $equipmentId";
+        $equipmentName = $eqData['name'] ?? $equipmentId;
 
         foreach ($plans as $plan) {
+            // ดึงผลลัพธ์พร้อม start_date และ performed_date
             $stmtDetails = $dbh->prepare("
-                SELECT dcp.details_cal_id, cr.cal_result_id, cr.result, cr.remarks, cr.performed_date
+                SELECT dcp.details_cal_id, cr.cal_result_id, cr.result, cr.remarks, dcp.start_date, cr.performed_date
                 FROM details_calibration_plans dcp
                 INNER JOIN calibration_result cr 
                     ON cr.details_cal_id = dcp.details_cal_id
@@ -54,6 +61,7 @@ try {
                     'plan_name' => $plan['plan_name'],
                     'status' => $row['result'],
                     'remark' => $row['remarks'] ?: '-',
+                    'start_date' => $row['start_date'] ?: '-',
                     'performed_date' => $row['performed_date'] ?: '-'
                 ];
             }
@@ -64,12 +72,12 @@ try {
             ];
         }
 
+    // แสดงอุปกรณ์ทั้งหมดของรอบ
     } elseif ($viewType === "allEquipments" && $roundId) {
 
         $stmtPlan = $dbh->prepare("
             SELECT dcp.plan_id
             FROM details_calibration_plans dcp
-            INNER JOIN calibration_result cr ON cr.details_cal_id = dcp.details_cal_id
             WHERE dcp.details_cal_id = :round_id
         ");
         $stmtPlan->execute([':round_id' => $roundId]);
@@ -82,9 +90,11 @@ try {
             $stmtPlanName->execute([':plan_id' => $planId]);
             $planName = $stmtPlanName->fetchColumn() ?: "Plan $planId";
 
+            // ดึงผลลัพธ์ของรอบพร้อม start_date และ performed_date
             $stmtResult = $dbh->prepare("
-                SELECT cr.cal_result_id, cr.equipment_id, cr.result, cr.remarks, cr.performed_date, e.name AS equipment_name
+                SELECT cr.cal_result_id, cr.equipment_id, cr.result, cr.remarks, dcp.start_date, cr.performed_date, e.name AS equipment_name
                 FROM calibration_result cr
+                INNER JOIN details_calibration_plans dcp ON cr.details_cal_id = dcp.details_cal_id
                 INNER JOIN equipments e ON e.equipment_id = cr.equipment_id
                 WHERE cr.details_cal_id = :round_id
             ");
@@ -102,6 +112,7 @@ try {
                             'plan_name' => $planName,
                             'status' => $row['result'],
                             'remark' => $row['remarks'] ?: '-',
+                            'start_date' => $row['start_date'] ?: '-',
                             'performed_date' => $row['performed_date'] ?: '-'
                         ]
                     ]
