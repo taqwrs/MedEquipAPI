@@ -6,20 +6,17 @@ header("Access-Control-Allow-Methods: GET");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 $method = $_SERVER['REQUEST_METHOD'];
-
 try {
     if ($method !== 'GET') {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
         exit;
     }
-
-    // ตรวจสอบผู้ล็อกอิน
     $u_id = $decoded->data->ID ?? null;
     if (!$u_id) {
         throw new Exception("User ID not found");
     }
+    $equipment_id = isset($_GET['equipment_id']) ? (int)$_GET['equipment_id'] : null;
 
-    // SQL ดึงรายละเอียดทั้งหมดที่ recipient_user_id = ผู้ล็อกอิน และ transfer_type = 'โอนย้ายชั่วคราว' และ status = 0
     $sql = "
         SELECT DISTINCT
           e.equipment_id,
@@ -83,11 +80,19 @@ try {
         LEFT JOIN departments d_location ON e.location_department_id = d_location.department_id
 
         WHERE et.transfer_id IS NOT NULL
-        ORDER BY e.equipment_id ASC
     ";
+
+    if ($equipment_id) {
+        $sql .= " AND e.equipment_id = :equipment_id ";
+    } 
+
+    $sql .= " ORDER BY e.equipment_id ASC";
 
     $stmt = $dbh->prepare($sql);
     $stmt->bindParam(":u_id", $u_id, PDO::PARAM_INT);
+    if ($equipment_id) {
+        $stmt->bindParam(":equipment_id", $equipment_id, PDO::PARAM_INT);
+    }
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -123,7 +128,7 @@ try {
         $adminStmt->execute();
         $admins = $adminStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // จัดกลุม admins ตาม group
+        // จัดกลุ่ม admins ตาม group
         $adminGroups = [];
         foreach ($admins as $admin) {
             $groupId = $admin['group_user_id'];
@@ -146,11 +151,12 @@ try {
             }
         }
 
-        // สร้างผลลัพธ์
         $equipmentData = [
             'equipment_id' => (int)$row['equipment_id'],
             'asset_code' => $row['asset_code'],
             'equipment_name' => $row['equipment_name'],
+            'transfer_type' => $row['transfer_type'],
+            'status' => $row['status'],
             'subcategory_id' => (int)$row['subcategory_id'],
             'subcategory_name' => $row['subcategory_name'],
             'location_department_id' => (int)$row['location_department_id'],
@@ -180,7 +186,6 @@ try {
                 ]
             ]
         ];
-
         $result[] = $equipmentData;
     }
 
