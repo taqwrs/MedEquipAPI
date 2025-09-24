@@ -1,119 +1,195 @@
 <?php
-include "../config/jwt.php";
-
+include "../config/jwt.php"; 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Methods: GET");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(["status" => "error", "message" => "Method not allowed"]);
-    exit;
-}
+$method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    if ($method !== 'GET') {
+        echo json_encode(["status" => "error", "message" => "Method not allowed"]);
+        exit;
+    }
+
+    // ตรวจสอบผู้ล็อกอิน
     $u_id = $decoded->data->ID ?? null;
+    if (!$u_id) {
+        throw new Exception("User ID not found");
+    }
 
-    $input = json_decode(file_get_contents("php://input"), true);
-    $debug_info = ["user_id_from_jwt" => $u_id];
-
-    // Query หลัก
+    // SQL ดึงรายละเอียดทั้งหมดที่ recipient_user_id = ผู้ล็อกอิน และ transfer_type = 'โอนย้ายชั่วคราว' และ status = 0
     $sql = "
-        SELECT 
-            e.equipment_id,
-            e.name AS equipment_name,
-            e.asset_code,
-            e.location_department_id,
-            e.location_details,
-            u.ID AS admin_id,
-            u.user_id AS admin_user_id,
-            u.full_name AS admin_name,
-            d.department_name AS admin_department,
-            gu.type AS group_type
+        SELECT DISTINCT
+          e.equipment_id,
+          e.asset_code,
+          e.name AS equipment_name,
+          e.subcategory_id,
+          es.name AS subcategory_name,
+          es.category_id,
+          
+          -- สถานที่ตั้งเครื่องมือ
+          e.location_department_id,
+          d_location.department_name AS location_department_name,
+          e.location_details,
+          
+          -- ข้อมูลการโอนย้าย
+          et.transfer_id,
+          et.transfer_type,
+          et.from_department_id,
+          d_from.department_name AS from_department,
+          et.to_department_id,
+          d_to.department_name AS to_department,
+          et.transfer_date,
+          et.returned_date,
+          et.reason,
+          et.status,
+          
+          -- ผู้ดำเนินการโอนย้าย
+          et.transfer_user_id,
+          u_transfer.ID AS transfer_user_ID,
+          u_transfer.user_id AS transfer_user_user_id,
+          u_transfer.full_name AS transfer_user_name,
+          d_transfer.department_name AS transfer_user_department,
+          
+          -- ผู้รับโอนย้าย
+          et.recipient_user_id,
+          u_recipient.ID AS recipient_user_ID,
+          u_recipient.user_id AS recipient_user_user_id,
+          u_recipient.full_name AS recipient_user_name,
+          d_recipient.department_name AS recipient_user_department
+
         FROM equipments e
-        LEFT JOIN relation_group rg 
-            ON e.subcategory_id = rg.subcategory_id
-        LEFT JOIN group_user gu 
-            ON rg.group_user_id = gu.group_user_id
-            AND gu.type = 'ผู้ดูแลหลัก'
-        LEFT JOIN relation_user ru 
-            ON gu.group_user_id = ru.group_user_id
-        LEFT JOIN users u 
-            ON ru.u_id = u.ID
-        LEFT JOIN departments d 
-            ON u.department_id = d.department_id
-        WHERE e.record_status = 1
+        LEFT JOIN equipment_subcategories es ON e.subcategory_id = es.subcategory_id
+        LEFT JOIN equipment_transfers et ON et.equipment_id = e.equipment_id 
+          AND et.recipient_user_id = :u_id 
+          AND et.transfer_type = 'โอนย้ายชั่วคราว' 
+          AND et.status = 0
+        
+        -- Join ผู้ดำเนินการโอนย้าย
+        LEFT JOIN users u_transfer ON et.transfer_user_id = u_transfer.ID
+        LEFT JOIN departments d_transfer ON u_transfer.department_id = d_transfer.department_id
+        
+        -- Join ผู้รับโอนย้าย
+        LEFT JOIN users u_recipient ON et.recipient_user_id = u_recipient.ID
+        LEFT JOIN departments d_recipient ON u_recipient.department_id = d_recipient.department_id
+        
+        -- Join แผนกต้นทางและปลายทาง
+        LEFT JOIN departments d_from ON et.from_department_id = d_from.department_id
+        LEFT JOIN departments d_to ON et.to_department_id = d_to.department_id
+        
+        -- Join สถานที่ตั้งเครื่องมือ
+        LEFT JOIN departments d_location ON e.location_department_id = d_location.department_id
+
+        WHERE et.transfer_id IS NOT NULL
+        ORDER BY e.equipment_id ASC
     ";
 
-    $params = [];
-    if (!empty($input['equipment_id'])) {
-        $sql .= " AND e.equipment_id = :equipment_id";
-        $params[':equipment_id'] = $input['equipment_id'];
-    }
-
-    $sql .= " ORDER BY e.equipment_id, u.full_name";
-
     $stmt = $dbh->prepare($sql);
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
+    $stmt->bindParam(":u_id", $u_id, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!$rows) {
+        echo json_encode(["status" => "error", "message" => "ไม่พบอุปกรณ์หรือคุณไม่มีสิทธิ์"], JSON_UNESCAPED_UNICODE);
+        exit;
     }
 
-    $stmt->execute();
-    $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // ดึงข้อมูลผู้ดูแลหลักสำหรับแต่ละ subcategory
+    $result = [];
+    foreach ($rows as $row) {
+        // ดึงข้อมูลผู้ดูแลหลัก
+        $adminSql = "
+            SELECT 
+                gu.group_user_id,
+                gu.group_name,
+                gu.type AS group_type,
+                u_admin.ID,
+                u_admin.user_id,
+                u_admin.full_name,
+                d_admin.department_name
+            FROM relation_group rg
+            LEFT JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+            LEFT JOIN relation_user ru_admin ON gu.group_user_id = ru_admin.group_user_id
+            LEFT JOIN users u_admin ON ru_admin.u_id = u_admin.ID
+            LEFT JOIN departments d_admin ON u_admin.department_id = d_admin.department_id
+            WHERE rg.subcategory_id = :subcategory_id 
+            AND gu.type = 'ผู้ดูแลหลัก'
+        ";
+        
+        $adminStmt = $dbh->prepare($adminSql);
+        $adminStmt->bindParam(":subcategory_id", $row['subcategory_id'], PDO::PARAM_INT);
+        $adminStmt->execute();
+        $admins = $adminStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // จัดกลุ่ม main_admin
-    $equipments = [];
-    foreach ($results as $row) {
-        $equipment_id = $row['equipment_id'];
-
-        if (!isset($equipments[$equipment_id])) {
-            $equipments[$equipment_id] = [
-                'equipment_name' => $row['equipment_name'],
-                'asset_code' => $row['asset_code'],
-                'location_department_id' => $row['location_department_id'],
-                'location_details' => $row['location_details'],
-                'main_admin' => []
-            ];
+        // จัดกลุม admins ตาม group
+        $adminGroups = [];
+        foreach ($admins as $admin) {
+            $groupId = $admin['group_user_id'];
+            if (!isset($adminGroups[$groupId])) {
+                $adminGroups[$groupId] = [
+                    'group_id' => $groupId,
+                    'group_name' => $admin['group_name'],
+                    'group_type' => $admin['group_type'],
+                    'user_group' => []
+                ];
+            }
+            
+            if ($admin['full_name']) {
+                $adminGroups[$groupId]['user_group'][] = [
+                    'ID' => (int)$admin['ID'],
+                    'user_id' => $admin['user_id'],
+                    'full_name' => $admin['full_name'],
+                    'department_name' => $admin['department_name']
+                ];
+            }
         }
 
-        if (!empty($row['admin_id']) && $row['group_type'] === 'ผู้ดูแลหลัก') {
-            $admin = [
-                'ID' => $row['admin_id'],
-                'user_id' => $row['admin_user_id'],
-                'full_name' => $row['admin_name'],
-                'department_name' => $row['admin_department']
-            ];
+        // สร้างผลลัพธ์
+        $equipmentData = [
+            'equipment_id' => (int)$row['equipment_id'],
+            'asset_code' => $row['asset_code'],
+            'equipment_name' => $row['equipment_name'],
+            'subcategory_id' => (int)$row['subcategory_id'],
+            'subcategory_name' => $row['subcategory_name'],
+            'location_department_id' => (int)$row['location_department_id'],
+            'location_department_name' => $row['location_department_name'],
+            'location_details' => $row['location_details'],
+            'category_id' => (int)$row['category_id'],
+            'from_department' => $row['from_department'],
+            'to_department' => $row['to_department'],
+            'transfer_date' => $row['transfer_date'],
+            'returned_date' => $row['returned_date'],
+            'reason' => $row['reason'],
+            'admins' => array_values($adminGroups),
+            'transfer_user_id' => [
+                [
+                    'ID' => (int)$row['transfer_user_ID'],
+                    'user_id' => $row['transfer_user_user_id'],
+                    'full_name' => $row['transfer_user_name'],
+                    'department_name' => $row['transfer_user_department']
+                ]
+            ],
+            'recipient_user' => [
+                [
+                    'ID' => (int)$row['recipient_user_ID'],
+                    'user_id' => $row['recipient_user_user_id'],
+                    'full_name' => $row['recipient_user_name'],
+                    'department_name' => $row['recipient_user_department']
+                ]
+            ]
+        ];
 
-            // ป้องกันซ้ำ
-            $exists = false;
-            foreach ($equipments[$equipment_id]['main_admin'] as $existing) {
-                if ($existing['ID'] == $admin['ID']) {
-                    $exists = true;
-                    break;
-                }
-            }
-            if (!$exists) {
-                $equipments[$equipment_id]['main_admin'][] = $admin;
-            }
-        }
+        $result[] = $equipmentData;
     }
 
     echo json_encode([
-        "status" => "success",
-        "message" => "Equipment details retrieved successfully",
-        "data" => array_values($equipments),
-        "total_records" => count($equipments),
-        "debug_info" => $debug_info
+        "status" => "ok",
+        "data" => $result
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
-    echo json_encode([
-        "status" => "error",
-        "message" => $e->getMessage()
-    ], JSON_UNESCAPED_UNICODE);
-} finally {
-    if (isset($dbh)) {
-        $dbh = null;
-    }
+    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
 ?>
