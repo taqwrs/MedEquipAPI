@@ -13,15 +13,23 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $input = json_decode(file_get_contents("php://input"), true);
-    $search = isset($input['search']) ? trim($input['search']) : "";
-    $statusFilter = isset($input['status_filter']) ? trim($input['status_filter']) : "";
 
-    $where = [];
+    // รับ input สำหรับค้นหาและแบ่งหน้า
+    $search = trim($input['search'] ?? '');
+    $statusFilter = trim($input['status_filter'] ?? '');
+    $page = (int)($input['page'] ?? 1);
+    $limit = (int)($input['limit'] ?? 5);
+    $offset = ($page - 1) * $limit;
+    $useLimit = $limit > 0;
+
+    // -----------------------------
+    // เงื่อนไข WHERE แบบ dynamic
+    $where = ["r.active = 1"];
     $params = [];
 
     if ($search !== "") {
-        $where[] = "(r.remark LIKE ? OR r.location LIKE ? OR u_reporter.full_name LIKE ? OR e.asset_code LIKE ? OR e.name LIKE ?)";
-        $params = array_merge($params, array_fill(0, 5, "%$search%"));
+        $where[] = "(r.remark LIKE :search OR r.location LIKE :search OR u_reporter.full_name LIKE :search OR e.asset_code LIKE :search OR e.name LIKE :search)";
+        $params[':search'] = "%$search%";
     }
 
     if ($statusFilter !== "") {
@@ -29,19 +37,21 @@ try {
             $where[] = "EXISTS (
                 SELECT 1 FROM repair_result rr
                 WHERE rr.repair_id = r.repair_id
-                AND rr.status = ?
+                AND rr.status = :statusFilter
                 ORDER BY rr.repair_result_id DESC
                 LIMIT 1
             )";
-            $params[] = $statusFilter;
+            $params[':statusFilter'] = $statusFilter;
         } else {
-            $where[] = "r.status = ?";
-            $params[] = $statusFilter;
+            $where[] = "r.status = :statusFilter";
+            $params[':statusFilter'] = $statusFilter;
         }
     }
 
-    $whereSQL = $where ? "WHERE " . implode(" AND ", $where) : "";
+    $whereSQL = "WHERE " . implode(" AND ", $where);
 
+    // -----------------------------
+    // Query หลัก + pagination
     $query = "SELECT 
         r.repair_id,
         r.equipment_id,
@@ -61,14 +71,43 @@ try {
     LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
     LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
     $whereSQL
-    Where r.active = 1
     ORDER BY r.repair_id DESC";
 
+    if ($useLimit) {
+        $query .= " LIMIT :limit OFFSET :offset";
+    }
+
     $stmt = $dbh->prepare($query);
-    $stmt->execute($params);
+
+    // Bind parameters
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value, PDO::PARAM_STR);
+    }
+    if ($useLimit) {
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    }
+
+    $stmt->execute();
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // -----------------------------
+    // นับจำนวนทั้งหมดสำหรับ pagination
+    $countQuery = "SELECT COUNT(*) FROM repair r
+                   LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
+                   LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
+                   LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
+                   LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
+                   $whereSQL";
+    $countStmt = $dbh->prepare($countQuery);
+    foreach ($params as $key => $value) {
+        $countStmt->bindValue($key, $value, PDO::PARAM_STR);
+    }
+    $countStmt->execute();
+    $totalItems = (int)$countStmt->fetchColumn();
 
+    // -----------------------------
+    // เพิ่ม counter และ repair_results
     $sqlCounter = "SELECT 
                         e.equipment_id,
                         COUNT(rr.repair_result_id) AS repair_count
@@ -84,7 +123,6 @@ try {
     foreach ($equipmentCounts as $eq) {
         $equipmentRepairs[$eq['equipment_id']] = $eq['repair_count'];
     }
-
 
     foreach ($repairs as &$repair) {
         $repair['counter'] = $equipmentRepairs[$repair['equipment_id']] ?? 0;
@@ -111,14 +149,41 @@ try {
         $repair['repair_results'] = $stmt2->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    // -----------------------------
+    // Summary สถานะซ่อม
+    $summaryQuery = "SELECT 
+                        SUM(CASE WHEN rr.status = 'ซ่อมเสร็จ' THEN 1 ELSE 0 END) AS completed,
+                        SUM(CASE WHEN rr.status = 'ซ่อมไม่ได้' THEN 1 ELSE 0 END) AS failed,
+                        SUM(CASE WHEN rr.status NOT IN ('ซ่อมเสร็จ','ซ่อมไม่ได้') THEN 1 ELSE 0 END) AS in_progress
+                     FROM repair_result rr
+                     LEFT JOIN repair r ON rr.repair_id = r.repair_id
+                     WHERE r.active = 1";
+    $summaryStmt = $dbh->prepare($summaryQuery);
+    $summaryStmt->execute();
+    $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
+
+    // -----------------------------
+    // ส่งผลลัพธ์รวม
     echo json_encode([
         "status" => "success",
-        "data" => $repairs
+        "data" => $repairs,
+        "summary" => [
+            "completed" => (int)$summary['completed'],
+            "failed" => (int)$summary['failed'],
+            "in_progress" => (int)$summary['in_progress']
+        ],
+        "pagination" => [
+            "totalItems" => $totalItems,
+            "totalPages" => $limit > 0 ? ceil($totalItems / $limit) : 1,
+            "currentPage" => $page,
+            "limit" => $limit
+        ]
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     echo json_encode([
         "status" => "error",
         "message" => $e->getMessage()
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
 }
+?>

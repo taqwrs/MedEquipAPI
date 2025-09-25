@@ -12,10 +12,34 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-
     $input = json_decode(file_get_contents("php://input"), true);
-    $search = $input['search'] ?? '';
-    $statusFilter = $input['status'] ?? '';
+    $search = trim($input['search'] ?? '');
+    $statusFilter = trim($input['status'] ?? '');
+    $page = (int)($input['page'] ?? 1);
+    $limit = (int)($input['limit'] ?? 10);
+    $offset = ($page - 1) * $limit;
+    $useLimit = $limit > 0;
+
+    $statusMap = [
+        'waiting' => 'รออนุมัติ',
+        'approved' => 'อนุมัติแล้ว',
+        'rejected' => 'ไม่อนุมัติ',
+    ];
+
+    $where = ["1"];
+    $params = [];
+
+    if ($search !== '') {
+        $where[] = "(e.name LIKE :search OR w.asset_number LIKE :search)";
+        $params[':search'] = "%$search%";
+    }
+
+    if ($statusFilter !== '' && isset($statusMap[$statusFilter])) {
+        $where[] = "w.status = :statusFilter";
+        $params[':statusFilter'] = $statusMap[$statusFilter];
+    }
+
+    $whereSQL = "WHERE " . implode(" AND ", $where);
 
     $query = "
         SELECT w.*, e.name AS equipment_name, u.full_name AS requester_name, 
@@ -25,39 +49,36 @@ try {
         LEFT JOIN users u ON w.user_id = u.user_id
         LEFT JOIN users a ON w.approved_by = a.user_id
         LEFT JOIN writeoff_types wt ON w.writeoff_types_id = wt.writeoff_types_id
-        WHERE 1
+        $whereSQL
+        ORDER BY 
+            CASE WHEN w.status = 'รออนุมัติ' THEN 0 ELSE 1 END,
+            w.writeoff_id DESC
     ";
 
-    $params = [];
-
-
-    if ($search !== '') {
-        $query .= " AND (e.name LIKE ? OR w.asset_number LIKE ?)";
-        $params[] = "%$search%";
-        $params[] = "%$search%";
+    $countQuery = "SELECT COUNT(*) FROM write_offs w
+                   LEFT JOIN equipments e ON w.equipment_id = e.equipment_id
+                   $whereSQL";
+    $countStmt = $dbh->prepare($countQuery);
+    foreach ($params as $key => $val) {
+        $countStmt->bindValue($key, $val, PDO::PARAM_STR);
     }
+    $countStmt->execute();
+    $totalItems = (int)$countStmt->fetchColumn();
 
-    $statusMap = [
-        'waiting' => 'รออนุมัติ',
-        'approved' => 'อนุมัติแล้ว',
-        'rejected' => 'ไม่อนุมัติ',
-    ];
 
-    if ($statusFilter !== '' && isset($statusMap[$statusFilter])) {
-        $query .= " AND w.status = ?";
-        $params[] = $statusMap[$statusFilter];
+    if ($useLimit) {
+        $query .= " LIMIT :limit OFFSET :offset";
     }
-
-    $query .= " ORDER BY 
-    CASE 
-        WHEN w.status = 'รออนุมัติ' THEN 0
-        ELSE 1
-    END,
-    w.writeoff_id DESC";
-
 
     $stmt = $dbh->prepare($query);
-    $stmt->execute($params);
+    foreach ($params as $key => $val) {
+        $stmt->bindValue($key, $val, PDO::PARAM_STR);
+    }
+    if ($useLimit) {
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    }
+    $stmt->execute();
     $writeoffs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 
@@ -66,7 +87,17 @@ try {
         $stmtFile->execute([$wo['writeoff_id']]);
         $wo['files'] = $stmtFile->fetchAll(PDO::FETCH_ASSOC);
     }
-    echo json_encode(["status" => "success", "data" => $writeoffs]);
+
+    echo json_encode([
+        "status" => "success",
+        "data" => $writeoffs,
+        "pagination" => [
+            "totalItems" => $totalItems,
+            "totalPages" => $useLimit ? ceil($totalItems / $limit) : 1,
+            "currentPage" => $page,
+            "limit" => $limit
+        ]
+    ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
