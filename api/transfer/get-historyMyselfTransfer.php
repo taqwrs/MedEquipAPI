@@ -55,6 +55,7 @@ try {
         {$searchCondition}
         {$filterCondition}";
 
+    // นับจำนวนรายการ
     $countSql = "
         SELECT COUNT(DISTINCT ht.history_transfer_id) as total
         FROM history_transfer ht
@@ -64,7 +65,6 @@ try {
         LEFT JOIN departments d_now_location ON ht.now_equip_location_department_id = d_now_location.department_id
         {$baseWhere}
     ";
-
     $countStmt = $dbh->prepare($countSql);
     foreach ($params as $k => $v)
         $countStmt->bindValue($k, $v);
@@ -72,6 +72,7 @@ try {
     $totalItems = (int) $countStmt->fetchColumn();
     $totalPages = $useLimit ? ceil($totalItems / $limit) : 1;
 
+    // ดึงข้อมูลพร้อมคำนวณ status_display
     $sql = "
         SELECT DISTINCT
             ht.history_transfer_id,
@@ -89,7 +90,13 @@ try {
             e.asset_code,
             d_from.department_name AS from_department_name,
             d_to.department_name AS to_department_name,
-            d_now_location.department_name AS now_equip_location_department_name
+            d_now_location.department_name AS now_equip_location_department_name,
+            CASE
+                WHEN ht.transfer_type = 'โอนย้ายถาวร' THEN 'ไม่ต้องคืน'
+                WHEN ht.transfer_type = 'โอนย้ายชั่วคราว' AND (ht.status_transfer = 0 OR ht.status_transfer IS NULL) THEN 'ยังไม่คืน'
+                WHEN ht.transfer_type = 'โอนย้ายชั่วคราว' AND ht.status_transfer = 1 THEN 'คืนแล้ว'
+                ELSE '-'
+            END AS status_display
         FROM history_transfer ht
         LEFT JOIN equipments e ON ht.equipment_id = e.equipment_id
         LEFT JOIN departments d_from ON ht.from_department_id = d_from.department_id
