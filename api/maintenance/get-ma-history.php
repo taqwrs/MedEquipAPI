@@ -1,5 +1,5 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -24,9 +24,9 @@ try {
 
         // ดึงแผนบำรุงรักษาของอุปกรณ์
         $stmtPlans = $dbh->prepare("
-            SELECT cp.plan_id, cp.plan_name
-            FROM calibration_plans cp
-            JOIN plan_equipments pe ON cp.plan_id = pe.plan_id
+            SELECT mp.plan_id, mp.plan_name
+            FROM maintenance_plans mp
+            JOIN plan_ma_equipments pe ON mp.plan_id = pe.plan_id
             WHERE pe.equipment_id = :equipment_id
         ");
         $stmtPlans->execute([':equipment_id' => $equipmentId]);
@@ -38,29 +38,31 @@ try {
         $equipmentName = $eqData['name'] ?? $equipmentId;
 
         foreach ($plans as $plan) {
-            // ดึงผลลัพธ์พร้อม start_date และ performed_date
+            // ดึงผลลัพธ์ของรอบบำรุงรักษา
             $stmtDetails = $dbh->prepare("
-                SELECT dcp.details_cal_id, cr.cal_result_id, cr.result, cr.remarks, dcp.start_date, cr.performed_date
-                FROM details_calibration_plans dcp
-                INNER JOIN calibration_result cr 
-                    ON cr.details_cal_id = dcp.details_cal_id
-                WHERE dcp.plan_id = :plan_id
-                ORDER BY dcp.details_cal_id ASC
+                SELECT dmp.details_ma_id, mr.ma_result_id, mr.result, mr.details, mr.reason, dmp.start_date, mr.performed_date
+                FROM details_maintenance_plans dmp
+                INNER JOIN maintenance_result mr 
+                    ON mr.details_ma_id = dmp.details_ma_id
+                WHERE dmp.plan_id = :plan_id
+                ORDER BY dmp.details_ma_id ASC
             ");
             $stmtDetails->execute([':plan_id' => $plan['plan_id']]);
             $details = $stmtDetails->fetchAll(PDO::FETCH_ASSOC);
 
-            if (!$details) continue;
+            if (!$details)
+                continue;
 
             $rounds = [];
             foreach ($details as $idx => $row) {
                 $rounds[] = [
                     'round' => $idx + 1,
-                    'details_cal_id' => $row['details_cal_id'],
-                    'cal_result_id' => $row['cal_result_id'],
+                    'details_ma_id' => $row['details_ma_id'],
+                    'ma_result_id' => $row['ma_result_id'],
                     'plan_name' => $plan['plan_name'],
                     'status' => $row['result'],
-                    'remark' => $row['remarks'] ?: '-',
+                    'details' => $row['details'] ?: '-',
+                    'reason' => $row['reason'] ?: '-',
                     'start_date' => $row['start_date'] ?: '-',
                     'performed_date' => $row['performed_date'] ?: '-'
                 ];
@@ -72,13 +74,13 @@ try {
             ];
         }
 
-    // แสดงอุปกรณ์ทั้งหมดของรอบ
+        // แสดงอุปกรณ์ทั้งหมดของรอบ
     } elseif ($viewType === "allEquipments" && $roundId) {
 
         $stmtPlan = $dbh->prepare("
-            SELECT dcp.plan_id
-            FROM details_calibration_plans dcp
-            WHERE dcp.details_cal_id = :round_id
+            SELECT dmp.plan_id
+            FROM details_maintenance_plans dmp
+            WHERE dmp.details_ma_id = :round_id
         ");
         $stmtPlan->execute([':round_id' => $roundId]);
         $roundData = $stmtPlan->fetch(PDO::FETCH_ASSOC);
@@ -86,17 +88,17 @@ try {
         if ($roundData) {
             $planId = $roundData['plan_id'];
 
-            $stmtPlanName = $dbh->prepare("SELECT plan_name FROM calibration_plans WHERE plan_id = :plan_id");
+            $stmtPlanName = $dbh->prepare("SELECT plan_name FROM maintenance_plans WHERE plan_id = :plan_id");
             $stmtPlanName->execute([':plan_id' => $planId]);
             $planName = $stmtPlanName->fetchColumn() ?: "Plan $planId";
 
             // ดึงผลลัพธ์ของรอบพร้อม start_date และ performed_date
             $stmtResult = $dbh->prepare("
-                SELECT cr.cal_result_id, cr.equipment_id, cr.result, cr.remarks, dcp.start_date, cr.performed_date, e.name AS equipment_name
-                FROM calibration_result cr
-                INNER JOIN details_calibration_plans dcp ON cr.details_cal_id = dcp.details_cal_id
-                INNER JOIN equipments e ON e.equipment_id = cr.equipment_id
-                WHERE cr.details_cal_id = :round_id
+                SELECT mr.ma_result_id, mr.equipment_id, mr.result, mr.details, mr.reason, dmp.start_date, mr.performed_date, e.name AS equipment_name
+                FROM maintenance_result mr
+                INNER JOIN details_maintenance_plans dmp ON mr.details_ma_id = dmp.details_ma_id
+                INNER JOIN equipments e ON e.equipment_id = mr.equipment_id
+                WHERE mr.details_ma_id = :round_id
             ");
             $stmtResult->execute([':round_id' => $roundId]);
             $roundResults = $stmtResult->fetchAll(PDO::FETCH_ASSOC);
@@ -107,11 +109,12 @@ try {
                     'rounds' => [
                         [
                             'round' => 1,
-                            'details_cal_id' => $roundId,
-                            'cal_result_id' => $row['cal_result_id'], 
+                            'details_ma_id' => $roundId,
+                            'ma_result_id' => $row['ma_result_id'],
                             'plan_name' => $planName,
                             'status' => $row['result'],
-                            'remark' => $row['remarks'] ?: '-',
+                            'details' => $row['details'] ?: '-',
+                            'reason' => $row['reason'] ?: '-',
                             'start_date' => $row['start_date'] ?: '-',
                             'performed_date' => $row['performed_date'] ?: '-'
                         ]
@@ -125,7 +128,6 @@ try {
         'status' => 'success',
         'data' => $result
     ]);
-
 } catch (Exception $e) {
     echo json_encode([
         'status' => 'error',

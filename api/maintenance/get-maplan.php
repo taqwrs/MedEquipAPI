@@ -9,32 +9,34 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization");
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    // ดึงแผนบำรุงรักษา
     $query = "
         SELECT 
-            cp.*,
+            mp.*,
             u.full_name AS user_name,
             gu.group_name,
             c.name AS company_name,
-            COUNT(DISTINCT dcp.details_cal_id) AS total_schedules
-        FROM calibration_plans cp
-        LEFT JOIN users u ON cp.user_id = u.user_id
-        LEFT JOIN group_user gu ON cp.group_user_id = gu.group_user_id
-        LEFT JOIN companies c ON cp.company_id = c.company_id
-        LEFT JOIN details_calibration_plans dcp ON cp.plan_id = dcp.plan_id
-        WHERE cp.is_active = 1
-        GROUP BY cp.plan_id DESC
+            COUNT(DISTINCT dmp.details_ma_id) AS total_schedules
+        FROM maintenance_plans mp
+        LEFT JOIN users u ON mp.user_id = u.user_id
+        LEFT JOIN group_user gu ON mp.group_user_id = gu.group_user_id
+        LEFT JOIN companies c ON mp.company_id = c.company_id
+        LEFT JOIN details_maintenance_plans dmp ON mp.plan_id = dmp.plan_id
+        WHERE mp.is_active = 1
+        GROUP BY mp.plan_id DESC
     ";
     $stmt = $dbh->prepare($query);
     $stmt->execute();
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $planIds = array_column($results, 'plan_id');
 
+    // ดึงอุปกรณ์ในแต่ละแผน
     $boundDevicesMap = [];
     if (!empty($planIds)) {
         $inQuery = implode(',', array_fill(0, count($planIds), '?'));
         $boundStmt = $dbh->prepare("
             SELECT pe.plan_id, e.equipment_id, e.name, e.asset_code
-            FROM plan_equipments pe
+            FROM plan_ma_equipments pe
             LEFT JOIN equipments e ON pe.equipment_id = e.equipment_id
             WHERE pe.plan_id IN ($inQuery)
         ");
@@ -50,12 +52,13 @@ try {
         }
     }
 
+    // ดึงไฟล์เอกสาร MA
     $filesMap = [];
     if (!empty($planIds)) {
         $inQuery = implode(',', array_fill(0, count($planIds), '?'));
         $fileStmt = $dbh->prepare("
-            SELECT plan_id, file_cal_id, file_cal_name, file_cal_url, cal_type_name
-            FROM file_cal
+            SELECT plan_id, file_ma_id, file_ma_name, file_ma_url, ma_type_name
+            FROM file_ma
             WHERE plan_id IN ($inQuery)
         ");
         $fileStmt->execute($planIds);
@@ -63,14 +66,15 @@ try {
 
         foreach ($filesRaw as $file) {
             $filesMap[$file['plan_id']][] = [
-                "file_cal_id" => (int)$file['file_cal_id'],
-                "file_cal_name" => $file['file_cal_name'],
-                "file_cal_url" => $file['file_cal_url'],
-                "cal_type_name" => $file['cal_type_name']
+                "file_ma_id" => (int)$file['file_ma_id'],
+                "file_ma_name" => $file['file_ma_name'],
+                "file_ma_url" => $file['file_ma_url'],
+                "ma_type_name" => $file['ma_type_name']
             ];
         }
     }
 
+    // จัดรูปแบบผลลัพธ์
     foreach ($results as &$result) {
         switch ((int)$result['frequency_unit']) {
             case 1: $unit_text = 'วัน'; break;
@@ -98,3 +102,4 @@ try {
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
+?>

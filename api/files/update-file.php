@@ -48,4 +48,3 @@ try {
     $dbh->rollBack();
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>

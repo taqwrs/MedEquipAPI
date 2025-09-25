@@ -10,20 +10,21 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 try {
     if ($method === 'GET') {
-
+        // ดึง subcategories และอุปกรณ์ทั้งหมด
         $stmt = $dbh->prepare("SELECT subcategory_id, name, category_id, type FROM equipment_subcategories ORDER BY name");
         $stmt->execute();
         $subcategories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-
         $stmt = $dbh->prepare("
-        SELECT equipment_id, name, brand, model, asset_code, status, location_details, subcategory_id
-        FROM equipments
-        WHERE status IN ('ใช้งาน', 'คลัง') AND active = 1
-        ORDER BY subcategory_id
-");
+            SELECT equipment_id, name, brand, model, asset_code, status, location_details, subcategory_id
+            FROM equipments
+            WHERE status IN ('ใช้งาน', 'คลัง') AND active = 1
+            ORDER BY subcategory_id
+        ");
         $stmt->execute();
         $equipments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // จัดกลุ่มตาม subcategory
         $subcategoriesWithEquipments = array_map(function ($sub) use ($equipments) {
             $sub['equipments'] = array_values(array_filter($equipments, fn($eq) => $eq['subcategory_id'] == $sub['subcategory_id']));
             return $sub;
@@ -55,15 +56,15 @@ try {
         try {
             $dbh->beginTransaction();
 
-
-            $stmt = $dbh->prepare("SELECT equipment_id FROM plan_equipments WHERE plan_id = :plan_id");
+            // ดึงอุปกรณ์ที่ผูกกับ MA Plan อยู่แล้ว
+            $stmt = $dbh->prepare("SELECT equipment_id FROM plan_ma_equipments WHERE plan_id = :plan_id");
             $stmt->execute([':plan_id' => $plan_id]);
             $existing = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-
+            // เพิ่มอุปกรณ์ใหม่ที่ยังไม่มี
             $toAdd = array_diff($newEquipmentIds, $existing);
             if (!empty($toAdd)) {
-                $stmtInsert = $dbh->prepare("INSERT INTO plan_equipments (plan_id, equipment_id) VALUES (:plan_id, :equipment_id)");
+                $stmtInsert = $dbh->prepare("INSERT INTO plan_ma_equipments (plan_id, equipment_id) VALUES (:plan_id, :equipment_id)");
                 foreach ($toAdd as $equipment_id) {
                     $stmtInsert->execute([
                         ':plan_id' => $plan_id,
@@ -72,11 +73,11 @@ try {
                 }
             }
 
-
+            // ลบอุปกรณ์ที่ไม่ได้เลือก
             $toDelete = array_diff($existing, $newEquipmentIds);
             if (!empty($toDelete)) {
                 $inQuery = implode(',', array_fill(0, count($toDelete), '?'));
-                $stmtDelete = $dbh->prepare("DELETE FROM plan_equipments WHERE plan_id = ? AND equipment_id IN ($inQuery)");
+                $stmtDelete = $dbh->prepare("DELETE FROM plan_ma_equipments WHERE plan_id = ? AND equipment_id IN ($inQuery)");
                 $stmtDelete->execute(array_merge([$plan_id], $toDelete));
             }
 
@@ -84,7 +85,7 @@ try {
 
             echo json_encode([
                 "status" => "success",
-                "message" => "อุปกรณ์ถูกอัปเดตเรียบร้อยแล้ว"
+                "message" => "อุปกรณ์ MA Plan ถูกอัปเดตเรียบร้อยแล้ว"
             ]);
             exit;
         } catch (Exception $e) {

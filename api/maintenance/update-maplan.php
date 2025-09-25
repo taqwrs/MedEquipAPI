@@ -8,7 +8,7 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 $method = $_SERVER['REQUEST_METHOD'];
 if ($method !== 'POST') {
-    echo json_encode(["status" => "error", "message" => "POST method !!!"]);
+    echo json_encode(["status" => "error", "message" => "POST method required"]);
     exit;
 }
 
@@ -26,8 +26,8 @@ if(!isset($input['plan_id'])){
 try {
     $dbh->beginTransaction();
 
-
-    $stmt = $dbh->prepare("SELECT * FROM calibration_plans WHERE plan_id=:plan_id");
+    // ดึงข้อมูล plan ปัจจุบัน
+    $stmt = $dbh->prepare("SELECT * FROM maintenance_plans WHERE plan_id=:plan_id");
     $stmt->execute([':plan_id'=>$input['plan_id']]);
     $current = $stmt->fetch(PDO::FETCH_ASSOC);
     if(!$current){
@@ -35,21 +35,20 @@ try {
         exit;
     }
 
-
     $fields = [
         'plan_name','user_id','group_user_id','company_id',
         'frequency_number','frequency_unit','frequency_type',
         'start_waranty','start_date','end_date','cost_type',
-        'price','type_cal','is_active'
+        'price','type_ma','contract','is_active'
     ];
     $updateData = [];
     foreach($fields as $f){
         $updateData[$f] = array_key_exists($f, $input) ? $input[$f] : $current[$f];
     }
 
- 
+    // กรณี Soft Delete (เปิด/ปิด plan)
     if (isset($input['is_active']) && count($input) === 2) {
-        $stmt = $dbh->prepare("UPDATE calibration_plans SET is_active=:is_active WHERE plan_id=:plan_id");
+        $stmt = $dbh->prepare("UPDATE maintenance_plans SET is_active=:is_active WHERE plan_id=:plan_id");
         $stmt->execute([
             ':is_active' => $input['is_active'],
             ':plan_id'   => $input['plan_id']
@@ -59,13 +58,13 @@ try {
         exit;
     }
 
-
-    $allowed_type_cal = ['ภายใน','ภายนอก'];
+    // ตรวจสอบค่าที่ถูกต้อง
+    $allowed_type_ma = ['ภายใน','ภายนอก'];
     $allowed_cost_type = ['แยกรายรอบ','รวมตลอดทั้งสัญญา'];
     $allowed_frequency_unit = [1,2,3,4];
 
-    if(!in_array($updateData['type_cal'],$allowed_type_cal)){
-        echo json_encode(["status"=>"error","message"=>"Invalid type_cal"]); exit;
+    if(!in_array($updateData['type_ma'],$allowed_type_ma)){
+        echo json_encode(["status"=>"error","message"=>"Invalid type_ma"]); exit;
     }
     if(!in_array($updateData['cost_type'],$allowed_cost_type)){
         echo json_encode(["status"=>"error","message"=>"Invalid cost_type"]); exit;
@@ -74,6 +73,7 @@ try {
         echo json_encode(["status"=>"error","message"=>"Invalid frequency_unit"]); exit;
     }
 
+    // คำนวณจำนวนรอบ
     $startDate = new DateTime($updateData['start_date']);
     $endDate   = new DateTime($updateData['end_date']);
     $intervalNumber = (int)$updateData['frequency_number'];
@@ -91,8 +91,8 @@ try {
         }
     }
 
-
-    $stmt = $dbh->prepare("UPDATE calibration_plans SET
+    // Update plan
+    $stmt = $dbh->prepare("UPDATE maintenance_plans SET
         plan_name=:plan_name, 
         user_id=:user_id,
         group_user_id=:group_user_id,
@@ -105,8 +105,9 @@ try {
         start_date=:start_date,
         end_date=:end_date,
         cost_type=:cost_type,
+        contract=:contract,
         price=:price,
-        type_cal=:type_cal,
+        type_ma=:type_ma,
         is_active=:is_active
         WHERE plan_id=:plan_id
     ");
@@ -122,3 +123,4 @@ try {
     if($dbh->inTransaction()) $dbh->rollBack();
     echo json_encode(["status"=>"error","message"=>$e->getMessage()]);
 }
+?>

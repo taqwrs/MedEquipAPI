@@ -18,7 +18,7 @@ if (!$input) {
     exit;
 }
 
-$required_fields = ['plan_name', 'user_id', 'group_user_id', 'company_id', 'frequency_number', 'frequency_unit', 'frequency_type', 'start_date', 'end_date', 'type_cal'];
+$required_fields = ['plan_name', 'user_id', 'group_user_id', 'company_id', 'frequency_number', 'frequency_unit', 'frequency_type', 'start_date', 'end_date', 'type_ma'];
 
 foreach ($required_fields as $field) {
     if (!array_key_exists($field, $input)) {
@@ -27,12 +27,12 @@ foreach ($required_fields as $field) {
     }
 }
 
-$allowed_type_cal = ['ภายใน', 'ภายนอก'];
+$allowed_type_ma = ['ภายใน', 'ภายนอก'];
 $allowed_cost_type = ['แยกรายรอบ', 'รวมตลอดทั้งสัญญา'];
 $allowed_frequency_unit = [1, 2, 3, 4];
 
-if (!in_array($input['type_cal'], $allowed_type_cal)) {
-    echo json_encode(["status" => "error", "message" => "Invalid type_cal"]);
+if (!in_array($input['type_ma'], $allowed_type_ma)) {
+    echo json_encode(["status" => "error", "message" => "Invalid type_ma"]);
     exit;
 }
 if (!in_array($input['cost_type'], $allowed_cost_type)) {
@@ -60,27 +60,19 @@ try {
         while ($tempDate <= $endDate) {
             $intervalCount++;
             switch ($intervalUnit) {
-                case 1:
-                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'D'));
-                    break;
-                case 2:
-                    $tempDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D'));
-                    break;
-                case 3:
-                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'M'));
-                    break;
-                case 4:
-                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'Y'));
-                    break;
+                case 1: $tempDate->add(new DateInterval('P' . $intervalNumber . 'D')); break;
+                case 2: $tempDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D')); break;
+                case 3: $tempDate->add(new DateInterval('P' . $intervalNumber . 'M')); break;
+                case 4: $tempDate->add(new DateInterval('P' . $intervalNumber . 'Y')); break;
             }
         }
     }
 
-
-    $stmt = $dbh->prepare("INSERT INTO calibration_plans 
-    (plan_name, user_id, group_user_id, company_id, frequency_number, frequency_unit, frequency_type, interval_count, contract, start_waranty, start_date, end_date, cost_type, price, type_cal, is_active)
-    VALUES (:plan_name, :user_id, :group_user_id, :company_id, :frequency_number, :frequency_unit, :frequency_type, :interval_count, :contract, :start_waranty, :start_date, :end_date, :cost_type, :price, :type_cal, :is_active)
-");
+    // Insert แผน MA
+    $stmt = $dbh->prepare("INSERT INTO maintenance_plans 
+        (plan_name, user_id, group_user_id, company_id, frequency_number, frequency_unit, frequency_type, interval_count, contract, start_waranty, start_date, end_date, cost_type, price, type_ma, is_active)
+        VALUES (:plan_name, :user_id, :group_user_id, :company_id, :frequency_number, :frequency_unit, :frequency_type, :interval_count, :contract, :start_waranty, :start_date, :end_date, :cost_type, :price, :type_ma, :is_active)
+    ");
 
     $stmt->execute([
         ':plan_name' => $input['plan_name'],
@@ -97,62 +89,48 @@ try {
         ':end_date' => $input['end_date'],
         ':cost_type' => $input['cost_type'],
         ':price' => $input['price'],
-        ':type_cal' => $input['type_cal'],
+        ':type_ma' => $input['type_ma'],
         ':is_active' => $input['is_active'] ?? 1
     ]);
 
     $plan_id = $dbh->lastInsertId();
 
-    $detailsStmt = $dbh->prepare("INSERT INTO details_calibration_plans (plan_id,start_date) VALUES (:plan_id,:start_date)");
+    // Insert details MA
+    $detailsStmt = $dbh->prepare("INSERT INTO details_maintenance_plans (plan_id,start_date) VALUES (:plan_id,:start_date)");
 
     if ($input['frequency_type'] === 'รอบเดียว') {
-        $detailsStmt->execute([
-            ':plan_id' => $plan_id,
-            ':start_date' => $startDate->format('Y-m-d')
-        ]);
+        $detailsStmt->execute([':plan_id' => $plan_id, ':start_date' => $startDate->format('Y-m-d')]);
     } else {
         $scheduledDate = clone $startDate;
         for ($i = 1; $i <= $intervalCount; $i++) {
-            $detailsStmt->execute([
-                ':plan_id' => $plan_id,
-                ':start_date' => $scheduledDate->format('Y-m-d')
-            ]);
+            $detailsStmt->execute([':plan_id' => $plan_id, ':start_date' => $scheduledDate->format('Y-m-d')]);
             switch ($intervalUnit) {
-                case 1:
-                    $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'D'));
-                    break;
-                case 2:
-                    $scheduledDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D'));
-                    break;
-                case 3:
-                    $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'M'));
-                    break;
-                case 4:
-                    $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'Y'));
-                    break;
+                case 1: $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'D')); break;
+                case 2: $scheduledDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D')); break;
+                case 3: $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'M')); break;
+                case 4: $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'Y')); break;
             }
         }
     }
 
+    // Upload files MA
     if (!empty($input['files']) && is_array($input['files'])) {
-        $uploadDir = __DIR__ . "/../uploads/files_cal/";
-        if (!is_dir($uploadDir))
-            mkdir($uploadDir, 0777, true);
+        $uploadDir = __DIR__ . "/../uploads/files_ma/";
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
 
-        $fileStmt = $dbh->prepare("INSERT INTO file_cal (plan_id,file_cal_name,file_cal_url,cal_type_name) VALUES (:plan_id,:file_cal_name,:file_cal_url,:cal_type_name)");
+        $fileStmt = $dbh->prepare("INSERT INTO file_ma (plan_id,file_ma_name,file_ma_url,ma_type_name) VALUES (:plan_id,:file_ma_name,:file_ma_url,:ma_type_name)");
 
         foreach ($input['files'] as $file) {
-            if (empty($file['name']) || empty($file['base64']))
-                continue;
+            if (empty($file['name']) || empty($file['base64'])) continue;
             $newName = uniqid() . '_' . basename($file['name']);
             $targetPath = $uploadDir . $newName;
             $data = base64_decode($file['base64']);
             if (file_put_contents($targetPath, $data) !== false) {
                 $fileStmt->execute([
                     ':plan_id' => $plan_id,
-                    ':file_cal_name' => $file['name'],
-                    ':file_cal_url' => "/uploads/files_cal/" . $newName,
-                    ':cal_type_name' => $file['type_name'] ?? 'ไม่ระบุ'
+                    ':file_ma_name' => $file['name'],
+                    ':file_ma_url' => "/uploads/files_ma/" . $newName,
+                    ':ma_type_name' => $file['type_name'] ?? 'ไม่ระบุ'
                 ]);
             }
         }
@@ -162,7 +140,7 @@ try {
     echo json_encode(["status" => "success", "plan_id" => $plan_id]);
 
 } catch (Exception $e) {
-    if ($dbh->inTransaction())
-        $dbh->rollBack();
+    if ($dbh->inTransaction()) $dbh->rollBack();
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
+?>
