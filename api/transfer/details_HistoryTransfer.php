@@ -12,46 +12,52 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
+    $input = json_decode(file_get_contents("php://input"), true);
+    $history_transfer_id = $input['history_transfer_id'] ?? null;
+
+    if (!$history_transfer_id) {
+        throw new Exception("history_transfer_id not provided");
+    }
+
     $u_id = $decoded->data->ID ?? null;
-    if (!$u_id)
-        throw new Exception("User ID not found");
+    if (!$u_id) throw new Exception("User ID not found");
 
     $baseWhere = "WHERE (ht.transfer_user_id = :u_id OR ht.recipient_user_id = :u_id)
         AND (
             (ht.transfer_type = 'โอนย้ายถาวร' AND ht.status_transfer = 1) OR
             (ht.transfer_type = 'โอนย้ายชั่วคราว')
-        )";
+        )
+        AND ht.history_transfer_id = :history_transfer_id";
 
-    // ดึงข้อมูลหลัก
     $sql = "
         SELECT DISTINCT
-            ht.history_transfer_id,
-            ht.transfer_id,
-            ht.transfer_type,
-            ht.equipment_id,
-            ht.from_department_id,
-            ht.to_department_id,
-            ht.transfer_date,
-            ht.returned_date,
-            ht.reason,
-            ht.transfer_user_id,
-            ht.recipient_user_id,
-            ht.updated_at,
-            ht.now_equip_location_department_id,
-            ht.now_equip_location_details,
-            ht.old_subcategory_id,
-            ht.new_subcategory_id,
-            ht.now_subcategory_id,
-            ht.status_transfer,
-            e.name AS equipment_name,
-            e.asset_code,
-            u_transfer.full_name AS transfer_user_name,
-            u_recipient.full_name AS recipient_user_name,
-            d_from.department_name AS from_department_name,
-            d_to.department_name AS to_department_name,
-            d_now_location.department_name AS now_equip_location_department_name,
-            CASE WHEN ht.transfer_type = 'โอนย้ายชั่วคราว' THEN sc_old.name ELSE NULL END AS old_subcategory_name,
-            CASE WHEN ht.transfer_type = 'โอนย้ายถาวร' THEN sc_now.name ELSE NULL END AS now_subcategory_name
+        ht.history_transfer_id,
+        ht.transfer_id,
+        ht.transfer_type,
+        ht.equipment_id,
+        ht.from_department_id,
+        ht.to_department_id,
+        ht.transfer_date,
+        ht.returned_date,
+        ht.reason,
+        ht.transfer_user_id,
+        ht.recipient_user_id,
+        ht.updated_at,
+        ht.now_equip_location_department_id,
+        ht.now_equip_location_details,
+        ht.old_subcategory_id,
+        ht.new_subcategory_id,
+        ht.now_subcategory_id,
+        ht.status_transfer,
+        e.name AS equipment_name,
+        e.asset_code,
+        u_transfer.full_name AS transfer_user_name,
+        u_recipient.full_name AS recipient_user_name,
+        d_from.department_name AS from_department_name,
+        d_to.department_name AS to_department_name,
+        d_now_location.department_name AS now_equip_location_department_name,
+        CASE WHEN ht.transfer_type = 'โอนย้ายชั่วคราว' THEN sc_old.name ELSE NULL END AS old_subcategory_name,
+        CASE WHEN ht.transfer_type = 'โอนย้ายถาวร' THEN sc_now.name ELSE NULL END AS now_subcategory_name
         FROM history_transfer ht
         LEFT JOIN equipments e ON ht.equipment_id = e.equipment_id
         LEFT JOIN users u_transfer ON ht.transfer_user_id = u_transfer.ID
@@ -69,6 +75,7 @@ try {
 
     $stmt = $dbh->prepare($sql);
     $stmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
+    $stmt->bindValue(':history_transfer_id', $history_transfer_id, PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -172,7 +179,10 @@ try {
             "recipient_user" => $recipient_user,
             "admins" => $admins,
             "status_display" => $status_display,
-            "updated_at" => $history['updated_at']
+            "updated_at" => $history['updated_at'],
+            "reason" => $history['reason'],
+            "transfer_date" => $history['transfer_date'],
+            "returned_date" => $history['returned_date']
         ];
     }
 

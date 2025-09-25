@@ -11,10 +11,12 @@ try {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
         exit;
     }
+
     $u_id = $decoded->data->ID ?? null;
     if (!$u_id) {
         throw new Exception("User ID not found");
     }
+
     $equipment_id = isset($_GET['equipment_id']) ? (int)$_GET['equipment_id'] : null;
 
     $sql = "
@@ -26,12 +28,10 @@ try {
           es.name AS subcategory_name,
           es.category_id,
           
-          -- สถานที่ตั้งเครื่องมือ
           e.location_department_id,
           d_location.department_name AS location_department_name,
           e.location_details,
           
-          -- ข้อมูลการโอนย้าย
           et.transfer_id,
           et.transfer_type,
           et.from_department_id,
@@ -43,14 +43,12 @@ try {
           et.reason,
           et.status,
           
-          -- ผู้ดำเนินการโอนย้าย
           et.transfer_user_id,
           u_transfer.ID AS transfer_user_ID,
           u_transfer.user_id AS transfer_user_user_id,
           u_transfer.full_name AS transfer_user_name,
           d_transfer.department_name AS transfer_user_department,
           
-          -- ผู้รับโอนย้าย
           et.recipient_user_id,
           u_recipient.ID AS recipient_user_ID,
           u_recipient.user_id AS recipient_user_user_id,
@@ -64,19 +62,15 @@ try {
           AND et.transfer_type = 'โอนย้ายชั่วคราว' 
           AND et.status = 0
         
-        -- Join ผู้ดำเนินการโอนย้าย
         LEFT JOIN users u_transfer ON et.transfer_user_id = u_transfer.ID
         LEFT JOIN departments d_transfer ON u_transfer.department_id = d_transfer.department_id
         
-        -- Join ผู้รับโอนย้าย
         LEFT JOIN users u_recipient ON et.recipient_user_id = u_recipient.ID
         LEFT JOIN departments d_recipient ON u_recipient.department_id = d_recipient.department_id
         
-        -- Join แผนกต้นทางและปลายทาง
         LEFT JOIN departments d_from ON et.from_department_id = d_from.department_id
         LEFT JOIN departments d_to ON et.to_department_id = d_to.department_id
         
-        -- Join สถานที่ตั้งเครื่องมือ
         LEFT JOIN departments d_location ON e.location_department_id = d_location.department_id
 
         WHERE et.transfer_id IS NOT NULL
@@ -84,7 +78,7 @@ try {
 
     if ($equipment_id) {
         $sql .= " AND e.equipment_id = :equipment_id ";
-    } 
+    }
 
     $sql .= " ORDER BY e.equipment_id ASC";
 
@@ -103,52 +97,67 @@ try {
 
     // ดึงข้อมูลผู้ดูแลหลักสำหรับแต่ละ subcategory
     $result = [];
-    foreach ($rows as $row) {
-        // ดึงข้อมูลผู้ดูแลหลัก
-        $adminSql = "
-            SELECT 
-                gu.group_user_id,
-                gu.group_name,
-                gu.type AS group_type,
-                u_admin.ID,
-                u_admin.user_id,
-                u_admin.full_name,
-                d_admin.department_name
-            FROM relation_group rg
-            LEFT JOIN group_user gu ON rg.group_user_id = gu.group_user_id
-            LEFT JOIN relation_user ru_admin ON gu.group_user_id = ru_admin.group_user_id
-            LEFT JOIN users u_admin ON ru_admin.u_id = u_admin.ID
-            LEFT JOIN departments d_admin ON u_admin.department_id = d_admin.department_id
-            WHERE rg.subcategory_id = :subcategory_id 
-            AND gu.type = 'ผู้ดูแลหลัก'
-        ";
-        
-        $adminStmt = $dbh->prepare($adminSql);
-        $adminStmt->bindParam(":subcategory_id", $row['subcategory_id'], PDO::PARAM_INT);
-        $adminStmt->execute();
-        $admins = $adminStmt->fetchAll(PDO::FETCH_ASSOC);
+    $adminGroupsCache = [];
 
-        // จัดกลุ่ม admins ตาม group
-        $adminGroups = [];
-        foreach ($admins as $admin) {
-            $groupId = $admin['group_user_id'];
-            if (!isset($adminGroups[$groupId])) {
-                $adminGroups[$groupId] = [
-                    'group_id' => $groupId,
-                    'group_name' => $admin['group_name'],
-                    'group_type' => $admin['group_type'],
-                    'user_group' => []
-                ];
-            }
+    foreach ($rows as $row) {
+        $subcategory_id = $row['subcategory_id'];
+
+        if (!isset($adminGroupsCache[$subcategory_id])) {
+            $adminSql = "
+                SELECT 
+                    gu.group_user_id,
+                    gu.group_name,
+                    gu.type AS group_type,
+                    u_admin.ID,
+                    u_admin.user_id,
+                    u_admin.full_name,
+                    d_admin.department_name
+                FROM relation_group rg
+                LEFT JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+                LEFT JOIN relation_user ru_admin ON gu.group_user_id = ru_admin.group_user_id
+                LEFT JOIN users u_admin ON ru_admin.u_id = u_admin.ID
+                LEFT JOIN departments d_admin ON u_admin.department_id = d_admin.department_id
+                WHERE rg.subcategory_id = :subcategory_id 
+                AND gu.type = 'ผู้ดูแลหลัก'
+            ";
             
-            if ($admin['full_name']) {
-                $adminGroups[$groupId]['user_group'][] = [
-                    'ID' => (int)$admin['ID'],
-                    'user_id' => $admin['user_id'],
-                    'full_name' => $admin['full_name'],
-                    'department_name' => $admin['department_name']
-                ];
+            $adminStmt = $dbh->prepare($adminSql);
+            $adminStmt->bindParam(":subcategory_id", $subcategory_id, PDO::PARAM_INT);
+            $adminStmt->execute();
+            $admins = $adminStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $adminGroups = [];
+            foreach ($admins as $admin) {
+                $groupId = $admin['group_user_id'];
+                if (!isset($adminGroups[$groupId])) {
+                    $adminGroups[$groupId] = [
+                        'group_id' => (int)$groupId,
+                        'group_name' => $admin['group_name'],
+                        'group_type' => $admin['group_type'],
+                        'user_group' => []
+                    ];
+                }
+                
+                if ($admin['full_name']) {
+                    $adminGroups[$groupId]['user_group'][] = [
+                        'ID' => (int)$admin['ID'],
+                        'user_id' => $admin['user_id'],
+                        'full_name' => $admin['full_name'],
+                        'department_name' => $admin['department_name']
+                    ];
+                }
             }
+            $adminGroupsCache[$subcategory_id] = array_values($adminGroups);
+        }
+
+        // แปลง status_text
+        $status_text = null;
+        if ($row['transfer_type'] === "โอนย้ายชั่วคราว" && $row['status'] == 0) {
+            $status_text = "ยังไม่คืน";
+        } elseif ($row['transfer_type'] === "โอนย้ายชั่วคราว" && $row['status'] != 0) {
+            $status_text = "คืนแล้ว";
+        } else {
+            $status_text = "สถานะอื่น ๆ";
         }
 
         $equipmentData = [
@@ -157,6 +166,7 @@ try {
             'equipment_name' => $row['equipment_name'],
             'transfer_type' => $row['transfer_type'],
             'status' => $row['status'],
+            'status_text' => $status_text,
             'subcategory_id' => (int)$row['subcategory_id'],
             'subcategory_name' => $row['subcategory_name'],
             'location_department_id' => (int)$row['location_department_id'],
@@ -168,7 +178,7 @@ try {
             'transfer_date' => $row['transfer_date'],
             'returned_date' => $row['returned_date'],
             'reason' => $row['reason'],
-            'admins' => array_values($adminGroups),
+            'admins' => $adminGroupsCache[$subcategory_id],
             'transfer_user_id' => [
                 [
                     'ID' => (int)$row['transfer_user_ID'],
