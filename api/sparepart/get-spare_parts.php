@@ -11,24 +11,26 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $input = json_decode(file_get_contents('php://input'), true);
 $search = trim($input['search'] ?? '');
-$page   = (int)($input['page'] ?? 1);
-$limit  = (int)($input['limit'] ?? 5);
+$page = (int) ($input['page'] ?? 1);
+$limit = (int) ($input['limit'] ?? 5);
 $offset = ($page - 1) * $limit;
 
 try {
     $params = [];
-    $searchSql = '';
+    $searchSql = "WHERE sp.active = 1";
     if ($search) {
-        $searchSql = "WHERE sp.name LIKE :search OR sp.asset_code LIKE :search OR sp.end_date LIKE :search OR sp.status LIKE :search";
+        $searchSql .= " AND (sp.name LIKE :search OR sp.asset_code LIKE :search OR sp.end_date LIKE :search OR sp.status LIKE :search OR sp.serial_number LIKE :search)";
         $params[':search'] = "%$search%";
     }
+
 
     // นับจำนวนทั้งหมด
     $countSql = "SELECT COUNT(DISTINCT sp.spare_part_id) FROM spare_parts sp LEFT JOIN file_spare fs ON fs.spare_part_id = sp.spare_part_id $searchSql";
     $countStmt = $dbh->prepare($countSql);
-    foreach ($params as $k => $v) $countStmt->bindValue($k, $v);
+    foreach ($params as $k => $v)
+        $countStmt->bindValue($k, $v);
     $countStmt->execute();
-    $totalItems = (int)$countStmt->fetchColumn();
+    $totalItems = (int) $countStmt->fetchColumn();
     $totalPages = ceil($totalItems / $limit);
 
     $sql = "
@@ -96,7 +98,8 @@ LIMIT :limit OFFSET :offset
 ";
 
     $stmt = $dbh->prepare($sql);
-    foreach ($params as $k => $v) $stmt->bindValue($k, $v);
+    foreach ($params as $k => $v)
+        $stmt->bindValue($k, $v);
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     $stmt->execute();
@@ -111,10 +114,10 @@ LIMIT :limit OFFSET :offset
         "status" => "success",
         "data" => $results,
         "pagination" => [
-            "totalItems"  => $totalItems,
-            "totalPages"  => $totalPages,
+            "totalItems" => $totalItems,
+            "totalPages" => $totalPages,
             "currentPage" => $page,
-            "limit"       => $limit
+            "limit" => $limit
         ]
     ]);
 } catch (Exception $e) {
