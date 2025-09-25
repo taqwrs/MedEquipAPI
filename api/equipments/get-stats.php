@@ -8,17 +8,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     // Query จำนวนทั้งหมด
-    $stmtTotal = $dbh->prepare("SELECT COUNT(*) as total FROM equipments");
+    $stmtTotal = $dbh->prepare("SELECT COUNT(*) as total FROM equipments WHERE active = 1");
     $stmtTotal->execute();
     $total = $stmtTotal->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
     // Query จำนวนที่ลงทะเบียนเสร็จสิ้น
-    $stmtcomplete = $dbh->prepare("SELECT COUNT(*) as complete FROM equipments WHERE record_status = 'complete'");
+    $stmtcomplete = $dbh->prepare("SELECT COUNT(*) as complete FROM equipments WHERE record_status = 'complete' AND active = 1");
     $stmtcomplete->execute();
     $complete = $stmtcomplete->fetch(PDO::FETCH_ASSOC)['complete'] ?? 0;
 
     // Query จำนวนรอดำเนินการ
-    $stmtdraft = $dbh->prepare("SELECT COUNT(*) as draft FROM equipments WHERE record_status = 'draft'");
+    $stmtdraft = $dbh->prepare("SELECT COUNT(*) as draft FROM equipments WHERE record_status = 'draft' AND active = 1");
     $stmtdraft->execute();
     $draft = $stmtdraft->fetch(PDO::FETCH_ASSOC)['draft'] ?? 0;
 

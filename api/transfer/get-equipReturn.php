@@ -71,7 +71,6 @@ try {
           AND et.status = 'active'
     ";
 
-    // ✅ เพิ่มเงื่อนไขค้นหา
     if (!empty($search)) {
         $sql .= " AND (
             e.name LIKE :search OR 
@@ -83,7 +82,6 @@ try {
     }
     $sql .= " ORDER BY e.equipment_id ASC";
 
-    // ✅ นับจำนวนทั้งหมด
     $countSql = "SELECT COUNT(*) FROM ($sql) AS total";
     $countStmt = $dbh->prepare($countSql);
     $countStmt->bindParam(':u_id', $u_id, PDO::PARAM_INT);
@@ -94,7 +92,6 @@ try {
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
 
-    // ✅ Query พร้อมแบ่งหน้า
     if ($useLimit) {
         $sql .= " LIMIT :limit OFFSET :offset";
     }
@@ -110,7 +107,6 @@ try {
     $stmt->execute();
     $equipment_list = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // -------------------------------------------
     // Summary (ยังไม่ได้โอนคืน / โอนคืนแล้ว / รวมทั้งหมด)
     $sql_not_returned = "
         SELECT COUNT(equipment_id) AS total_not_returned

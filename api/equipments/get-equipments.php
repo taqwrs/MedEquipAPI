@@ -20,11 +20,12 @@ $useLimit = $limit > 0;
 
 try {
     $params = [];
-    $searchSql = '';
+    $searchSql = "WHERE e.active = 1";
     if ($search) {
-        $searchSql = "WHERE e.name LIKE :search OR e.asset_code LIKE :search OR e.end_date LIKE :search OR e.status LIKE :search";
+        $searchSql .= " AND (e.name LIKE :search OR e.asset_code LIKE :search OR e.end_date LIKE :search OR e.status LIKE :search OR e.serial_number LIKE :search)";
         $params[':search'] = "%$search%";
     }
+
 
     $sql = "
     SELECT
@@ -97,24 +98,26 @@ try {
     -- ใช้ users.ID แทน user_id
     LEFT JOIN users u1 ON u1.ID = e.user_id
     LEFT JOIN users u2 ON u2.ID = e.updated_by
-
-    " . ($search ? $searchSql : "WHERE e.equipment_id IS NOT NULL") . "
+    $searchSql
     GROUP BY e.equipment_id
     ORDER BY e.equipment_id Desc
     LIMIT :limit OFFSET :offset
 ";
-
+    // " . ($search ? $searchSql : "WHERE e.equipment_id IS NOT NULL") . "
     // นับจำนวนทั้งหมดสำหรับ pagination
-    $countSql = "SELECT COUNT(DISTINCT e.equipment_id) FROM equipments e " . ($search ? $searchSql : '');
+    // $countSql = "SELECT COUNT(DISTINCT e.equipment_id) FROM equipments e " . ($search ? $searchSql : '');
+    $countSql = "SELECT COUNT(DISTINCT e.equipment_id) FROM equipments e $searchSql";
     $countStmt = $dbh->prepare($countSql);
-    foreach ($params as $k => $v) $countStmt->bindValue($k, $v);
+    foreach ($params as $k => $v)
+        $countStmt->bindValue($k, $v);
     $countStmt->execute();
     $totalItems = (int) $countStmt->fetchColumn();
     $totalPages = ceil($totalItems / $limit);
 
     // ดึงข้อมูลหลัก
     $stmt = $dbh->prepare($sql);
-    foreach ($params as $k => $v) $stmt->bindValue($k, $v);
+    foreach ($params as $k => $v)
+        $stmt->bindValue($k, $v);
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     $stmt->execute();
