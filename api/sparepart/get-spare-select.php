@@ -22,6 +22,7 @@ try {
     e.name AS equipment_name
   FROM spare_parts s
   LEFT JOIN equipments e ON s.equipment_id = e.equipment_id
+  WHERE s.active = 1
   ORDER BY s.spare_part_id DESC
 ";
 
