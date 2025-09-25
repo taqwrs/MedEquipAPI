@@ -68,7 +68,7 @@ try {
         LEFT JOIN departments to_dept ON et.to_department_id = to_dept.department_id
         LEFT JOIN departments loc_dept ON et.location_department_id = loc_dept.department_id
         WHERE u.ID = :u_id
-          AND et.status = 'active'
+          AND et.status = 0
     ";
 
     if (!empty($search)) {
