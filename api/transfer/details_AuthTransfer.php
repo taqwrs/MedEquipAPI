@@ -15,13 +15,6 @@ try {
     if (!$u_id) {
         throw new Exception("User ID not found");
     }
-    
-    $input = json_decode(file_get_contents('php://input'), true);
-    $search = trim($input['search'] ?? '');
-    $page = max(1, (int)($input['page'] ?? 1));
-    $limit = max(1, (int)($input['limit'] ?? 5));
-    $offset = ($page - 1) * $limit;
-    
     $baseWhere = "
         ru.u_id = :u_id 
         AND gu.type = 'ผู้ดูแลหลัก'
@@ -32,16 +25,6 @@ try {
     
     $searchWhere = '';
     $params = [':u_id' => $u_id];
-    
-    if ($search) {
-        $searchWhere = " AND (
-            e.name LIKE :search 
-            OR e.asset_code LIKE :search 
-            OR d.department_name LIKE :search 
-            OR e.location_details LIKE :search
-        )";
-        $params[':search'] = '%' . $search . '%';
-    }
     
     $joinTables = "
         FROM equipments e
@@ -70,12 +53,14 @@ try {
     $dataStmt = $dbh->prepare("
         SELECT DISTINCT
             e.equipment_id,
-            e.name,
+            e.name as equipment_name,
             e.asset_code,
             e.subcategory_id,
             es.name as subcategory_name,
+            es.category_id,
             e.location_department_id,
             e.location_details,
+            e.status,
             d.department_name as location_department_name,
             e.updated_at,
             CASE 
@@ -85,39 +70,98 @@ try {
             END as transfer_status
         $joinTables
         ORDER BY e.updated_at DESC
-        LIMIT :limit OFFSET :offset
     ");
     
     foreach ($params as $key => $value) {
         $dataStmt->bindValue($key, $value);
     }
-    $dataStmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-    $dataStmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     $dataStmt->execute();
     
     $equipment_list = [];
+    $subcategory_ids = [];
+    
     while ($row = $dataStmt->fetch(PDO::FETCH_ASSOC)) {
         $equipment_list[] = [
             "equipment_id" => (int)$row['equipment_id'],
-            "name" => $row['name'],
             "asset_code" => $row['asset_code'],
+            "equipment_name" => $row['equipment_name'],
             "subcategory_id" => (int)$row['subcategory_id'],
             "subcategory_name" => $row['subcategory_name'],
             "location_department_id" => $row['location_department_id'] ? (int)$row['location_department_id'] : null,
             "location_department_name" => $row['location_department_name'],
             "location_details" => $row['location_details'],
+            "category_id" => (int)$row['category_id']
         ];
+        
+        $subcategory_ids[] = (int)$row['subcategory_id'];
+    }
+    
+    $admins_data = [];
+    if (!empty($subcategory_ids)) {
+        $subcategory_ids = array_unique($subcategory_ids);
+        $placeholders = str_repeat('?,', count($subcategory_ids) - 1) . '?';
+        
+        $adminStmt = $dbh->prepare("
+            SELECT DISTINCT
+                es.subcategory_id,
+                gu.group_user_id as group_id,
+                gu.group_name,
+                gu.type as group_type,
+                u.ID,
+                u.user_id,
+                u.full_name,
+                ud.department_name
+            FROM equipment_subcategories es
+            INNER JOIN relation_group rg ON es.subcategory_id = rg.subcategory_id
+            INNER JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+            INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
+            INNER JOIN users u ON ru.u_id = u.ID
+            LEFT JOIN departments ud ON u.department_id = ud.department_id
+            WHERE es.subcategory_id IN ($placeholders)
+                AND gu.type = 'ผู้ดูแลหลัก'
+            ORDER BY es.subcategory_id, gu.group_user_id, u.ID
+        ");
+        
+        $adminStmt->execute($subcategory_ids);
+        
+        while ($admin = $adminStmt->fetch(PDO::FETCH_ASSOC)) {
+            $subcategory_id = (int)$admin['subcategory_id'];
+            $group_id = (int)$admin['group_id'];
+            
+            if (!isset($admins_data[$subcategory_id])) {
+                $admins_data[$subcategory_id] = [];
+            }
+            
+            if (!isset($admins_data[$subcategory_id][$group_id])) {
+                $admins_data[$subcategory_id][$group_id] = [
+                    "group_id" => $group_id,
+                    "group_name" => $admin['group_name'],
+                    "group_type" => $admin['group_type'],
+                    "user_group" => []
+                ];
+            }
+            
+            $admins_data[$subcategory_id][$group_id]["user_group"][] = [
+                "ID" => (int)$admin['ID'],
+                "user_id" => $admin['user_id'],
+                "full_name" => $admin['full_name'],
+                "department_name" => $admin['department_name']
+            ];
+        }
+    }
+    
+    foreach ($equipment_list as &$equipment) {
+        $subcategory_id = $equipment['subcategory_id'];
+        $equipment['admins'] = [];
+        
+        if (isset($admins_data[$subcategory_id])) {
+            $equipment['admins'] = array_values($admins_data[$subcategory_id]);
+        }
     }
     
     echo json_encode([
         "status" => "success",
-        "data" => $equipment_list,
-        "pagination" => [
-            "totalItems" => $totalItems,
-            "totalPages" => (int)ceil($totalItems / $limit),
-            "currentPage" => $page,
-            "limit" => $limit
-        ]
+        "data" => $equipment_list
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
