@@ -76,7 +76,6 @@ try {
         }
     }
 
-
     $stmt = $dbh->prepare("INSERT INTO calibration_plans 
     (plan_name, user_id, group_user_id, company_id, frequency_number, frequency_unit, frequency_type, interval_count, contract, start_waranty, start_date, end_date, cost_type, price, type_cal, is_active)
     VALUES (:plan_name, :user_id, :group_user_id, :company_id, :frequency_number, :frequency_unit, :frequency_type, :interval_count, :contract, :start_waranty, :start_date, :end_date, :cost_type, :price, :type_cal, :is_active)
@@ -134,29 +133,7 @@ try {
         }
     }
 
-    if (!empty($input['files']) && is_array($input['files'])) {
-        $uploadDir = __DIR__ . "/../uploads/files_cal/";
-        if (!is_dir($uploadDir))
-            mkdir($uploadDir, 0777, true);
-
-        $fileStmt = $dbh->prepare("INSERT INTO file_cal (plan_id,file_cal_name,file_cal_url,cal_type_name) VALUES (:plan_id,:file_cal_name,:file_cal_url,:cal_type_name)");
-
-        foreach ($input['files'] as $file) {
-            if (empty($file['name']) || empty($file['base64']))
-                continue;
-            $newName = uniqid() . '_' . basename($file['name']);
-            $targetPath = $uploadDir . $newName;
-            $data = base64_decode($file['base64']);
-            if (file_put_contents($targetPath, $data) !== false) {
-                $fileStmt->execute([
-                    ':plan_id' => $plan_id,
-                    ':file_cal_name' => $file['name'],
-                    ':file_cal_url' => "/uploads/files_cal/" . $newName,
-                    ':cal_type_name' => $file['type_name'] ?? 'ไม่ระบุ'
-                ]);
-            }
-        }
-    }
+    // ลบส่วนการอัปโหลดไฟล์ออก - จะใช้ upload-file-calplan.php แทน
 
     $dbh->commit();
     echo json_encode(["status" => "success", "plan_id" => $plan_id]);
@@ -166,3 +143,4 @@ try {
         $dbh->rollBack();
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
+?>
