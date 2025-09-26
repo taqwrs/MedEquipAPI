@@ -11,7 +11,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-
 $equipment_id   = $_POST['equipment_id'] ?? null;
 $user_id        = $_POST['user_id'] ?? null;
 $performed_date = $_POST['performed_date'] ?? null;
@@ -27,7 +26,6 @@ if (!$equipment_id || !$performed_date || !$user_id || !$details_cal_id) {
 }
 
 try {
-
     $checkStmt = $dbh->prepare("
         SELECT COUNT(*) 
         FROM calibration_result
@@ -45,48 +43,34 @@ try {
 
     // บันทึกลง DB
     $stmt = $dbh->prepare("
-    INSERT INTO calibration_result 
-    (details_cal_id, user_id, equipment_id, performed_date, result, remarks, reason, send_repair)
-    VALUES 
-    (:details_cal_id, :user_id, :equipment_id, :performed_date, :result, :remarks, :reason, :send_repair)
-");
-$stmt->execute([
-    ":details_cal_id" => $details_cal_id,
-    ":user_id" => $user_id,
-    ":equipment_id" => $equipment_id,
-    ":performed_date" => $performed_date,
-    ":result" => $result,
-    ":remarks" => ($remarks === "null" || !$remarks) ? null : $remarks,
-    ":reason" => ($reason === "null" || !$reason) ? null : $reason,
-    ":send_repair" => $send_repair
-]);
+        INSERT INTO calibration_result 
+        (details_cal_id, user_id, equipment_id, performed_date, result, remarks, reason, send_repair)
+        VALUES 
+        (:details_cal_id, :user_id, :equipment_id, :performed_date, :result, :remarks, :reason, :send_repair)
+    ");
+    $stmt->execute([
+        ":details_cal_id" => $details_cal_id,
+        ":user_id" => $user_id,
+        ":equipment_id" => $equipment_id,
+        ":performed_date" => $performed_date,
+        ":result" => $result,
+        ":remarks" => ($remarks === "null" || !$remarks) ? null : $remarks,
+        ":reason" => ($reason === "null" || !$reason) ? null : $reason,
+        ":send_repair" => $send_repair
+    ]);
 
     $cal_result_id = $dbh->lastInsertId();
 
-    // อัปโหลดไฟล์ถ้ามี
-    if (!empty($_FILES['file'])) {
-        $uploadDir = "../uploads/calibration/";
-        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+    // Debug: ตรวจสอบ cal_result_id
+    error_log("Insert successful, cal_result_id: " . $cal_result_id);
 
-        $fileName = basename($_FILES['file']['name']);
-        $targetFile = $uploadDir . time() . "_" . $fileName;
-
-        if (move_uploaded_file($_FILES['file']['tmp_name'], $targetFile)) {
-            $stmtFile = $dbh->prepare("
-                INSERT INTO file_cal_result (cal_result_id, file_cal_name, file_cal_url, cal_type_name)
-                VALUES (:cal_result_id, :file_name, :file_url, :cal_type_name)
-            ");
-            $stmtFile->execute([
-                ":cal_result_id" => $cal_result_id,
-                ":file_name" => $fileName,
-                ":file_url" => $targetFile,
-                ":cal_type_name" => "ไฟล์สอบเทียบ"
-            ]);
-        }
-    }
-
-    echo json_encode(["status" => "success", "message" => "Saved successfully"]);
+    echo json_encode([
+        "status" => "success", 
+        "message" => "Saved successfully",
+        "cal_result_id" => (int)$cal_result_id
+    ]);
 
 } catch (PDOException $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
+?>
