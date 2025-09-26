@@ -63,28 +63,6 @@ try {
 
     $ma_result_id = $dbh->lastInsertId();
 
-    // อัปโหลดไฟล์ถ้ามี
-    if (!empty($_FILES['file'])) {
-        $uploadDir = "../uploads/maintenance/";
-        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-
-        $fileName = basename($_FILES['file']['name']);
-        $targetFile = $uploadDir . time() . "_" . $fileName;
-
-        if (move_uploaded_file($_FILES['file']['tmp_name'], $targetFile)) {
-            $stmtFile = $dbh->prepare("
-                INSERT INTO file_ma_result (ma_result_id, file_ma_name, file_ma_url, ma_type_name)
-                VALUES (:ma_result_id, :file_name, :file_url, :ma_type_name)
-            ");
-            $stmtFile->execute([
-                ":ma_result_id" => $ma_result_id,
-                ":file_name" => $fileName,
-                ":file_url" => $targetFile,
-                ":ma_type_name" => "ไฟล์บำรุงรักษา"
-            ]);
-        }
-    }
-
     echo json_encode(["status" => "success", "message" => "Saved successfully"]);
 
 } catch (PDOException $e) {
