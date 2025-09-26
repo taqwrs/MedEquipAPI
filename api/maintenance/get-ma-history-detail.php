@@ -13,44 +13,61 @@ try {
         throw new Exception("Missing ma_result_id");
     }
 
+    // Query หลัก + subquery ดึงไฟล์
     $stmt = $dbh->prepare("
-    SELECT mr.ma_result_id, mr.details_ma_id, mr.equipment_id, mr.user_id, mr.performed_date, mr.result AS status, mr.details, mr.reason, 
-           cp.plan_id, cp.cost_type, cp.frequency_number, cp.frequency_unit, cp.start_date, cp.end_date, cp.price AS total_cost,
-           e.name AS equipment_name, u.full_name AS user_name, c.name AS company_name
-    FROM maintenance_result mr
-    LEFT JOIN details_maintenance_plans dcp ON mr.details_ma_id = dcp.details_ma_id
-    LEFT JOIN maintenance_plans cp ON dcp.plan_id = cp.plan_id
-    LEFT JOIN equipments e ON mr.equipment_id = e.equipment_id
-    LEFT JOIN users u ON mr.user_id = u.user_id
-    LEFT JOIN companies c ON cp.company_id = c.company_id
-    WHERE mr.ma_result_id = ?
-");
+        SELECT mr.ma_result_id, mr.details_ma_id, mr.equipment_id, mr.user_id, mr.performed_date, mr.result AS status, mr.details, mr.reason,
+               mp.plan_id, mp.cost_type, mp.frequency_number, mp.frequency_unit, mp.start_date, mp.end_date, mp.price AS total_cost,
+               e.name AS equipment_name, u.full_name AS user_name, c.name AS company_name,
+               mp.type_ma,
+               f.files
+        FROM maintenance_result mr
+        LEFT JOIN details_maintenance_plans dmp ON mr.details_ma_id = dmp.details_ma_id
+        LEFT JOIN maintenance_plans mp ON dmp.plan_id = mp.plan_id
+        LEFT JOIN equipments e ON mr.equipment_id = e.equipment_id
+        LEFT JOIN users u ON mr.user_id = u.ID
+        LEFT JOIN companies c ON mp.company_id = c.company_id
+        LEFT JOIN (
+            SELECT ma_result_id,
+                   JSON_ARRAYAGG(JSON_OBJECT(
+                       'name', file_ma_name,
+                       'url', file_ma_url,
+                       'type', ma_type_name
+                   )) AS files
+            FROM file_ma_result
+            GROUP BY ma_result_id
+        ) f ON mr.ma_result_id = f.ma_result_id
+        WHERE mr.ma_result_id = ?
+    ");
 
     $stmt->execute([$ma_result_id]);
-    $data = $stmt->fetch(PDO::FETCH_ASSOC);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$data) {
+    if (!$row) {
         throw new Exception("ไม่พบผลการบำรุงรักษา");
     }
 
+    // แปลงไฟล์จาก JSON string เป็น array
+    $files = !empty($row['files']) ? json_decode($row['files'], true) : [];
+
     echo json_encode([
         "status" => "success",
-        "plan_id" => $data['plan_id'],
-        "details_ma_id" => $data['details_ma_id'],
-        "equipment_id" => $data['equipment_id'],
-        "equipment_name" => $data['equipment_name'],
-        "unitLabel" => $data['cost_type'] === "รวมตลอดทั้งสัญญา" ? "ภายนอก" : "ภายใน",
-        "frequency" => "{$data['frequency_number']} " . ($data['frequency_unit'] == 2 ? "เดือน" : "วัน"),
-        "user_name" => $data['user_name'],
-        "company_name" => $data['company_name'],
-        "total_cost" => $data['total_cost'],
-        "start_date" => $data['start_date'],
-        "end_date" => $data['end_date'],
-        "status_result" => $data['status'],
-        "performed_date" => $data['performed_date'],
-        "details" => $data['details'],
-        "reason" => $data['reason'],
-        "file_name" => "ไม่พบไฟล์"
+        "plan_id" => $row['plan_id'],
+        "details_ma_id" => $row['details_ma_id'],
+        "equipment_id" => $row['equipment_id'],
+        "equipment_name" => $row['equipment_name'],
+        "type_ma" => $row['type_ma'],              // ประเภทผู้ทำ MA (ภายใน/ภายนอก)
+        "cost_type" => $row['cost_type'],          // วิธีคิดค่าใช้จ่าย (รวมตลอดสัญญา / ตามรอบ)
+        "frequency" => "{$row['frequency_number']} " . ($row['frequency_unit'] == 2 ? "เดือน" : "วัน"),
+        "user_name" => $row['user_name'],
+        "company_name" => $row['company_name'],
+        "total_cost" => $row['total_cost'],
+        "start_date" => $row['start_date'],
+        "end_date" => $row['end_date'],
+        "status_result" => $row['status'],
+        "performed_date" => $row['performed_date'],
+        "details" => $row['details'],
+        "reason" => $row['reason'],
+        "files" => $files
     ]);
 
 } catch (Exception $e) {
