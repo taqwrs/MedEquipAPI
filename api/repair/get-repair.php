@@ -14,7 +14,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
     $input = json_decode(file_get_contents("php://input"), true);
 
-    // รับ input สำหรับค้นหาและแบ่งหน้า
     $search = trim($input['search'] ?? '');
     $statusFilter = trim($input['status_filter'] ?? '');
     $page = (int)($input['page'] ?? 1);
@@ -22,8 +21,6 @@ try {
     $offset = ($page - 1) * $limit;
     $useLimit = $limit > 0;
 
-    // -----------------------------
-    // เงื่อนไข WHERE แบบ dynamic
     $where = ["r.active = 1"];
     $params = [];
 
@@ -50,8 +47,6 @@ try {
 
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
-    // -----------------------------
-    // Query หลัก + pagination
     $query = "SELECT 
         r.repair_id,
         r.equipment_id,
@@ -79,7 +74,6 @@ try {
 
     $stmt = $dbh->prepare($query);
 
-    // Bind parameters
     foreach ($params as $key => $value) {
         $stmt->bindValue($key, $value, PDO::PARAM_STR);
     }
@@ -91,8 +85,6 @@ try {
     $stmt->execute();
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // -----------------------------
-    // นับจำนวนทั้งหมดสำหรับ pagination
     $countQuery = "SELECT COUNT(*) FROM repair r
                    LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
                    LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
@@ -106,8 +98,6 @@ try {
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
 
-    // -----------------------------
-    // เพิ่ม counter และ repair_results
     $sqlCounter = "SELECT 
                         e.equipment_id,
                         COUNT(rr.repair_result_id) AS repair_count
@@ -127,6 +117,7 @@ try {
     foreach ($repairs as &$repair) {
         $repair['counter'] = $equipmentRepairs[$repair['equipment_id']] ?? 0;
 
+        // ดึงข้อมูล repair_result พร้อมอะไหล่
         $sql2 = "SELECT 
                     rr.repair_result_id,
                     rr.user_id AS responsible_id,
@@ -147,10 +138,22 @@ try {
         $stmt2 = $dbh->prepare($sql2);
         $stmt2->execute([$repair['repair_id']]);
         $repair['repair_results'] = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+
+        // ดึงไฟล์สำหรับแต่ละ repair_result
+        foreach ($repair['repair_results'] as &$result) {
+            $sqlFiles = "SELECT 
+                            file_repair_result_id,
+                            repair_file_name,
+                            repair_file_url,
+                            repair_type_name
+                         FROM file_repair_result
+                         WHERE repair_result_id = ?";
+            $stmtFiles = $dbh->prepare($sqlFiles);
+            $stmtFiles->execute([$result['repair_result_id']]);
+            $result['files'] = $stmtFiles->fetchAll(PDO::FETCH_ASSOC);
+        }
     }
 
-    // -----------------------------
-    // Summary สถานะซ่อม
     $summaryQuery = "SELECT 
                         SUM(CASE WHEN rr.status = 'ซ่อมเสร็จ' THEN 1 ELSE 0 END) AS completed,
                         SUM(CASE WHEN rr.status = 'ซ่อมไม่ได้' THEN 1 ELSE 0 END) AS failed,
@@ -162,8 +165,6 @@ try {
     $summaryStmt->execute();
     $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
 
-    // -----------------------------
-    // ส่งผลลัพธ์รวม
     echo json_encode([
         "status" => "success",
         "data" => $repairs,
