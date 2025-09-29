@@ -27,11 +27,9 @@ try {
           e.subcategory_id,
           es.name AS subcategory_name,
           es.category_id,
-          
           e.location_department_id,
           d_location.department_name AS location_department_name,
           e.location_details,
-          
           et.transfer_id,
           et.transfer_type,
           et.from_department_id,
@@ -42,13 +40,11 @@ try {
           et.returned_date,
           et.reason,
           et.status,
-          
           et.transfer_user_id,
           u_transfer.ID AS transfer_user_ID,
           u_transfer.user_id AS transfer_user_user_id,
           u_transfer.full_name AS transfer_user_name,
           d_transfer.department_name AS transfer_user_department,
-          
           et.recipient_user_id,
           u_recipient.ID AS recipient_user_ID,
           u_recipient.user_id AS recipient_user_user_id,
@@ -72,7 +68,6 @@ try {
         LEFT JOIN departments d_to ON et.to_department_id = d_to.department_id
         
         LEFT JOIN departments d_location ON e.location_department_id = d_location.department_id
-
         WHERE et.transfer_id IS NOT NULL
     ";
 
@@ -80,7 +75,7 @@ try {
         $sql .= " AND e.equipment_id = :equipment_id ";
     }
 
-    $sql .= " ORDER BY e.equipment_id ASC";
+    $sql .= " ORDER BY e.equipment_id DESC";
 
     $stmt = $dbh->prepare($sql);
     $stmt->bindParam(":u_id", $u_id, PDO::PARAM_INT);

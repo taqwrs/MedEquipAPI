@@ -20,6 +20,7 @@ if ($equipmentId <= 0) {
 }
 
 try {
+    // Query ดึงประวัติการโอนย้าย
     $query = "
         SELECT 
             ht.history_transfer_id,
@@ -70,9 +71,17 @@ try {
                 ? $row['recipient_user_name'] . " (" . ($row['recipient_user_department_name'] ?: "-") . ")"
                 : "-",
             "สถานที่ติดตั้ง" => $row['now_location_name'] ?: "-",
-            "สถานะ" => $row['status_transfer'] == 0 ? "ยังไม่คืน" : "โอนคืนแล้ว"
+            "สถานะ" => (
+                $row['transfer_type'] === "โอนย้ายถาวร" ? "ไม่ต้องคืน" :
+                ( $row['transfer_type'] === "โอนย้ายชั่วคราว" && $row['status_transfer'] == 0 ? "ยังไม่คืน" :
+                    ( $row['transfer_type'] === "โอนย้ายชั่วคราว" && $row['status_transfer'] == 1 ? "คืนแล้ว" :
+                        "-"
+                    )
+                )
+            )
         ];
     }
+
     $equipQuery = "
         SELECT 
             e.equipment_id,
