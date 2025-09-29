@@ -173,6 +173,7 @@ try {
             "from_department_name" => $history['from_department_name'],
             "to_department_name" => $history['to_department_name'],
             "now_equip_location_department_name" => $history['now_equip_location_department_name'],
+            "now_equip_location_details" => $history['now_equip_location_details'],
             "old_subcategory_name" => $history['old_subcategory_name'],
             "now_subcategory_name" => $history['now_subcategory_name'],
             "transfer_user" => $transfer_user,

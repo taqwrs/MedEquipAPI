@@ -34,7 +34,7 @@ try {
 
     $equipmentId = $equip['equipment_id'];
 
-    $query = $query = "
+    $query = "
     SELECT 
         ht.history_transfer_id,
         ht.transfer_type,
@@ -68,13 +68,17 @@ try {
 
     $timeline = [];
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $transferUser = $row['transfer_user_name']
-            ? $row['transfer_user_name']
-            : "-";
+        $transferUser = $row['transfer_user_name'] ?: "-";
+        $recipientUser = $row['recipient_user_name'] ?: "-";
 
-        $recipientUser = $row['recipient_user_name']
-            ? $row['recipient_user_name']
-            : "-";
+        $status = "-";
+        if ($row['transfer_type'] === "โอนย้ายถาวร" && $row['status_transfer'] == 1) {
+            $status = "ไม่ต้องคืน";
+        } elseif ($row['transfer_type'] === "โอนย้ายชั่วคราว" && $row['status_transfer'] == 0) {
+            $status = "ยังไม่คืน";
+        } elseif ($row['transfer_type'] === "โอนย้ายชั่วคราว" && $row['status_transfer'] == 1) {
+            $status = "คืนแล้ว";
+        }
 
         $timeline[] = [
             "history_transfer_id" => $row['history_transfer_id'],
@@ -85,7 +89,7 @@ try {
             "ผู้รับโอน" => $recipientUser,
             "แผนกผู้รับ" => $row['recipient_user_department'] ?? "-",
             "สถานที่ติดตั้ง" => $row['now_location_name'] ?? "-",
-            "สถานะ" => $row['status_transfer'] == 0 ? "ยังไม่คืน" : "โอนคืนแล้ว"
+            "สถานะ" => $status
         ];
     }
 
