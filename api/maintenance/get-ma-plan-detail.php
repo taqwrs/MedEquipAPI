@@ -10,8 +10,13 @@ $plan_id = isset($_GET['plan_id']) ? intval($_GET['plan_id']) : 0;
 
 try {
 
-    // ดึงแผนบำรุงรักษา
-    $stmt = $dbh->prepare("SELECT * FROM maintenance_plans WHERE plan_id = ?");
+    // ดึงแผนบำรุงรักษาพร้อม user_name
+    $stmt = $dbh->prepare("
+        SELECT mp.*, u.full_name AS user_name
+        FROM maintenance_plans mp
+        LEFT JOIN users u ON mp.user_id = u.id
+        WHERE mp.plan_id = ?
+    ");
     $stmt->execute([$plan_id]);
     $plan = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$plan)
@@ -21,7 +26,6 @@ try {
     $stmt = $dbh->prepare("SELECT details_ma_id, start_date FROM details_maintenance_plans WHERE plan_id = ?");
     $stmt->execute([$plan_id]);
     $details = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
 
     // ดึงอุปกรณ์ในแผนบำรุงรักษา
     $stmt = $dbh->prepare("

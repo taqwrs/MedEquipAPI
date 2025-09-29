@@ -18,7 +18,7 @@ try {
             c.name AS company_name,
             COUNT(DISTINCT dmp.details_ma_id) AS total_schedules
         FROM maintenance_plans mp
-        LEFT JOIN users u ON mp.user_id = u.user_id
+        LEFT JOIN users u ON mp.user_id = u.id
         LEFT JOIN group_user gu ON mp.group_user_id = gu.group_user_id
         LEFT JOIN companies c ON mp.company_id = c.company_id
         LEFT JOIN details_maintenance_plans dmp ON mp.plan_id = dmp.plan_id
