@@ -113,29 +113,6 @@ try {
         }
     }
 
-    // Upload files MA
-    // if (!empty($input['files']) && is_array($input['files'])) {
-    //     $uploadDir = __DIR__ . "/../uploads/files_ma/";
-    //     if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-
-    //     $fileStmt = $dbh->prepare("INSERT INTO file_ma (plan_id,file_ma_name,file_ma_url,ma_type_name) VALUES (:plan_id,:file_ma_name,:file_ma_url,:ma_type_name)");
-
-    //     foreach ($input['files'] as $file) {
-    //         if (empty($file['name']) || empty($file['base64'])) continue;
-    //         $newName = uniqid() . '_' . basename($file['name']);
-    //         $targetPath = $uploadDir . $newName;
-    //         $data = base64_decode($file['base64']);
-    //         if (file_put_contents($targetPath, $data) !== false) {
-    //             $fileStmt->execute([
-    //                 ':plan_id' => $plan_id,
-    //                 ':file_ma_name' => $file['name'],
-    //                 ':file_ma_url' => "/uploads/files_ma/" . $newName,
-    //                 ':ma_type_name' => $file['type_name'] ?? 'ไม่ระบุ'
-    //             ]);
-    //         }
-    //     }
-    // }
-
     $dbh->commit();
     echo json_encode(["status" => "success", "plan_id" => $plan_id]);
 

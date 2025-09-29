@@ -45,9 +45,13 @@ try {
                 INNER JOIN maintenance_result mr 
                     ON mr.details_ma_id = dmp.details_ma_id
                 WHERE dmp.plan_id = :plan_id
+                AND mr.equipment_id = :equipment_id
                 ORDER BY dmp.details_ma_id ASC
             ");
-            $stmtDetails->execute([':plan_id' => $plan['plan_id']]);
+            $stmtDetails->execute([
+                ':plan_id' => $plan['plan_id'],
+                ':equipment_id' => $equipmentId
+            ]);
             $details = $stmtDetails->fetchAll(PDO::FETCH_ASSOC);
 
             if (!$details)

@@ -15,7 +15,7 @@ $equipment_id   = $_POST['equipment_id'] ?? null;
 $user_id        = $_POST['user_id'] ?? null;
 $performed_date = $_POST['performed_date'] ?? null;
 $result         = $_POST['result'] ?? "ผ่าน";
-$details        = $_POST['details'] ?? "";
+$details        = $_POST['details'] ?? null;
 $reason         = $_POST['reason'] ?? "";
 $details_ma_id  = $_POST['details_ma_id'] ?? null;
 $send_repair    = $_POST['send_repair'] ?? "false";
@@ -56,7 +56,8 @@ try {
         ":equipment_id" => $equipment_id,
         ":performed_date" => $performed_date,
         ":result" => $result,
-        ":details" => ($details === "null" || !$details) ? null : $details,
+        // ":details" => ($details === "null" || !$details) ? null : $details,
+        ":details" => ($details === "null" || $details === "" ? null : $details),
         ":reason" => ($reason === "null" || !$reason) ? null : $reason,
         ":send_repair" => $send_repair
     ]);
