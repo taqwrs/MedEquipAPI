@@ -1,5 +1,5 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -20,7 +20,6 @@ if ($equipmentId <= 0) {
 }
 
 try {
-    // ดึง timeline ของ equipment_id
     $query = "
         SELECT 
             ht.history_transfer_id,
@@ -35,14 +34,18 @@ try {
             ht.old_subcategory_id,
             ht.new_subcategory_id,
             tu.full_name AS transfer_user_name,
+            td.department_name AS transfer_user_department_name,
             ru.full_name AS recipient_user_name,
+            rd.department_name AS recipient_user_department_name,
             od.department_name AS old_location_name,
             nd.department_name AS now_location_name,
             os.name AS old_subcategory_name,
             ns.name AS new_subcategory_name
         FROM history_transfer ht
         LEFT JOIN users tu ON ht.transfer_user_id = tu.ID
+        LEFT JOIN departments td ON tu.department_id = td.department_id
         LEFT JOIN users ru ON ht.recipient_user_id = ru.ID
+        LEFT JOIN departments rd ON ru.department_id = rd.department_id
         LEFT JOIN departments od ON ht.old_location_department_id = od.department_id
         LEFT JOIN departments nd ON ht.now_equip_location_department_id = nd.department_id
         LEFT JOIN equipment_subcategories os ON ht.old_subcategory_id = os.subcategory_id
@@ -58,16 +61,18 @@ try {
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         $timeline[] = [
             "history_transfer_id" => $row['history_transfer_id'],
-            "ประเภทการโอนย้าย"   => $row['transfer_type'] ?? "-",
-            "วันที่โอนย้าย"       => $row['transfer_date'] ? date("d/m/Y", strtotime($row['transfer_date'])) : "-",
-            "ผู้โอนย้าย"          => $row['transfer_user_name'] ?: "-",
-            "ผู้รับโอน"           => $row['recipient_user_name'] ?: "-",
+            "ประเภทการโอนย้าย" => $row['transfer_type'] ?? "-",
+            "วันที่โอนย้าย" => $row['transfer_date'] ? date("d/m/Y", strtotime($row['transfer_date'])) : "-",
+            "ผู้โอนย้าย" => $row['transfer_user_name']
+                ? $row['transfer_user_name'] . " (" . ($row['transfer_user_department_name'] ?: "-") . ")"
+                : "-",
+            "ผู้รับโอน" => $row['recipient_user_name']
+                ? $row['recipient_user_name'] . " (" . ($row['recipient_user_department_name'] ?: "-") . ")"
+                : "-",
             "สถานที่ติดตั้ง" => $row['now_location_name'] ?: "-",
-            "สถานะ"               => $row['status_transfer'] == 0 ? "ยังไม่คืน" : "โอนคืนแล้ว"
+            "สถานะ" => $row['status_transfer'] == 0 ? "ยังไม่คืน" : "โอนคืนแล้ว"
         ];
     }
-
-    // ดึงรายละเอียดอุปกรณ์
     $equipQuery = "
         SELECT 
             e.equipment_id,
