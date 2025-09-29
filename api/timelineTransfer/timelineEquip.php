@@ -1,5 +1,5 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -20,7 +20,6 @@ if ($equipmentId <= 0) {
 }
 
 try {
-    // ดึง timeline ของ equipment_id
     $query = "
         SELECT 
             ht.history_transfer_id,
@@ -32,21 +31,19 @@ try {
             ht.recipient_user_id,
             ht.old_location_department_id,
             ht.now_equip_location_department_id,
-            ht.old_subcategory_id,
-            ht.new_subcategory_id,
             tu.full_name AS transfer_user_name,
+            tud.department_name AS transfer_user_department,
             ru.full_name AS recipient_user_name,
+            rud.department_name AS recipient_user_department,
             od.department_name AS old_location_name,
-            nd.department_name AS now_location_name,
-            os.name AS old_subcategory_name,
-            ns.name AS new_subcategory_name
+            nd.department_name AS now_location_name
         FROM history_transfer ht
         LEFT JOIN users tu ON ht.transfer_user_id = tu.ID
+        LEFT JOIN departments tud ON tu.department_id = tud.department_id
         LEFT JOIN users ru ON ht.recipient_user_id = ru.ID
+        LEFT JOIN departments rud ON ru.department_id = rud.department_id
         LEFT JOIN departments od ON ht.old_location_department_id = od.department_id
         LEFT JOIN departments nd ON ht.now_equip_location_department_id = nd.department_id
-        LEFT JOIN equipment_subcategories os ON ht.old_subcategory_id = os.subcategory_id
-        LEFT JOIN equipment_subcategories ns ON ht.new_subcategory_id = ns.subcategory_id
         WHERE ht.equipment_id = :equipment_id
         ORDER BY ht.history_transfer_id DESC
     ";
@@ -56,18 +53,31 @@ try {
 
     $timeline = [];
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $transferUser = $row['transfer_user_name'] ?: "-";
+        $recipientUser = $row['recipient_user_name'] ?: "-";
+
+        $status = "-";
+        if ($row['transfer_type'] === "โอนย้ายถาวร" && $row['status_transfer'] == 1) {
+            $status = "ไม่ต้องคืน";
+        } elseif ($row['transfer_type'] === "โอนย้ายชั่วคราว" && $row['status_transfer'] == 0) {
+            $status = "ยังไม่คืน";
+        } elseif ($row['transfer_type'] === "โอนย้ายชั่วคราว" && $row['status_transfer'] == 1) {
+            $status = "คืนแล้ว";
+        }
+
         $timeline[] = [
             "history_transfer_id" => $row['history_transfer_id'],
-            "ประเภทการโอนย้าย"   => $row['transfer_type'] ?? "-",
-            "วันที่โอนย้าย"       => $row['transfer_date'] ? date("d/m/Y", strtotime($row['transfer_date'])) : "-",
-            "ผู้โอนย้าย"          => $row['transfer_user_name'] ?: "-",
-            "ผู้รับโอน"           => $row['recipient_user_name'] ?: "-",
-            "สถานที่ติดตั้ง" => $row['now_location_name'] ?: "-",
-            "สถานะ"               => $row['status_transfer'] == 0 ? "ยังไม่คืน" : "โอนคืนแล้ว"
+            "ประเภทการโอนย้าย" => $row['transfer_type'] ?? "-",
+            "วันที่โอนย้าย" => $row['transfer_date'] ? date("d/m/Y", strtotime($row['transfer_date'])) : "-",
+            "ผู้โอนย้าย" => $transferUser,
+            "แผนกผู้โอน" => $row['transfer_user_department'] ?? "-",
+            "ผู้รับโอน" => $recipientUser,
+            "แผนกผู้รับ" => $row['recipient_user_department'] ?? "-",
+            "สถานที่ติดตั้ง" => $row['now_location_name'] ?? "-",
+            "สถานะ" => $status
         ];
     }
 
-    // ดึงรายละเอียดอุปกรณ์
     $equipQuery = "
         SELECT 
             e.equipment_id,

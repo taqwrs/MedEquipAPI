@@ -63,7 +63,7 @@ try {
 
     $ma_result_id = $dbh->lastInsertId();
 
-    echo json_encode(["status" => "success", "message" => "Saved successfully"]);
+    echo json_encode(["status" => "success", "message" => "Saved successfully", "ma_result_id" => $ma_result_id]);
 
 } catch (PDOException $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);

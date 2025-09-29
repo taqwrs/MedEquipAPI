@@ -16,8 +16,34 @@ if ($method === 'POST' && isset($input['_method'])) {
 
 try {
     if ($method === 'GET') {
-        // READ - JOIN กับ roles และ departments
-        $stmt = $dbh->prepare("
+        $search = trim($input['search'] ?? '');
+        $page   = (int) ($input['page'] ?? 1);
+        $limit  = (int) ($input['limit'] ?? 5);
+        $offset = ($page - 1) * $limit;
+        $useLimit = $limit > 0;
+
+        $countSql = "
+            SELECT COUNT(*) as total
+            FROM users u
+            LEFT JOIN departments d ON u.department_id = d.department_id
+            WHERE 1=1
+        ";
+        if (!empty($search)) {
+            $countSql .= " AND (
+                u.user_id LIKE :search 
+                OR u.full_name LIKE :search 
+                OR d.department_name LIKE :search
+            )";
+        }
+
+        $countStmt = $dbh->prepare($countSql);
+        if (!empty($search)) {
+            $searchParam = "%$search%";
+            $countStmt->bindParam(":search", $searchParam);
+        }
+        $countStmt->execute();
+        $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+        $sql = "
             SELECT 
                 u.ID,
                 u.user_id,
@@ -31,11 +57,44 @@ try {
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.role_id
             LEFT JOIN departments d ON u.department_id = d.department_id
-            ORDER BY u.ID ASC
-        ");
+            WHERE 1=1
+            
+        ";
+
+        if (!empty($search)) {
+            $sql .= " AND (
+                u.user_id LIKE :search 
+                OR u.full_name LIKE :search 
+                OR d.department_name LIKE :search
+            )";
+        }
+
+        $sql .= " ORDER BY u.ID ASC";
+
+        if ($useLimit) {
+            $sql .= " LIMIT :limit OFFSET :offset";
+        }
+
+        $stmt = $dbh->prepare($sql);
+
+        if (!empty($search)) {
+            $stmt->bindParam(":search", $searchParam);
+        }
+        if ($useLimit) {
+            $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
+            $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
+        }
+
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        echo json_encode(["status" => "ok", "data" => $results], JSON_UNESCAPED_UNICODE);
+
+        echo json_encode([
+            "status" => "ok",
+            "page" => $page,
+            "limit" => $limit,
+            "total" => (int)$total,
+            "data" => $results
+        ], JSON_UNESCAPED_UNICODE);
 
     } elseif ($method === 'POST') {
         // CREATE
