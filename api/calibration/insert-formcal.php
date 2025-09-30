@@ -133,7 +133,6 @@ try {
         }
     }
 
-    // ลบส่วนการอัปโหลดไฟล์ออก - จะใช้ upload-file-calplan.php แทน
 
     $dbh->commit();
     echo json_encode(["status" => "success", "plan_id" => $plan_id]);
