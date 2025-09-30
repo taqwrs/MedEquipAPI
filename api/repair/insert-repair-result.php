@@ -11,20 +11,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
-    $repair_id      = $_POST['repair_id'] ?? null;
-    $performed_date = $_POST['performed_date'] ?? null;
-    $solution       = $_POST['solution'] ?? null;
-    $cost           = $_POST['cost'] ?? null;
-    $status         = $_POST['status'] ?? null; 
-    $remark         = $_POST['remark'] ?? null;
-    $spareParts     = $_POST['spareParts'] ?? [];
-    $next_action    = $_POST['next_action'] ?? null;
+    // รับข้อมูล JSON
+    $input = json_decode(file_get_contents("php://input"), true);
+    
+    $repair_id      = $input['repair_id'] ?? null;
+    $performed_date = $input['performed_date'] ?? null;
+    $solution       = $input['solution'] ?? null;
+    $cost           = $input['cost'] ?? null;
+    $status         = $input['status'] ?? null; 
+    $remark         = $input['remark'] ?? null;
+    $spareParts     = $input['spareParts'] ?? [];
+    $next_action    = $input['next_action'] ?? null;
 
     if (!$repair_id || !$performed_date || !$solution || $cost === null || !$status) {
         throw new Exception("ข้อมูลไม่ครบถ้วน");
     }
 
-    $user_id = $_POST['user_id'] ?? null;
+    $user_id = $input['user_id'] ?? null;
     if (!$user_id) throw new Exception("ไม่พบ user_id");
 
     if ($status === "ซ่อมไม่ได้" && !$next_action) {
@@ -65,35 +68,6 @@ try {
         }
     }
 
-
-    if (!empty($_FILES['files']['name'][0])) {
-        $uploadDir = "uploads/repair_files/";
-        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-
-        $stmt_file = $dbh->prepare("
-            INSERT INTO file_repair_result
-            (repair_result_id, repair_file_name, repair_file_url, repair_type_name)
-            VALUES (:repair_result_id, :repair_file_name, :repair_file_url, :repair_type_name)
-        ");
-
-        foreach ($_FILES['files']['name'] as $key => $name) {
-            $tmpName = $_FILES['files']['tmp_name'][$key];
-            $ext = pathinfo($name, PATHINFO_EXTENSION);
-            $newFileName = uniqid("repair_") . "." . $ext;
-            $targetPath = $uploadDir . $newFileName;
-
-            if (move_uploaded_file($tmpName, $targetPath)) {
-                $stmt_file->execute([
-                    ':repair_result_id' => $repair_result_id,
-                    ':repair_file_name' => $name,
-                    ':repair_file_url'  => $targetPath,
-                    ':repair_type_name' => "ไฟล์ซ่อม"
-                ]);
-            }
-        }
-    }
-
-
     $stmtUpdate = $dbh->prepare("
         UPDATE repair 
         SET status = 'เสร็จสิ้น' 
@@ -101,9 +75,7 @@ try {
     ");
     $stmtUpdate->execute([':repair_id' => $repair_id]);
 
-  
     if ($status === 'ซ่อมเสร็จ') {
-
         $stmtEquip = $dbh->prepare("
             UPDATE equipments 
             SET status = 'ใช้งาน'
@@ -129,3 +101,4 @@ try {
         "message" => $e->getMessage()
     ]);
 }
+?>
