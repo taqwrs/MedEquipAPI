@@ -46,7 +46,7 @@ try {
                     ON mr.details_ma_id = dmp.details_ma_id
                 WHERE dmp.plan_id = :plan_id
                 AND mr.equipment_id = :equipment_id
-                ORDER BY dmp.details_ma_id ASC
+                ORDER BY dmp.plan_id DESC
             ");
             $stmtDetails->execute([
                 ':plan_id' => $plan['plan_id'],

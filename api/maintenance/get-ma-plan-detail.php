@@ -36,15 +36,58 @@ try {
     ");
     $stmt->execute([$plan_id]);
     $equipments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // ดึงไฟล์เอกสาร MA
+    $fileStmt = $dbh->prepare("
+    SELECT file_ma_id, file_ma_name, file_ma_url, ma_type_name
+    FROM file_ma
+    WHERE plan_id = ?
+");
+    $fileStmt->execute([$plan_id]);
+    $filesRaw = $fileStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // map ไฟล์ไปยังรูปแบบ React form
+    $filesInfo = [];
+    $urls = [];
+    foreach ($filesRaw as $f) {
+        $filesInfo[] = [
+            "file_ma_id" => (int)$f['file_ma_id'],
+            "file_ma_name" => $f['file_ma_name'],
+            "file_ma_url" => $f['file_ma_url'],
+            "ma_type_name" => $f['ma_type_name']
+        ];
+        $urls[] = $f['file_ma_url'];
+    }
 
     echo json_encode([
         "status" => "success",
-        "plan" => $plan,
+        "plan" => [
+            "basicInfo" => [
+                "plan_name" => $plan['plan_name'],
+                "frequency_number" => $plan['frequency_number'],
+                "frequency_unit" => $plan['frequency_unit'],
+                "type_ma" => $plan['type_ma'],
+                "frequency_type" => $plan['frequency_type'],
+                "user_id" => $plan['user_id']
+            ],
+            "group_user_id" => $plan['group_user_id'],
+            "company_id" => $plan['company_id'] ?? null,
+            "contractNumber" => $plan['contract'] ?? "",
+            "costInfo" => [
+                "price" => $plan['price'],
+                "cost_type" => $plan['cost_type']
+            ],
+            "dateInfo" => [
+                "start_date" => $plan['start_date'],
+                "end_date" => $plan['end_date'],
+                "start_waranty" => $plan['start_waranty'] ?? ""
+            ],
+            "type_ma" => $plan['type_ma'],
+            "urls" => $urls,
+            "filesInfo" => $filesInfo
+        ],
         "details" => $details,
         "equipments" => $equipments
     ]);
-
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>

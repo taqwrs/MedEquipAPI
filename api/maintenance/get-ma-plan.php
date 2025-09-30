@@ -1,5 +1,5 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -23,7 +23,8 @@ try {
         LEFT JOIN companies c ON mp.company_id = c.company_id
         LEFT JOIN details_maintenance_plans dmp ON mp.plan_id = dmp.plan_id
         WHERE mp.is_active = 1
-        GROUP BY mp.plan_id DESC
+        GROUP BY mp.plan_id
+        ORDER BY mp.plan_id DESC
     ";
     $stmt = $dbh->prepare($query);
     $stmt->execute();
@@ -77,11 +78,20 @@ try {
     // จัดรูปแบบผลลัพธ์
     foreach ($results as &$result) {
         switch ((int)$result['frequency_unit']) {
-            case 1: $unit_text = 'วัน'; break;
-            case 2: $unit_text = 'สัปดาห์'; break;
-            case 3: $unit_text = 'เดือน'; break;
-            case 4: $unit_text = 'ปี'; break;
-            default: $unit_text = 'หน่วย';
+            case 1:
+                $unit_text = 'วัน';
+                break;
+            case 2:
+                $unit_text = 'สัปดาห์';
+                break;
+            case 3:
+                $unit_text = 'เดือน';
+                break;
+            case 4:
+                $unit_text = 'ปี';
+                break;
+            default:
+                $unit_text = 'หน่วย';
         }
         $result['frequency_display'] = "ทุก {$result['frequency_number']} {$unit_text}";
         $result['status_display'] = $result['is_active'] ? 'ใช้งาน' : 'ไม่ใช้งาน';
@@ -98,8 +108,6 @@ try {
         "status" => "success",
         "data" => array_values($results)
     ]);
-
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>

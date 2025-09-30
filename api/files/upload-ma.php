@@ -56,7 +56,58 @@ try {
             }
         }
     }
+/* ------------------ กรณี URL ------------------ */
+if (!empty($_POST['ma_result_url'])) {
+    $urls = is_array($_POST['ma_result_url']) ? $_POST['ma_result_url'] : [$_POST['ma_result_url']];
 
+    // ดึงข้อมูลอุปกรณ์จาก ma_result_id
+    $stmtEquip = $dbh->prepare("
+    SELECT e.asset_code, e.name AS equipment_name
+    FROM maintenance_plans mp
+    JOIN equipments e ON mp.equipment_id = e.equipment_id
+    WHERE mp.plan_id = ?
+    LIMIT 1
+");
+    $stmtEquip->execute([$plan_id]);
+    $equipmentRow  = $stmtEquip->fetch(PDO::FETCH_ASSOC);
+    $equipmentName = $equipmentRow['equipment_name'] ?? null;
+    $assetCode     = $equipmentRow['asset_code'] ?? null;
+
+    // ฟังก์ชัน sanitize
+    function sanitizeName($str)
+    {
+        // ลบอักขระพิเศษ แต่เก็บตัวอักษรไทย, ตัวเลข, ตัวอักษรอังกฤษ, ขีดกลาง, ขีดล่าง
+        $str = preg_replace('/[^\p{L}\p{N}_\-]/u', '', $str);
+        return $str;
+    }
+    foreach ($urls as $key => $url) {
+        if (filter_var($url, FILTER_VALIDATE_URL)) {
+            if (!empty($_POST['ma_file_name'][$key])) {
+                $customName = $_POST['ma_file_name'][$key];
+            } elseif ($assetCode) {
+                // ใช้แค่ asset_code + running number
+                $customName = sprintf("%s-%02d", $assetCode, $key + 1);
+            } else {
+                $customName = "Ma_URL_" . $plan_id . "_" . ($key + 1);
+            }
+
+            $typeName = $_POST['ma_type_name'][$key] ?? "ไม่ระบุ";
+
+            $stmt = $dbh->prepare("
+                INSERT INTO file_ma(plan_id, file_ma_name, file_ma_url, ma_type_name, upload_at)
+                VALUES (?, ?, ?, ?, NOW())
+            ");
+            $stmt->execute([$plan_id, $customName, $url, $typeName]);
+
+            $uploadedFiles[] = [
+                "name"  => $customName,
+                "saved" => null,
+                "url"   => $url,
+                "type"  => $typeName
+            ];
+        }
+    }
+}
     $dbh->commit();
     echo json_encode(["status" => "success", "files" => $uploadedFiles]);
 
