@@ -17,7 +17,7 @@ try {
     $useLimit = $limit > 0;
 
     // Build WHERE conditions
-    $where = ["cp.is_active IN (0,1)"];
+    $where = ["cp.is_active IN (1)"];
     $params = [];
 
     if ($search !== '') {
@@ -41,7 +41,7 @@ try {
         ORDER BY cp.plan_id DESC
     ";
 
-    // Count query
+
     $countQuery = "
         SELECT COUNT(DISTINCT cp.plan_id) 
         FROM calibration_plans cp
@@ -51,7 +51,7 @@ try {
         $whereSQL
     ";
 
-    // Count
+  
     $countStmt = $dbh->prepare($countQuery);
     foreach ($params as $k => $v) $countStmt->bindValue($k, $v, PDO::PARAM_STR);
     $countStmt->execute();

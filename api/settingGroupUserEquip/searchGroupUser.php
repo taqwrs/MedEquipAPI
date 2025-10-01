@@ -28,6 +28,7 @@ try {
         $params[':groupType'] = $groupType;
     }
 
+    // นับจำนวนทั้งหมด
     $stmtCount = $dbh->prepare("
         SELECT COUNT(*) as total
         FROM group_user gu
@@ -37,20 +38,14 @@ try {
     $totalItems = (int) $stmtCount->fetchColumn();
     $totalPages = ceil($totalItems / $limit);
 
+    // ดึงข้อมูล
     $stmt = $dbh->prepare("
         SELECT 
             gu.group_user_id,
             gu.group_name,
-            gu.type AS group_type,
-            GROUP_CONCAT(DISTINCT u.full_name ORDER BY u.full_name ASC SEPARATOR ', ') AS users,
-            GROUP_CONCAT(DISTINCT u.user_id ORDER BY u.full_name ASC SEPARATOR ', ') AS user_ids,
-            GROUP_CONCAT(DISTINCT d.department_name ORDER BY u.full_name ASC SEPARATOR ', ') AS departments
+            gu.type AS group_type
         FROM group_user gu
-        LEFT JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
-        LEFT JOIN users u ON ru.u_id = u.ID
-        LEFT JOIN departments d ON u.department_id = d.department_id
         $where
-        GROUP BY gu.group_user_id
         ORDER BY gu.group_user_id DESC
         LIMIT :limit OFFSET :offset
     ");
