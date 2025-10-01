@@ -43,9 +43,18 @@ try {
     ];
     $updateData = [];
     foreach($fields as $f){
-        $updateData[$f] = array_key_exists($f, $input) ? $input[$f] : $current[$f];
+        if(array_key_exists($f, $input)){
+            // ถ้าเป็นวันที่ และค่าเป็น empty string ให้เป็น NULL
+            if(in_array($f, ['start_waranty','start_date','end_date']) && $input[$f] === ''){
+                $updateData[$f] = null;
+            } else {
+                $updateData[$f] = $input[$f];
+            }
+        } else {
+            $updateData[$f] = $current[$f];
+        }
     }
-
+    
     // กรณี Soft Delete (เปิด/ปิด plan)
     if (isset($input['is_active']) && count($input) === 2) {
         $stmt = $dbh->prepare("UPDATE maintenance_plans SET is_active=:is_active WHERE plan_id=:plan_id");
