@@ -85,6 +85,7 @@ try {
     $stmt->execute();
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // ดึงจำนวนทั้งหมดสำหรับ pagination
     $countQuery = "SELECT COUNT(*) FROM repair r
                    LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
                    LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
@@ -98,6 +99,7 @@ try {
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
 
+    // ดึงจำนวน repair ต่ออุปกรณ์
     $sqlCounter = "SELECT 
                         e.equipment_id,
                         COUNT(rr.repair_result_id) AS repair_count
@@ -108,39 +110,44 @@ try {
     $stmtCounter = $dbh->prepare($sqlCounter);
     $stmtCounter->execute();
     $equipmentCounts = $stmtCounter->fetchAll(PDO::FETCH_ASSOC);
-
     $equipmentRepairs = [];
     foreach ($equipmentCounts as $eq) {
         $equipmentRepairs[$eq['equipment_id']] = $eq['repair_count'];
     }
 
+    // ดึง repair_result + spare_parts + files แบบไม่ซ้ำ
     foreach ($repairs as &$repair) {
         $repair['counter'] = $equipmentRepairs[$repair['equipment_id']] ?? 0;
 
-        // ดึงข้อมูล repair_result พร้อมอะไหล่
-        $sql2 = "SELECT 
-                    rr.repair_result_id,
-                    rr.user_id AS responsible_id,
-                    u_responsible.full_name AS responsible_name,
-                    rr.performed_date,
-                    rr.solution,
-                    rr.cost,
-                    rr.status,
-                    rr.remark,
-                    sp.spare_part_id,
-                    sp.name AS spare_name
-                 FROM repair_result rr
-                 LEFT JOIN users u_responsible ON rr.user_id = u_responsible.user_id
-                 LEFT JOIN spare_parts_used spu ON rr.repair_result_id = spu.repair_result_id
-                 LEFT JOIN spare_parts sp ON spu.spare_part_id = sp.spare_part_id
-                 WHERE rr.repair_id = ?
-                 ORDER BY rr.repair_result_id ASC";
-        $stmt2 = $dbh->prepare($sql2);
-        $stmt2->execute([$repair['repair_id']]);
-        $repair['repair_results'] = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+        // repair_result
+        $sqlResults = "SELECT 
+                        rr.repair_result_id,
+                        rr.user_id AS responsible_id,
+                        u_responsible.full_name AS responsible_name,
+                        rr.performed_date,
+                        rr.solution,
+                        rr.cost,
+                        rr.status,
+                        rr.remark
+                       FROM repair_result rr
+                       LEFT JOIN users u_responsible ON rr.user_id = u_responsible.user_id
+                       WHERE rr.repair_id = ?
+                       ORDER BY rr.repair_result_id ASC";
+        $stmtResults = $dbh->prepare($sqlResults);
+        $stmtResults->execute([$repair['repair_id']]);
+        $repairResults = $stmtResults->fetchAll(PDO::FETCH_ASSOC);
 
-        // ดึงไฟล์สำหรับแต่ละ repair_result
-        foreach ($repair['repair_results'] as &$result) {
+        foreach ($repairResults as &$result) {
+            // spare_parts
+            $sqlSpare = "SELECT sp.spare_part_id, sp.name AS spare_name
+                         FROM spare_parts_used spu
+                         LEFT JOIN spare_parts sp ON spu.spare_part_id = sp.spare_part_id
+                         WHERE spu.repair_result_id = ?";
+            $stmtSpare = $dbh->prepare($sqlSpare);
+            $stmtSpare->execute([$result['repair_result_id']]);
+            $result['spares'] = $stmtSpare->fetchAll(PDO::FETCH_ASSOC);
+
+            // files
             $sqlFiles = "SELECT 
                             file_repair_result_id,
                             repair_file_name,
@@ -152,8 +159,11 @@ try {
             $stmtFiles->execute([$result['repair_result_id']]);
             $result['files'] = $stmtFiles->fetchAll(PDO::FETCH_ASSOC);
         }
+
+        $repair['repair_results'] = $repairResults;
     }
 
+    // สรุปจำนวนซ่อมเสร็จ / ซ่อมไม่ได้ / กำลังดำเนินการ
     $summaryQuery = "SELECT 
                         SUM(CASE WHEN rr.status = 'ซ่อมเสร็จ' THEN 1 ELSE 0 END) AS completed,
                         SUM(CASE WHEN rr.status = 'ซ่อมไม่ได้' THEN 1 ELSE 0 END) AS failed,

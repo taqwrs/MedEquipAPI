@@ -41,6 +41,7 @@ try {
 
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
+    // Query หลัก
     $query = "
         SELECT w.*, e.name AS equipment_name, u.full_name AS requester_name, 
                a.full_name AS approver_name, wt.name AS writeoff_type_name
@@ -65,7 +66,6 @@ try {
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
 
-
     if ($useLimit) {
         $query .= " LIMIT :limit OFFSET :offset";
     }
@@ -81,31 +81,15 @@ try {
     $stmt->execute();
     $writeoffs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // ดึงข้อมูลไฟล์สำหรับแต่ละรายการ
+    // ดึงไฟล์แนบเฉพาะไม่ซ้ำสำหรับแต่ละ writeoff
     foreach ($writeoffs as &$wo) {
         $stmtFile = $dbh->prepare("
-            SELECT 
-                file_writeoffs_id, 
-                File_name, 
-                url, 
-                type_name as file_type
+            SELECT DISTINCT file_writeoffs_id, File_name, url, type_name 
             FROM file_writeoffs 
             WHERE writeoff_id = ?
         ");
         $stmtFile->execute([$wo['writeoff_id']]);
-        $files = $stmtFile->fetchAll(PDO::FETCH_ASSOC);
-        
-        // แปลง URL เป็น absolute path ถ้าจำเป็น
-        foreach ($files as &$file) {
-            // ถ้า URL ไม่ได้เริ่มด้วย http แสดงว่าเป็น relative path
-            if (!empty($file['url']) && !preg_match('/^https?:\/\//', $file['url'])) {
-                // เพิ่ม base URL ให้กับ relative path
-                // ปรับ path ตามโครงสร้างโฟลเดอร์ของคุณ
-                $file['url'] = '/back_equip/api' . $file['url'];
-            }
-        }
-        
-        $wo['files'] = $files;
+        $wo['files'] = $stmtFile->fetchAll(PDO::FETCH_ASSOC);
     }
 
     echo json_encode([
@@ -122,3 +106,4 @@ try {
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
+?>
