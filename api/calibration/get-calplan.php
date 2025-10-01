@@ -3,58 +3,34 @@ include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-$method = $_SERVER['REQUEST_METHOD'];
-
 try {
-    // Get input parameters
-    $input = [];
-    if ($method === 'POST') {
-        $input = json_decode(file_get_contents("php://input"), true) ?? [];
-    } else {
-        $input = $_GET;
-    }
-    
+    $method = $_SERVER['REQUEST_METHOD'];
+    $input = $method === 'POST' ? json_decode(file_get_contents("php://input"), true) ?? [] : $_GET;
+
     $search = trim($input['search'] ?? '');
-    $statusFilter = trim($input['status'] ?? '');
     $page = (int)($input['page'] ?? 1);
-    $limit = (int)($input['limit'] ?? 5);
+    $limit = (int)($input['limit'] ?? 10);
     $offset = ($page - 1) * $limit;
     $useLimit = $limit > 0;
 
     // Build WHERE conditions
-    $where = ["cp.is_active = 1"];
+    $where = ["cp.is_active IN (0,1)"];
     $params = [];
 
-    // Search functionality
     if ($search !== '') {
         $where[] = "(cp.plan_name LIKE :search OR u.full_name LIKE :search OR c.name LIKE :search OR gu.group_name LIKE :search)";
         $params[':search'] = "%$search%";
     }
 
-    // Status filter
-    // if ($statusFilter !== '') {
-    //     if ($statusFilter === 'active') {
-    //         $where[] = "cp.is_active = 1";
-    //     } elseif ($statusFilter === 'inactive') {
-    //         $where[] = "cp.is_active = 0";
-    //         $where = array_filter($where, function($condition) {
-    //             return $condition !== "cp.is_active = 1";
-    //         });
-    //     }
-    // }
-
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
+    // Main query
     $query = "
-        SELECT 
-            cp.*,
-            u.full_name AS user_name,
-            gu.group_name,
-            c.name AS company_name,
-            COUNT(DISTINCT dcp.details_cal_id) AS total_schedules
+        SELECT cp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,
+               COUNT(DISTINCT dcp.details_cal_id) AS total_schedules
         FROM calibration_plans cp
         LEFT JOIN users u ON cp.user_id = u.user_id
         LEFT JOIN group_user gu ON cp.group_user_id = gu.group_user_id
@@ -65,6 +41,7 @@ try {
         ORDER BY cp.plan_id DESC
     ";
 
+    // Count query
     $countQuery = "
         SELECT COUNT(DISTINCT cp.plan_id) 
         FROM calibration_plans cp
@@ -74,21 +51,17 @@ try {
         $whereSQL
     ";
 
-    // Execute count query
+    // Count
     $countStmt = $dbh->prepare($countQuery);
-    foreach ($params as $key => $val) {
-        $countStmt->bindValue($key, $val, PDO::PARAM_STR);
-    }
+    foreach ($params as $k => $v) $countStmt->bindValue($k, $v, PDO::PARAM_STR);
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
 
-    if ($useLimit) {
-        $query .= " LIMIT :limit OFFSET :offset";
-    }
+    // Limit
+    if ($useLimit) $query .= " LIMIT :limit OFFSET :offset";
+
     $stmt = $dbh->prepare($query);
-    foreach ($params as $key => $val) {
-        $stmt->bindValue($key, $val, PDO::PARAM_STR);
-    }
+    foreach ($params as $k => $v) $stmt->bindValue($k, $v, PDO::PARAM_STR);
     if ($useLimit) {
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
@@ -98,28 +71,28 @@ try {
 
     $planIds = array_column($results, 'plan_id');
 
-    $boundDevicesMap = [];
+    // ดึงอุปกรณ์
+    $equipmentsMap = [];
     if (!empty($planIds)) {
         $inQuery = implode(',', array_fill(0, count($planIds), '?'));
-        $boundStmt = $dbh->prepare("
+        $equipStmt = $dbh->prepare("
             SELECT pe.plan_id, e.equipment_id, e.name, e.asset_code
             FROM plan_equipments pe
             LEFT JOIN equipments e ON pe.equipment_id = e.equipment_id
             WHERE pe.plan_id IN ($inQuery)
         ");
-        $boundStmt->execute($planIds);
-        $boundDevicesRaw = $boundStmt->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($boundDevicesRaw as $bd) {
-            $boundDevicesMap[$bd['plan_id']][] = [
-                "equipment_id" => $bd['equipment_id'] !== null ? (int)$bd['equipment_id'] : null,
-                "name" => $bd['name'] ?? "-",
-                "asset_code" => $bd['asset_code'] ?? "-",
+        $equipStmt->execute($planIds);
+        $equipmentsRaw = $equipStmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($equipmentsRaw as $eq) {
+            $equipmentsMap[$eq['plan_id']][] = [
+                "equipment_id" => $eq['equipment_id'] ? (int)$eq['equipment_id'] : null,
+                "name" => $eq['name'] ?? "-",
+                "asset_code" => $eq['asset_code'] ?? "-",
             ];
         }
     }
 
-
+    // ดึงไฟล์แนบ
     $filesMap = [];
     if (!empty($planIds)) {
         $inQuery = implode(',', array_fill(0, count($planIds), '?'));
@@ -130,7 +103,6 @@ try {
         ");
         $fileStmt->execute($planIds);
         $filesRaw = $fileStmt->fetchAll(PDO::FETCH_ASSOC);
-
         foreach ($filesRaw as $file) {
             $filesMap[$file['plan_id']][] = [
                 "file_cal_id" => (int)$file['file_cal_id'],
@@ -141,25 +113,23 @@ try {
         }
     }
 
-
-    foreach ($results as &$result) {
-        switch ((int)$result['frequency_unit']) {
-            case 1: $unit_text = 'วัน'; break;
-            case 2: $unit_text = 'สัปดาห์'; break;
-            case 3: $unit_text = 'เดือน'; break;
-            case 4: $unit_text = 'ปี'; break;
-            default: $unit_text = 'หน่วย';
-        }
-        $result['frequency_display'] = "ทุก {$result['frequency_number']} {$unit_text}";
-        $result['status_display'] = $result['is_active'] ? 'ใช้งาน' : 'ไม่ใช้งาน';
-        $result['price'] = isset($result['price']) ? (float)$result['price'] : 0;
-        $result['frequency_number'] = (int)$result['frequency_number'];
-        $result['frequency_unit'] = (int)$result['frequency_unit'];
-        $result['interval_count'] = (int)$result['interval_count'];
-        $result['is_active'] = (int)$result['is_active'];
-        $result['total_schedules'] = (int)$result['total_schedules'];
-        $result['equipments'] = $boundDevicesMap[$result['plan_id']] ?? [];
-        $result['files'] = $filesMap[$result['plan_id']] ?? [];
+    // Mapping
+    foreach ($results as &$res) {
+        $res['equipments'] = $equipmentsMap[$res['plan_id']] ?? [];
+        $res['files'] = $filesMap[$res['plan_id']] ?? [];
+        $res['frequency_number'] = (int)$res['frequency_number'];
+        $res['interval_count'] = (int)$res['interval_count'];
+        $res['is_active'] = (int)$res['is_active'];
+        $res['price'] = isset($res['price']) ? (float)$res['price'] : 0;
+        $res['frequency_display'] = "ทุก {$res['frequency_number']} " . 
+            match ((int)$res['frequency_unit']) {
+                1 => 'วัน',
+                2 => 'สัปดาห์',
+                3 => 'เดือน',
+                4 => 'ปี',
+                default => 'หน่วย',
+            };
+        $res['status_display'] = $res['is_active'] ? 'ใช้งาน' : 'ไม่ใช้งาน';
     }
 
     echo json_encode([
