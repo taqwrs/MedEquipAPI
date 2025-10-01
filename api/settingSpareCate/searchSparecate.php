@@ -18,23 +18,36 @@ try {
     $params = [];
 
     if ($search !== '') {
-        $where .= " AND c.name LIKE :search";
+        $where .= " AND name LIKE :search";
         $params[':search'] = "%{$search}%";
     }
 
-    $stmtCount = $dbh->prepare("SELECT COUNT(*) FROM spare_categories c $where");
+    $stmtCount = $dbh->prepare("
+        SELECT COUNT(*) 
+        FROM spare_categories c
+        $where
+    ");
     $stmtCount->execute($params);
     $totalItems = (int) $stmtCount->fetchColumn();
     $totalPages = ceil($totalItems / $limit);
 
+    // ดึง categories ที่อยู่ในหน้านั้นๆ ก่อน แล้วค่อย JOIN เอา subcategories
     $stmt = $dbh->prepare("
         SELECT 
             c.spare_category_id,
-            c.name AS category_name
-        FROM spare_categories c
-        $where
-        ORDER BY c.spare_category_id DESC
-        LIMIT :limit OFFSET :offset
+            c.name AS category_name,
+            s.spare_subcategory_id,
+            s.name AS subcategory_name
+        FROM (
+            SELECT spare_category_id, name
+            FROM spare_categories
+            $where
+            ORDER BY spare_category_id DESC
+            LIMIT :limit OFFSET :offset
+        ) c
+        LEFT JOIN spare_subcategories s 
+            ON c.spare_category_id = s.spare_category_id
+        ORDER BY c.spare_category_id DESC, s.spare_subcategory_id
     ");
 
     foreach ($params as $key => $val) {
