@@ -16,6 +16,7 @@ try {
         FROM maintenance_plans mp
         LEFT JOIN users u ON mp.user_id = u.id
         WHERE mp.plan_id = ?
+        ORDER BY mp.plan_id DESC
     ");
     $stmt->execute([$plan_id]);
     $plan = $stmt->fetch(PDO::FETCH_ASSOC);
