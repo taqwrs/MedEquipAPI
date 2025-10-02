@@ -18,12 +18,9 @@ $search = trim($input['search'] ?? '');
 $page = (int) ($input['page'] ?? 1);
 $limit = (int) ($input['limit'] ?? 5);
 $offset = ($page - 1) * $limit;
-$useLimit = $limit > 0;
 
 try {
     global $dbh;
-
-    // สร้างเงื่อนไขค้นหา
     $where = "WHERE 1=1";
     $params = [];
 
@@ -37,56 +34,67 @@ try {
         $params[':type'] = $input['type'];
     }
 
-    // นับจำนวนทั้งหมดก่อน pagination
-    $countStmt = $dbh->prepare("
+    $countSql = "
         SELECT COUNT(*) AS total
         FROM equipment_subcategories es
+        JOIN equipment_categories ec 
+            ON es.category_id = ec.category_id
         $where
-    ");
+    ";
+    $countStmt = $dbh->prepare($countSql);
     foreach ($params as $k => $v) {
         $countStmt->bindValue($k, $v);
     }
     $countStmt->execute();
     $totalItems = (int) $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
 
-    // query แสดงข้อมูล
-    $stmt = $dbh->prepare("
+    $sql = "
         SELECT 
-            es.subcategory_id,
-            es.category_id,
-            es.name AS subcategory_name,
-            es.type AS subcategory_type,
-            ec.name AS category_name,
+            sub.subcategory_id,
+            sub.category_id,
+            sub.subcategory_name,
+            sub.subcategory_type,
+            sub.category_name,
             rg.relation_group_id,
             rg.group_user_id,
             gu.group_name,
             gu.type AS group_type
-        FROM equipment_subcategories es
-        JOIN equipment_categories ec 
-            ON es.category_id = ec.category_id
+        FROM (
+            SELECT 
+                es.subcategory_id,
+                es.category_id,
+                es.name AS subcategory_name,
+                es.type AS subcategory_type,
+                ec.name AS category_name
+            FROM equipment_subcategories es
+            JOIN equipment_categories ec 
+                ON es.category_id = ec.category_id
+            $where
+            ORDER BY es.subcategory_id DESC
+            LIMIT :limit OFFSET :offset
+        ) sub
         LEFT JOIN relation_group rg 
-            ON es.subcategory_id = rg.subcategory_id
+            ON sub.subcategory_id = rg.subcategory_id
         LEFT JOIN group_user gu 
             ON rg.group_user_id = gu.group_user_id
-        $where
-        ORDER BY es.subcategory_id DESC
-        " . ($useLimit ? "LIMIT :limit OFFSET :offset" : "")
-    );
+        ORDER BY sub.subcategory_id DESC
+    ";
 
+    $stmt = $dbh->prepare($sql);
+
+    // bind ค่าตัวแปรค้นหา
     foreach ($params as $k => $v) {
         $stmt->bindValue($k, $v);
     }
 
-    if ($useLimit) {
-        $stmt->bindValue(":limit", $limit, PDO::PARAM_INT);
-        $stmt->bindValue(":offset", $offset, PDO::PARAM_INT);
-    }
+    $stmt->bindValue(":limit", $limit, PDO::PARAM_INT);
+    $stmt->bindValue(":offset", $offset, PDO::PARAM_INT);
 
     $stmt->execute();
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $response = [
-        "status" => "success",
+        "status" => "ok",
         "data" => $results,
         "pagination" => [
             "totalItems" => $totalItems,
@@ -101,4 +109,3 @@ try {
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>
