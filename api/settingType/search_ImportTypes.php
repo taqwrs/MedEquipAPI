@@ -37,7 +37,7 @@ try {
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     echo json_encode([
-        "status" => "success",
+        "status" => "ok",
         "data" => $results,
         "pagination" => [
             "totalItems" => $totalItems,
