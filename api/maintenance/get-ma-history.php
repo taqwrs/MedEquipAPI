@@ -6,108 +6,116 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    echo json_encode(['status' => 'error', 'message' => 'GET method required']);
-    exit;
-}
-
 $equipmentId = isset($_GET['equipment_id']) ? intval($_GET['equipment_id']) : null;
-$roundId     = isset($_GET['round_id']) ? intval($_GET['round_id']) : null;
-$viewType    = $_GET['viewType'] ?? null;
+$roundId = isset($_GET['round_id']) ? intval($_GET['round_id']) : null;
+$planId = isset($_GET['plan_id']) ? intval($_GET['plan_id']) : null;
+$viewType = isset($_GET['viewType']) ? $_GET['viewType'] : null;
 
 try {
-    if (!$dbh) {
-        throw new Exception("Database connection failed");
-    }
-
     $result = [];
 
-    if ($viewType === "allRoundsOfEquipment" && $equipmentId) {
-        $stmt = $dbh->prepare("
-            SELECT 
-                mp.plan_id, mp.plan_name,
-                dmp.details_ma_id, dmp.start_date,
-                mr.ma_result_id, mr.result, mr.details, mr.reason, mr.performed_date,
-                e.name AS equipment_name
-            FROM plan_ma_equipments pe
-            INNER JOIN maintenance_plans mp ON mp.plan_id = pe.plan_id
-            INNER JOIN details_maintenance_plans dmp ON dmp.plan_id = mp.plan_id
-            INNER JOIN maintenance_result mr ON mr.details_ma_id = dmp.details_ma_id 
-                                              AND mr.equipment_id = pe.equipment_id
-            INNER JOIN equipments e ON e.equipment_id = pe.equipment_id
-            WHERE pe.equipment_id = :equipment_id
-            ORDER BY dmp.start_date ASC
-        ");
-        $stmt->execute([':equipment_id' => $equipmentId]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if ($viewType === "allRoundsOfEquipment" && $equipmentId && $planId) {
+        // ดึงชื่ออุปกรณ์
+        $stmtEq = $dbh->prepare("SELECT asset_code, name FROM equipments WHERE equipment_id = :equipment_id");
+        $stmtEq->execute([':equipment_id' => $equipmentId]);
+        $eqData = $stmtEq->fetch(PDO::FETCH_ASSOC);
+        $equipmentName = ($eqData['asset_code'] ?? "-") . " - " . ($eqData['name'] ?? $equipmentId);
 
-        if ($rows) {
+        // ดึงประวัติบำรุงรักษา
+        $stmtDetails = $dbh->prepare("
+            SELECT dmp.details_ma_id, mr.ma_result_id, mr.result, mr.details, mr.reason, dmp.start_date, mr.performed_date, mp.plan_name
+            FROM details_maintenance_plans dmp
+            INNER JOIN maintenance_result mr 
+                ON mr.details_ma_id = dmp.details_ma_id
+            INNER JOIN maintenance_plans mp
+                ON mp.plan_id = dmp.plan_id
+            WHERE dmp.plan_id = :plan_id AND mr.equipment_id = :equipment_id
+            ORDER BY dmp.details_ma_id ASC
+        ");
+        $stmtDetails->execute([
+            ':plan_id' => $planId,
+            ':equipment_id' => $equipmentId
+        ]);
+        $details = $stmtDetails->fetchAll(PDO::FETCH_ASSOC);
+
+        if ($details) {
             $rounds = [];
-            foreach ($rows as $idx => $row) {
+            foreach ($details as $idx => $row) {
                 $rounds[] = [
-                    'round'         => $idx + 1,
+                    'round' => $idx + 1,
                     'details_ma_id' => $row['details_ma_id'],
-                    'ma_result_id'  => $row['ma_result_id'],
-                    'plan_name'     => $row['plan_name'],
-                    'status'        => $row['result'],
-                    'details'       => $row['details'] ?: '-',
-                    'reason'        => $row['reason'] ?: '-',
-                    'start_date'    => $row['start_date'] ?: '-',
-                    'performed_date'=> $row['performed_date'] ?: '-'
+                    'ma_result_id' => $row['ma_result_id'],
+                    'plan_name' => $row['plan_name'] ?? "-",
+                    'status' => $row['result'],
+                    'details' => $row['details'] ?: '-',
+                    'reason' => $row['reason'] ?: '-',
+                    'start_date' => $row['start_date'] ?: '-',
+                    'performed_date' => $row['performed_date'] ?: '-'
                 ];
             }
 
             $result[] = [
-                'name'   => $rows[0]['equipment_name'] ?? "Equipment $equipmentId",
+                'name' => $equipmentName,
                 'rounds' => $rounds
             ];
         }
-    }
-    elseif ($viewType === "allEquipments" && $roundId) {
-        $stmt = $dbh->prepare("
-            SELECT 
-                mp.plan_id, mp.plan_name,
-                dmp.details_ma_id, dmp.start_date,
-                mr.ma_result_id, mr.result, mr.details, mr.reason, mr.performed_date,
-                e.equipment_id, e.name AS equipment_name
-            FROM details_maintenance_plans dmp
-            INNER JOIN maintenance_plans mp ON mp.plan_id = dmp.plan_id
-            INNER JOIN maintenance_result mr ON mr.details_ma_id = dmp.details_ma_id
-            INNER JOIN equipments e ON e.equipment_id = mr.equipment_id
-            WHERE dmp.details_ma_id = :round_id
-            ORDER BY e.name ASC
-        ");
-        $stmt->execute([':round_id' => $roundId]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        foreach ($rows as $row) {
-            $result[] = [
-                'name'   => $row['equipment_name'],
-                'rounds' => [[
-                    'round'         => 1,
-                    'details_ma_id' => $row['details_ma_id'],
-                    'ma_result_id'  => $row['ma_result_id'],
-                    'plan_name'     => $row['plan_name'],
-                    'status'        => $row['result'],
-                    'details'       => $row['details'] ?: '-',
-                    'reason'        => $row['reason'] ?: '-',
-                    'start_date'    => $row['start_date'] ?: '-',
-                    'performed_date'=> $row['performed_date'] ?: '-'
-                ]]
-            ];
+    } elseif ($viewType === "allEquipments" && $roundId) {
+        // ตรวจสอบ plan_id จาก round
+        $stmtCheck = $dbh->prepare("
+            SELECT dmp.plan_id
+            FROM details_maintenance_plans dmp
+            WHERE dmp.details_ma_id = :round_id
+        ");
+        $stmtCheck->execute([':round_id' => $roundId]);
+        $roundData = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+        if ($roundData) {
+            $planId = $roundData['plan_id'];
+            $stmtResult = $dbh->prepare("
+                SELECT mr.ma_result_id, mr.equipment_id, mr.result, mr.details, mr.reason, dmp.start_date, mr.performed_date,
+                       e.asset_code, e.name AS equipment_name, mp.plan_name
+                FROM maintenance_result mr
+                INNER JOIN details_maintenance_plans dmp ON mr.details_ma_id = dmp.details_ma_id
+                INNER JOIN equipments e ON e.equipment_id = mr.equipment_id
+                INNER JOIN maintenance_plans mp ON mp.plan_id = dmp.plan_id
+                WHERE mr.details_ma_id = :round_id
+                ORDER BY e.name ASC
+            ");
+            $stmtResult->execute([':round_id' => $roundId]);
+            $roundResults = $stmtResult->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($roundResults as $row) {
+                $equipmentName = ($row['asset_code'] ?? "-") . " - " . ($row['equipment_name'] ?? $row['equipment_id']);
+                $result[] = [
+                    'name' => $equipmentName,
+                    'rounds' => [
+                        [
+                            'round' => 1,
+                            'details_ma_id' => $roundId,
+                            'ma_result_id' => $row['ma_result_id'],
+                            'plan_name' => $row['plan_name'] ?? "Plan $planId",
+                            'status' => $row['result'],
+                            'details' => $row['details'] ?: '-',
+                            'reason' => $row['reason'] ?: '-',
+                            'start_date' => $row['start_date'] ?: '-',
+                            'performed_date' => $row['performed_date'] ?: '-'
+                        ]
+                    ]
+                ];
+            }
         }
     }
 
-    if (empty($result)) {
-        echo json_encode(['status' => 'error', 'message' => 'ไม่พบข้อมูล']);
-        exit;
-    }
-
-    echo json_encode(['status' => 'success', 'data' => $result]);
+    echo json_encode([
+        'status' => 'success',
+        'data' => $result
+    ]);
 
 } catch (Exception $e) {
     echo json_encode([
-        'status'  => 'error',
+        'status' => 'error',
         'message' => $e->getMessage()
     ]);
 }
+?>

@@ -16,7 +16,7 @@ try {
     // Query หลัก + subquery ดึงไฟล์
     $stmt = $dbh->prepare("
         SELECT mr.ma_result_id, mr.details_ma_id, mr.equipment_id, mr.user_id, mr.performed_date, mr.result AS status, mr.details, mr.reason, mr.send_repair,
-               mp.plan_id, mp.cost_type, mp.frequency_number, mp.frequency_unit, mp.start_date, mp.end_date, mp.price AS total_cost,
+               mp.plan_id, mp.plan_name, mp.cost_type, mp.frequency_number, mp.frequency_unit, mp.start_date, mp.end_date, mp.price AS total_cost,
                e.name AS equipment_name, e.asset_code ,
                u.full_name AS user_name, c.name AS company_name,
                mp.type_ma,
@@ -53,6 +53,7 @@ try {
     echo json_encode([
         "status" => "success",
         "plan_id" => $row['plan_id'],
+        "plan_name" => $row['plan_name'],
         "details_ma_id" => $row['details_ma_id'],
         "equipment_id" => $row['equipment_id'],
         "asset_code" => $row['asset_code'],

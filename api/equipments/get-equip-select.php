@@ -31,7 +31,7 @@ try {
     $countSql = "SELECT COUNT(*) FROM equipments";
     
     $searchFields = ['name', 'asset_code', 'brand', 'model', 'status'];
-    $whereClause = "WHERE active = 1";
+    $whereClause = "WHERE active = 1"; // ถูกต้องแล้ว มีฟิลด์ active จริง
     $orderBy = "ORDER BY equipment_id DESC";
     
     $response = handlePaginatedSearch(

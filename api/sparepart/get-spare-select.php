@@ -23,6 +23,11 @@ if ($method === 'POST') {
 }
 
 try {
+    // ตรวจสอบ database connection
+    if (!$dbh) {
+        throw new Exception("Database connection failed");
+    }
+
     $baseSql = "
         SELECT
             s.spare_part_id,
@@ -57,9 +62,19 @@ try {
         $whereClause
     );
     
-    echo json_encode($response);
+    // ตรวจสอบ error จาก helper function
+    if ($response['status'] === 'error') {
+        http_response_code(500);
+        echo json_encode($response);
+        exit;
+    }
+    
+    echo json_encode($response, JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+    echo json_encode([
+        "status" => "error", 
+        "message" => $e->getMessage()
+    ]);
 }
