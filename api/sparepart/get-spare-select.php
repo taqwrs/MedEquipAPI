@@ -1,5 +1,4 @@
 <?php
-
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
@@ -23,6 +22,10 @@ if ($method === 'POST') {
 }
 
 try {
+    if (!$dbh) {
+        throw new Exception("Database connection failed");
+    }
+
     $baseSql = "
         SELECT
             s.spare_part_id,
@@ -37,29 +40,32 @@ try {
         LEFT JOIN equipments e ON s.equipment_id = e.equipment_id
     ";
     
-    $countSql = "
-        SELECT COUNT(*) 
-        FROM spare_parts s
-        LEFT JOIN equipments e ON s.equipment_id = e.equipment_id
-    ";
-    
     $searchFields = ['s.name', 's.asset_code', 's.brand', 's.model', 's.status', 'e.name'];
     $whereClause = "WHERE s.active = 1";
     $orderBy = "ORDER BY s.spare_part_id DESC";
     
-    $response = handlePaginatedSearch(
+    // เรียกเฉพาะ search ฝั่ง backend
+    $response = handleSearchOnly(
         $dbh, 
         $input, 
         $baseSql, 
-        $countSql, 
         $searchFields, 
         $orderBy, 
         $whereClause
     );
     
-    echo json_encode($response);
+    if ($response['status'] === 'error') {
+        http_response_code(500);
+        echo json_encode($response);
+        exit;
+    }
+    
+    echo json_encode($response, JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+    echo json_encode([
+        "status" => "error", 
+        "message" => $e->getMessage()
+    ]);
 }

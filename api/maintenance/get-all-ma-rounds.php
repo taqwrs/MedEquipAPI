@@ -36,7 +36,7 @@ try {
             $stmtEquipments->execute([':plan_id' => $planId]);
             $equipments = $stmtEquipments->fetchAll(PDO::FETCH_ASSOC);
 
-            // ดึงรอบการบำรุงรักษาของแผน
+            // ดึงรอบการบำรุงรักษาของแผนทั้งหมด (เรียงตาม details_ma_id)
             $stmtRounds = $dbh->prepare("
                 SELECT details_ma_id, start_date
                 FROM details_maintenance_plans
@@ -44,13 +44,15 @@ try {
                 ORDER BY details_ma_id ASC
             ");
             $stmtRounds->execute([':plan_id' => $planId]);
-            $rounds = $stmtRounds->fetchAll(PDO::FETCH_ASSOC);
+            $allRounds = $stmtRounds->fetchAll(PDO::FETCH_ASSOC);
 
             // สร้างข้อมูลรอบที่ยังไม่มีการบันทึกผล
             $pendingRounds = [];
-            foreach ($rounds as $round) {
+            
+            foreach ($allRounds as $index => $round) {
                 $roundData = [
                     'round_id' => $round['details_ma_id'],
+                    'round_number' => $index + 1, // ใช้ index + 1 เพื่อให้ได้หมายเลขรอบที่ถูกต้อง
                     'start_date' => $round['start_date'],
                     'equipments' => []
                 ];
@@ -79,6 +81,7 @@ try {
                     }
                 }
 
+                // เพิ่มเฉพาะรอบที่มีอุปกรณ์ที่ยังไม่บันทึกผล
                 if (!empty($roundData['equipments'])) {
                     $pendingRounds[] = $roundData;
                 }

@@ -1,5 +1,4 @@
 <?php
-
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
@@ -28,17 +27,15 @@ try {
         FROM equipments
     ";
     
-    $countSql = "SELECT COUNT(*) FROM equipments";
-    
     $searchFields = ['name', 'asset_code', 'brand', 'model', 'status'];
-    $whereClause = "WHERE active = 1";
+    $whereClause = "WHERE active = 1"; // มีฟิลด์ active จริง
     $orderBy = "ORDER BY equipment_id DESC";
     
-    $response = handlePaginatedSearch(
+    // เรียกเฉพาะ search ฝั่ง backend
+    $response = handleSearchOnly(
         $dbh, 
         $input, 
         $baseSql, 
-        $countSql, 
         $searchFields, 
         $orderBy, 
         $whereClause
