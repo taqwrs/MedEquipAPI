@@ -9,10 +9,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Debug: แสดงข้อมูลที่ได้รับ
-error_log("POST data: " . print_r($_POST, true));
-error_log("FILES data: " . print_r($_FILES, true));
-
 try {
     $dbh->beginTransaction();
 
@@ -21,7 +17,7 @@ try {
         throw new Exception("cal_result_id ไม่พบ - ได้รับ: " . var_export($_POST, true));
     }
 
-    // ตรวจสอบว่า cal_result_id มีอยู่จริงใน database หรือไม่
+    // ตรวจสอบว่า cal_result_id มีอยู่จริง
     $checkStmt = $dbh->prepare("SELECT COUNT(*) FROM calibration_result WHERE cal_result_id = ?");
     $checkStmt->execute([$cal_result_id]);
     if ($checkStmt->fetchColumn() == 0) {
@@ -30,108 +26,99 @@ try {
 
     $uploadedFiles = [];
     $uploadDir = __DIR__ . "/../file-upload/file_cal_result/";
-    
-    if (!is_dir($uploadDir)) {
-        if (!mkdir($uploadDir, 0777, true)) {
-            throw new Exception("ไม่สามารถสร้างโฟลเดอร์ได้: $uploadDir");
-        }
-    }
-    
+    if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+
+    // 1️⃣ อัปโหลดไฟล์จาก $_FILES
     $files = $_FILES['file_cal_result'] ?? null;
-
-    if (!$files) {
-        throw new Exception("ไม่พบไฟล์ที่อัปโหลด - FILES: " . var_export($_FILES, true));
-    }
-
-    // Debug: แสดงข้อมูลไฟล์
-    error_log("Files structure: " . print_r($files, true));
-
-    if (!is_array($files['name'])) {
-        $files = [
-            'name' => [$files['name']],
-            'type' => [$files['type']],
-            'tmp_name' => [$files['tmp_name']],
-            'error' => [$files['error']],
-            'size' => [$files['size']],
-        ];
-    }
-
-    foreach ($files['name'] as $key => $name) {
-        error_log("Processing file $key: $name, error: {$files['error'][$key]}");
-        
-        if ($files['error'][$key] === UPLOAD_ERR_OK) {
-            $tmp = $files['tmp_name'][$key];
-            $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-            $allowed = ['jpg','jpeg','png','gif','webp','pdf','docx'];
-            
-            if (!in_array($ext, $allowed)) {
-                throw new Exception("Invalid file format: $name (allowed: " . implode(',', $allowed) . ")");
-            }
-
-            $newName = uniqid('cal_result_', true) . '.' . $ext;
-            $fullPath = $uploadDir . $newName;
-            
-            error_log("Moving file from $tmp to $fullPath");
-            
-            if (!move_uploaded_file($tmp, $fullPath)) {
-                throw new Exception("Upload failed: $name (from $tmp to $fullPath)");
-            }
-
-            $url = "/file-upload/file_cal_result/$newName";
-            $calTypeName = $_POST['cal_type_name'][$key] ?? "";
-
-            error_log("Inserting to DB: cal_result_id=$cal_result_id, name=$name, url=$url, type=$calTypeName");
-
-            $stmt = $dbh->prepare("INSERT INTO file_cal_result (cal_result_id, file_cal_name, file_cal_url, cal_type_name) VALUES (?, ?, ?, ?)");
-            $result = $stmt->execute([$cal_result_id, $name, $url, $calTypeName]);
-            
-            if (!$result) {
-                $errorInfo = $stmt->errorInfo();
-                throw new Exception("Database insert failed: " . implode(', ', $errorInfo));
-            }
-            
-            $insertedId = $dbh->lastInsertId();
-            error_log("Inserted with ID: $insertedId");
-
-            $uploadedFiles[] = [
-                'file_cal_result_id' => $insertedId,
-                'file_cal_name' => $name,
-                'file_cal_url' => $url,
-                'cal_type_name' => $calTypeName
+    if ($files && $files['name'][0] !== "") {
+        if (!is_array($files['name'])) {
+            $files = [
+                'name' => [$files['name']],
+                'type' => [$files['type']],
+                'tmp_name' => [$files['tmp_name']],
+                'error' => [$files['error']],
+                'size' => [$files['size']],
             ];
-        } else {
-            error_log("File upload error for $name: " . $files['error'][$key]);
+        }
+
+        foreach ($files['name'] as $key => $name) {
+            if ($files['error'][$key] === UPLOAD_ERR_OK) {
+                $tmp = $files['tmp_name'][$key];
+                $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+                $allowed = ['jpg','jpeg','png','gif','webp','pdf','docx'];
+                if (!in_array($ext, $allowed)) throw new Exception("Invalid file format: $name");
+
+                $newName = uniqid('cal_result_', true) . '.' . $ext;
+                $fullPath = $uploadDir . $newName;
+                if (!move_uploaded_file($tmp, $fullPath)) throw new Exception("Upload failed: $name");
+
+                $url = "/file-upload/file_cal_result/$newName";
+                $calTypeName = $_POST['cal_type_name'][$key] ?? "ไม่ระบุ";
+
+                $stmt = $dbh->prepare("
+                    INSERT INTO file_cal_result(cal_result_id, file_cal_name, file_cal_url, cal_type_name)
+                    VALUES (?, ?, ?, ?)
+                ");
+                $stmt->execute([$cal_result_id, $name, $url, $calTypeName]);
+
+                $uploadedFiles[] = [
+                    'file_cal_result_id' => $dbh->lastInsertId(),
+                    'file_cal_name' => $name,
+                    'file_cal_url' => $url,
+                    'cal_type_name' => $calTypeName
+                ];
+            }
         }
     }
 
-    if (empty($uploadedFiles)) {
-        throw new Exception("ไม่มีไฟล์ใดที่อัปโหลดสำเร็จ");
+    // 2️⃣ เพิ่ม URL ลิงก์จาก $_POST['file_cal_url']
+    if (!empty($_POST['file_cal_url'])) {
+        $urls = is_array($_POST['file_cal_url']) ? $_POST['file_cal_url'] : [$_POST['file_cal_url']];
+        foreach ($urls as $key => $url) {
+            if (filter_var($url, FILTER_VALIDATE_URL)) {
+                $baseName = "ลิงก์ผลการสอบเทียบ";
+                $customName = $baseName;
+                $counter = 1;
+
+                // ตรวจสอบชื่อซ้ำใน DB
+                while (true) {
+                    $stmt = $dbh->prepare("SELECT COUNT(*) FROM file_cal_result WHERE file_cal_name = ? AND cal_result_id = ?");
+                    $stmt->execute([$customName, $cal_result_id]);
+                    if ($stmt->fetchColumn() == 0) break;
+                    $counter++;
+                    $customName = $baseName . '-' . sprintf('%02d', $counter);
+                }
+
+                $calTypeName = $_POST['cal_type_name'][$key] ?? "ลิงก์";
+
+                $stmt = $dbh->prepare("
+                    INSERT INTO file_cal_result(cal_result_id, file_cal_name, file_cal_url, cal_type_name)
+                    VALUES (?, ?, ?, ?)
+                ");
+                $stmt->execute([$cal_result_id, $customName, $url, $calTypeName]);
+
+                $uploadedFiles[] = [
+                    'file_cal_result_id' => $dbh->lastInsertId(),
+                    'file_cal_name' => $customName,
+                    'file_cal_url' => $url,
+                    'cal_type_name' => $calTypeName
+                ];
+            }
+        }
     }
+
+    if (empty($uploadedFiles)) throw new Exception("ไม่มีไฟล์หรือ URL ที่อัปโหลดสำเร็จ");
 
     $dbh->commit();
-    error_log("Transaction committed successfully");
-    
     echo json_encode([
-        "status" => "success", 
-        "message" => "Files uploaded successfully",
+        "status" => "success",
+        "message" => "Files/URLs uploaded successfully",
         "files" => $uploadedFiles,
         "count" => count($uploadedFiles)
     ]);
 
 } catch (Exception $e) {
-    error_log("Exception caught: " . $e->getMessage());
-    $dbh->rollBack();
-    
-    foreach ($uploadedFiles as $file) {
-        $filePath = __DIR__ . "/../file-upload/file_cal_result/" . basename($file['file_cal_url']);
-        if (file_exists($filePath)) {
-            unlink($filePath);
-        }
-    }
-    
-    echo json_encode([
-        "status" => "error", 
-        "message" => $e->getMessage()
-    ]);
+    if ($dbh->inTransaction()) $dbh->rollBack();
+    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
 ?>
