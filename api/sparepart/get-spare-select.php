@@ -1,5 +1,4 @@
 <?php
-
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
@@ -23,7 +22,6 @@ if ($method === 'POST') {
 }
 
 try {
-    // ตรวจสอบ database connection
     if (!$dbh) {
         throw new Exception("Database connection failed");
     }
@@ -42,27 +40,20 @@ try {
         LEFT JOIN equipments e ON s.equipment_id = e.equipment_id
     ";
     
-    $countSql = "
-        SELECT COUNT(*) 
-        FROM spare_parts s
-        LEFT JOIN equipments e ON s.equipment_id = e.equipment_id
-    ";
-    
     $searchFields = ['s.name', 's.asset_code', 's.brand', 's.model', 's.status', 'e.name'];
     $whereClause = "WHERE s.active = 1";
     $orderBy = "ORDER BY s.spare_part_id DESC";
     
-    $response = handlePaginatedSearch(
+    // เรียกเฉพาะ search ฝั่ง backend
+    $response = handleSearchOnly(
         $dbh, 
         $input, 
         $baseSql, 
-        $countSql, 
         $searchFields, 
         $orderBy, 
         $whereClause
     );
     
-    // ตรวจสอบ error จาก helper function
     if ($response['status'] === 'error') {
         http_response_code(500);
         echo json_encode($response);

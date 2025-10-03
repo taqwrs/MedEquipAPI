@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/pagination_helper.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -21,26 +22,26 @@ try {
         $eqData = $stmtEq->fetch(PDO::FETCH_ASSOC);
         $equipmentName = ($eqData['asset_code'] ?? "-") . " - " . ($eqData['name'] ?? $equipmentId);
 
-        // ดึงประวัติบำรุงรักษา
-        $stmtDetails = $dbh->prepare("
+        // ใช้ handleSearchOnly ดึงรายละเอียดรอบทั้งหมด
+        $baseSql = "
             SELECT dmp.details_ma_id, mr.ma_result_id, mr.result, mr.details, mr.reason, dmp.start_date, mr.performed_date, mp.plan_name
             FROM details_maintenance_plans dmp
-            INNER JOIN maintenance_result mr 
-                ON mr.details_ma_id = dmp.details_ma_id
-            INNER JOIN maintenance_plans mp
-                ON mp.plan_id = dmp.plan_id
+            INNER JOIN maintenance_result mr ON mr.details_ma_id = dmp.details_ma_id
+            INNER JOIN maintenance_plans mp ON mp.plan_id = dmp.plan_id
             WHERE dmp.plan_id = :plan_id AND mr.equipment_id = :equipment_id
-            ORDER BY dmp.details_ma_id ASC
-        ");
-        $stmtDetails->execute([
+        ";
+
+        $searchFields = ['mp.plan_name', 'mr.result', 'mr.details', 'mr.reason']; 
+        $additionalParams = [
             ':plan_id' => $planId,
             ':equipment_id' => $equipmentId
-        ]);
-        $details = $stmtDetails->fetchAll(PDO::FETCH_ASSOC);
+        ];
 
-        if ($details) {
+        $response = handleSearchOnly($dbh, $_GET, $baseSql, $searchFields, 'ORDER BY dmp.details_ma_id ASC', '', $additionalParams);
+
+        if (!empty($response['data'])) {
             $rounds = [];
-            foreach ($details as $idx => $row) {
+            foreach ($response['data'] as $idx => $row) {
                 $rounds[] = [
                     'round' => $idx + 1,
                     'details_ma_id' => $row['details_ma_id'],
@@ -53,26 +54,19 @@ try {
                     'performed_date' => $row['performed_date'] ?: '-'
                 ];
             }
-
-            $result[] = [
-                'name' => $equipmentName,
-                'rounds' => $rounds
-            ];
+            $result[] = ['name' => $equipmentName, 'rounds' => $rounds];
         }
 
     } elseif ($viewType === "allEquipments" && $roundId) {
         // ตรวจสอบ plan_id จาก round
-        $stmtCheck = $dbh->prepare("
-            SELECT dmp.plan_id
-            FROM details_maintenance_plans dmp
-            WHERE dmp.details_ma_id = :round_id
-        ");
+        $stmtCheck = $dbh->prepare("SELECT dmp.plan_id FROM details_maintenance_plans dmp WHERE dmp.details_ma_id = :round_id");
         $stmtCheck->execute([':round_id' => $roundId]);
         $roundData = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
         if ($roundData) {
             $planId = $roundData['plan_id'];
-            $stmtResult = $dbh->prepare("
+
+            $baseSql = "
                 SELECT mr.ma_result_id, mr.equipment_id, mr.result, mr.details, mr.reason, dmp.start_date, mr.performed_date,
                        e.asset_code, e.name AS equipment_name, mp.plan_name
                 FROM maintenance_result mr
@@ -80,12 +74,14 @@ try {
                 INNER JOIN equipments e ON e.equipment_id = mr.equipment_id
                 INNER JOIN maintenance_plans mp ON mp.plan_id = dmp.plan_id
                 WHERE mr.details_ma_id = :round_id
-                ORDER BY e.name ASC
-            ");
-            $stmtResult->execute([':round_id' => $roundId]);
-            $roundResults = $stmtResult->fetchAll(PDO::FETCH_ASSOC);
+            ";
 
-            foreach ($roundResults as $row) {
+            $searchFields = ['e.name', 'e.asset_code', 'mp.plan_name'];
+            $additionalParams = [':round_id' => $roundId];
+
+            $response = handleSearchOnly($dbh, $_GET, $baseSql, $searchFields, 'ORDER BY e.name ASC', '', $additionalParams);
+
+            foreach ($response['data'] as $row) {
                 $equipmentName = ($row['asset_code'] ?? "-") . " - " . ($row['equipment_name'] ?? $row['equipment_id']);
                 $result[] = [
                     'name' => $equipmentName,
@@ -107,15 +103,8 @@ try {
         }
     }
 
-    echo json_encode([
-        'status' => 'success',
-        'data' => $result
-    ]);
+    echo json_encode(['status' => 'success', 'data' => $result]);
 
 } catch (Exception $e) {
-    echo json_encode([
-        'status' => 'error',
-        'message' => $e->getMessage()
-    ]);
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }
-?>
