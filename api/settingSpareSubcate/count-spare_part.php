@@ -19,12 +19,12 @@ try {
         // Query ดึงทุก subcategory พร้อมนับ spare_parts
         $stmt = $dbh->prepare("
             SELECT 
-                s.spare_subcategory_id AS spare_subcate_id, 
+                s.spare_subcategory_id , 
                 s.name AS spare_subcate_name,
-                COUNT(p.spare_subcate_id) AS total_count
+                COUNT(p.spare_subcategory_id) AS total_count
             FROM spare_subcategories s
             LEFT JOIN spare_parts p 
-              ON s.spare_subcategory_id = p.spare_subcate_id 
+              ON s.spare_subcategory_id = p.spare_subcategory_id 
               AND p.record_status != 'deleted'
             GROUP BY s.spare_subcategory_id, s.name
         ");
