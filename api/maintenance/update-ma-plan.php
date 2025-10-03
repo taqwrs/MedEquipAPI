@@ -35,12 +35,31 @@ try {
         exit;
     }
 
+    // ------------------------------
+    // ตรวจสอบว่ามีผลลัพธ์จริงใน maintenance_result หรือไม่
+    // ถ้า result ยังไม่มีค่า → สามารถแก้ไขรอบได้
+    // ------------------------------
+    $stmtCheck = $dbh->prepare("
+        SELECT COUNT(*) 
+        FROM maintenance_result mr
+        INNER JOIN details_maintenance_plans dmp 
+            ON mr.details_ma_id = dmp.details_ma_id
+        WHERE dmp.plan_id = :plan_id
+          AND mr.result IS NOT NULL
+    ");
+    $stmtCheck->execute([':plan_id'=>$input['plan_id']]);
+    $hasResult = $stmtCheck->fetchColumn() > 0;
+
+    // ------------------------------
+    // เตรียมข้อมูลสำหรับ update
+    // ------------------------------
     $fields = [
         'plan_name','user_id','group_user_id','company_id',
         'frequency_number','frequency_unit','frequency_type',
         'start_waranty','start_date','end_date','cost_type',
         'price','type_ma','contract','is_active'
     ];
+
     $updateData = [];
     foreach($fields as $f){
         if(array_key_exists($f, $input)){
@@ -54,8 +73,18 @@ try {
             $updateData[$f] = $current[$f];
         }
     }
-    
+
+    // ถ้ามีผลลัพธ์แล้ว บางฟิลด์ที่กระทบรอบต้องไม่แก้ไข
+    if($hasResult){
+        $restrictedFields = ['frequency_number','frequency_unit','frequency_type','start_date','end_date'];
+        foreach($restrictedFields as $rf){
+            $updateData[$rf] = $current[$rf]; // คืนค่าเดิม
+        }
+    }
+
+    // ------------------------------
     // กรณี Soft Delete (เปิด/ปิด plan)
+    // ------------------------------
     if (isset($input['is_active']) && count($input) === 2) {
         $stmt = $dbh->prepare("UPDATE maintenance_plans SET is_active=:is_active WHERE plan_id=:plan_id");
         $stmt->execute([
@@ -67,7 +96,9 @@ try {
         exit;
     }
 
+    // ------------------------------
     // ตรวจสอบค่าที่ถูกต้อง
+    // ------------------------------
     $allowed_type_ma = ['ภายใน','ภายนอก'];
     $allowed_cost_type = ['แยกรายรอบ','รวมตลอดทั้งสัญญา'];
     $allowed_frequency_unit = [1,2,3,4];
@@ -82,25 +113,41 @@ try {
         echo json_encode(["status"=>"error","message"=>"Invalid frequency_unit"]); exit;
     }
 
-    // คำนวณจำนวนรอบ
-    $startDate = new DateTime($updateData['start_date']);
-    $endDate   = new DateTime($updateData['end_date']);
-    $intervalNumber = (int)$updateData['frequency_number'];
-    $intervalUnit = (int)$updateData['frequency_unit'];
-
+    // ------------------------------
+    // คำนวณจำนวนรอบและวันที่รอบ (เฉพาะ plan ยังไม่เริ่มใช้งาน)
+    // ------------------------------
+    $roundDates = [];
     $intervalCount = 0;
-    $tempDate = clone $startDate;
-    while($tempDate <= $endDate){
-        $intervalCount++;
-        switch($intervalUnit){
-            case 1: $tempDate->add(new DateInterval('P'.$intervalNumber.'D')); break;
-            case 2: $tempDate->add(new DateInterval('P'.($intervalNumber*7).'D')); break;
-            case 3: $tempDate->add(new DateInterval('P'.$intervalNumber.'M')); break;
-            case 4: $tempDate->add(new DateInterval('P'.$intervalNumber.'Y')); break;
+    if(!$hasResult){
+        if($updateData['frequency_type'] === 'รอบเดียว'){
+            $intervalCount = 1;
+            $roundDates[] = $updateData['start_date'];
+        } else {
+            $startDate = new DateTime($updateData['start_date']);
+            $endDate   = new DateTime($updateData['end_date']);
+            $intervalNumber = (int)$updateData['frequency_number'];
+            $intervalUnit = (int)$updateData['frequency_unit'];
+
+            $tempDate = clone $startDate;
+            while($tempDate <= $endDate){
+                $intervalCount++;
+                $roundDates[] = $tempDate->format('Y-m-d');
+                switch($intervalUnit){
+                    case 1: $tempDate->add(new DateInterval('P'.$intervalNumber.'D')); break;
+                    case 2: $tempDate->add(new DateInterval('P'.($intervalNumber*7).'D')); break;
+                    case 3: $tempDate->add(new DateInterval('P'.$intervalNumber.'M')); break;
+                    case 4: $tempDate->add(new DateInterval('P'.$intervalNumber.'Y')); break;
+                }
+            }
         }
+    } else {
+        // Plan เริ่มใช้งานแล้ว → ใช้ intervalCount เดิม
+        $intervalCount = $current['interval_count'];
     }
 
+    // ------------------------------
     // Update plan
+    // ------------------------------
     $stmt = $dbh->prepare("UPDATE maintenance_plans SET
         plan_name=:plan_name, 
         user_id=:user_id,
@@ -125,6 +172,24 @@ try {
         ':plan_id'=>$input['plan_id']
     ]));
 
+    // ------------------------------
+    // อัปเดตรอบ details_maintenance_plans เฉพาะ plan ที่ยังไม่เริ่มใช้งาน
+    // ------------------------------
+    if(!$hasResult){
+        // ลบรอบเก่า
+        $stmtDel = $dbh->prepare("DELETE FROM details_maintenance_plans WHERE plan_id=:plan_id");
+        $stmtDel->execute([':plan_id'=>$input['plan_id']]);
+
+        // สร้างรอบใหม่
+        $stmtIns = $dbh->prepare("INSERT INTO details_maintenance_plans (plan_id, start_date) VALUES (:plan_id, :start_date)");
+        foreach($roundDates as $rd){
+            $stmtIns->execute([
+                ':plan_id' => $input['plan_id'],
+                ':start_date' => $rd
+            ]);
+        }
+    }
+
     $dbh->commit();
     echo json_encode(["status"=>"success","message"=>"Plan updated"]);
 
@@ -132,4 +197,3 @@ try {
     if($dbh->inTransaction()) $dbh->rollBack();
     echo json_encode(["status"=>"error","message"=>$e->getMessage()]);
 }
-?>
