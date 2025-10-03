@@ -17,6 +17,7 @@ try {
     if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
 
     $files = $_FILES['file_cal'] ?? null;
+    $fileCount = 0; // เพิ่มตัวนับไฟล์
 
     if ($files && $files['name'][0] !== "") {
         if (!is_array($files['name'])) {
@@ -55,6 +56,8 @@ try {
                     "url" => $url,
                     "type" => $typeName
                 ];
+                
+                $fileCount++; // นับไฟล์ที่อัปโหลดสำเร็จ
             }
         }
     }
@@ -63,14 +66,11 @@ try {
     if (!empty($_POST['file_cal_url'])) {
         $urls = is_array($_POST['file_cal_url']) ? $_POST['file_cal_url'] : [$_POST['file_cal_url']];
 
-  
-
         foreach ($urls as $key => $url) {
             if (filter_var($url, FILTER_VALIDATE_URL)) {
                 $baseName = "ฟอร์มบันทึกผลการสอบเทียบ";
                 $customName = $baseName;
                 $counter = 1;
-
 
                 while (true) {
                     $stmt = $dbh->prepare("SELECT COUNT(*) FROM file_cal WHERE file_cal_name = ? AND plan_id = ?");
@@ -81,7 +81,9 @@ try {
                     $customName = $baseName . '-' . sprintf('%02d', $counter);
                 }
 
-                $typeName = $_POST['cal_type_name'][$key] ?? "ลิงก์";
+                // แก้ไขตรงนี้: ใช้ $fileCount + $key แทน $key
+                $typeIndex = $fileCount + $key;
+                $typeName = $_POST['cal_type_name'][$typeIndex] ?? "ลิงก์";
 
                 $stmt = $dbh->prepare("
                     INSERT INTO file_cal(plan_id, file_cal_name, file_cal_url, cal_type_name)
