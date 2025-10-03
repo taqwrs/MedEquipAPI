@@ -41,7 +41,6 @@ try {
 
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
-    // Query หลัก
     $query = "
         SELECT w.*, e.name AS equipment_name, u.full_name AS requester_name, 
                a.full_name AS approver_name, wt.name AS writeoff_type_name
@@ -81,7 +80,7 @@ try {
     $stmt->execute();
     $writeoffs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // ดึงไฟล์แนบเฉพาะไม่ซ้ำสำหรับแต่ละ writeoff
+    // ดึงไฟล์แนบ
     foreach ($writeoffs as &$wo) {
         $stmtFile = $dbh->prepare("
             SELECT DISTINCT file_writeoffs_id, File_name, url, type_name 

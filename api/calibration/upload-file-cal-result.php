@@ -17,7 +17,6 @@ try {
         throw new Exception("cal_result_id ไม่พบ - ได้รับ: " . var_export($_POST, true));
     }
 
-    // ตรวจสอบว่า cal_result_id มีอยู่จริง
     $checkStmt = $dbh->prepare("SELECT COUNT(*) FROM calibration_result WHERE cal_result_id = ?");
     $checkStmt->execute([$cal_result_id]);
     if ($checkStmt->fetchColumn() == 0) {
@@ -28,9 +27,9 @@ try {
     $uploadDir = __DIR__ . "/../file-upload/file_cal_result/";
     if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
 
-    // 1️⃣ อัปโหลดไฟล์จาก $_FILES
+    $fileCount = 0; // เพิ่มตัวนับไฟล์
     $files = $_FILES['file_cal_result'] ?? null;
-    if ($files && $files['name'][0] !== "") {
+    if ($files && isset($files['name']) && !empty($files['name'])) {
         if (!is_array($files['name'])) {
             $files = [
                 'name' => [$files['name']],
@@ -41,7 +40,13 @@ try {
             ];
         }
 
+        $calTypeNames = isset($_POST['cal_type_name']) && is_array($_POST['cal_type_name']) 
+            ? $_POST['cal_type_name'] 
+            : [];
+
         foreach ($files['name'] as $key => $name) {
+            if (empty($name)) continue; 
+            
             if ($files['error'][$key] === UPLOAD_ERR_OK) {
                 $tmp = $files['tmp_name'][$key];
                 $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
@@ -53,7 +58,7 @@ try {
                 if (!move_uploaded_file($tmp, $fullPath)) throw new Exception("Upload failed: $name");
 
                 $url = "/file-upload/file_cal_result/$newName";
-                $calTypeName = $_POST['cal_type_name'][$key] ?? "ไม่ระบุ";
+                $calTypeName = isset($calTypeNames[$key]) ? $calTypeNames[$key] : "ไม่ระบุ";
 
                 $stmt = $dbh->prepare("
                     INSERT INTO file_cal_result(cal_result_id, file_cal_name, file_cal_url, cal_type_name)
@@ -67,20 +72,24 @@ try {
                     'file_cal_url' => $url,
                     'cal_type_name' => $calTypeName
                 ];
+                
+                $fileCount++; // นับไฟล์ที่อัปโหลดสำเร็จ
             }
         }
     }
 
-    // 2️⃣ เพิ่ม URL ลิงก์จาก $_POST['file_cal_url']
     if (!empty($_POST['file_cal_url'])) {
         $urls = is_array($_POST['file_cal_url']) ? $_POST['file_cal_url'] : [$_POST['file_cal_url']];
-        foreach ($urls as $key => $url) {
-            if (filter_var($url, FILTER_VALIDATE_URL)) {
+        $calTypeNames = isset($_POST['cal_type_name']) && is_array($_POST['cal_type_name']) 
+            ? $_POST['cal_type_name'] 
+            : [];
+        
+        foreach ($urls as $index => $url) {
+            if (!empty($url) && filter_var($url, FILTER_VALIDATE_URL)) {
                 $baseName = "ลิงก์ผลการสอบเทียบ";
                 $customName = $baseName;
                 $counter = 1;
 
-                // ตรวจสอบชื่อซ้ำใน DB
                 while (true) {
                     $stmt = $dbh->prepare("SELECT COUNT(*) FROM file_cal_result WHERE file_cal_name = ? AND cal_result_id = ?");
                     $stmt->execute([$customName, $cal_result_id]);
@@ -89,7 +98,9 @@ try {
                     $customName = $baseName . '-' . sprintf('%02d', $counter);
                 }
 
-                $calTypeName = $_POST['cal_type_name'][$key] ?? "ลิงก์";
+                // แก้ไขตรงนี้: ใช้ $fileCount + $index แทน $index
+                $typeIndex = $fileCount + $index;
+                $calTypeName = isset($calTypeNames[$typeIndex]) ? $calTypeNames[$typeIndex] : "ลิงก์";
 
                 $stmt = $dbh->prepare("
                     INSERT INTO file_cal_result(cal_result_id, file_cal_name, file_cal_url, cal_type_name)
@@ -107,12 +118,10 @@ try {
         }
     }
 
-    if (empty($uploadedFiles)) throw new Exception("ไม่มีไฟล์หรือ URL ที่อัปโหลดสำเร็จ");
-
     $dbh->commit();
     echo json_encode([
         "status" => "success",
-        "message" => "Files/URLs uploaded successfully",
+        "message" => count($uploadedFiles) > 0 ? "Files/URLs uploaded successfully" : "Result saved without files",
         "files" => $uploadedFiles,
         "count" => count($uploadedFiles)
     ]);
