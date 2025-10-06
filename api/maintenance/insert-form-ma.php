@@ -53,17 +53,25 @@ try {
     $intervalUnit = (int) $input['frequency_unit'];
 
     if ($input['frequency_type'] === 'รอบเดียว') {
-        $intervalCount = 1; 
+        $intervalCount = 1;
     } else {
         $intervalCount = 0;
         $tempDate = clone $startDate;
         while ($tempDate <= $endDate) {
             $intervalCount++;
             switch ($intervalUnit) {
-                case 1: $tempDate->add(new DateInterval('P' . $intervalNumber . 'D')); break;
-                case 2: $tempDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D')); break;
-                case 3: $tempDate->add(new DateInterval('P' . $intervalNumber . 'M')); break;
-                case 4: $tempDate->add(new DateInterval('P' . $intervalNumber . 'Y')); break;
+                case 1:
+                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'D'));
+                    break;
+                case 2:
+                    $tempDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D'));
+                    break;
+                case 3:
+                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'M'));
+                    break;
+                case 4:
+                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'Y'));
+                    break;
             }
         }
     }
@@ -73,7 +81,13 @@ try {
         (plan_name, user_id, group_user_id, company_id, frequency_number, frequency_unit, frequency_type, interval_count, contract, start_waranty, start_date, end_date, cost_type, price, type_ma, is_active)
         VALUES (:plan_name, :user_id, :group_user_id, :company_id, :frequency_number, :frequency_unit, :frequency_type, :interval_count, :contract, :start_waranty, :start_date, :end_date, :cost_type, :price, :type_ma, :is_active)
     ");
-
+    // ตรวจสอบชื่อซ้ำ
+    $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM maintenance_plans WHERE plan_name = :plan_name");
+    $stmtCheck->execute([':plan_name' => $input['plan_name']]);
+    if ($stmtCheck->fetchColumn() > 0) {
+        echo json_encode(["status" => "error", "message" => "ชื่อแผนซ้ำ"]);
+        exit;
+    }
     $stmt->execute([
         ':plan_name' => $input['plan_name'],
         ':user_id' => $input['user_id'],
@@ -105,19 +119,25 @@ try {
         for ($i = 1; $i <= $intervalCount; $i++) {
             $detailsStmt->execute([':plan_id' => $plan_id, ':start_date' => $scheduledDate->format('Y-m-d')]);
             switch ($intervalUnit) {
-                case 1: $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'D')); break;
-                case 2: $scheduledDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D')); break;
-                case 3: $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'M')); break;
-                case 4: $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'Y')); break;
+                case 1:
+                    $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'D'));
+                    break;
+                case 2:
+                    $scheduledDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D'));
+                    break;
+                case 3:
+                    $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'M'));
+                    break;
+                case 4:
+                    $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'Y'));
+                    break;
             }
         }
     }
 
     $dbh->commit();
     echo json_encode(["status" => "success", "plan_id" => $plan_id]);
-
 } catch (Exception $e) {
     if ($dbh->inTransaction()) $dbh->rollBack();
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>
