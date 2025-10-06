@@ -335,7 +335,7 @@ try {
     $dbh->commit();
     
     echo json_encode([
-        "status" => "ok", 
+        "status" => "success", 
         "message" => "Equipment transfer created successfully",
         "transfer_id" => (int)$transfer_id,
         "transfer_type" => $input['transfer_type'],
