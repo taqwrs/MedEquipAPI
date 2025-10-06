@@ -35,19 +35,19 @@ try {
         exit;
     }
 
-     // ------ตรวจสอบว่ามีผลลัพธ์จริงใน maintenance_result หรือไม่ ถ้า result ยังไม่มีค่า → สามารถแก้ไขรอบได้ ------ //
+    // ------ตรวจสอบว่ามีผลลัพธ์จริงใน maintenance_result หรือไม่ ถ้า result ยังไม่มีค่า → สามารถแก้ไขรอบได้ ------ //
     $stmtCheck = $dbh->prepare("
         SELECT COUNT(*) 
         FROM maintenance_result mr
         INNER JOIN details_maintenance_plans dmp 
             ON mr.details_ma_id = dmp.details_ma_id
         WHERE dmp.plan_id = :plan_id
-          AND mr.result IS NOT NULL
+            AND mr.result IS NOT NULL
     ");
     $stmtCheck->execute([':plan_id' => $input['plan_id']]);
     $hasResult = $stmtCheck->fetchColumn() > 0;
 
-     // ------เตรียมข้อมูลสำหรับ update ------ //
+    // ------เตรียมข้อมูลสำหรับ update ------ //
     $fields = [
         'plan_name',
         'user_id',
@@ -80,15 +80,22 @@ try {
         }
     }
 
+    // ------------------ ส่วนที่แก้ไขและเพิ่ม Flag ------------------
+    $restrictedFieldsRetained = false; // สถานะสำหรับส่งกลับ Frontend
+    
     // ถ้ามีผลลัพธ์แล้ว บางฟิลด์ที่กระทบรอบต้องไม่แก้ไข
     if ($hasResult) {
         $restrictedFields = ['frequency_number', 'frequency_unit', 'frequency_type', 'start_date', 'end_date'];
         foreach ($restrictedFields as $rf) {
-            $updateData[$rf] = $current[$rf]; // คืนค่าเดิม
+            // ตรวจสอบว่าผู้ใช้พยายามเปลี่ยนค่าหรือไม่ ก่อนจะคืนค่าเดิม
+            if (array_key_exists($rf, $input) && $input[$rf] !== $current[$rf]) {
+                $restrictedFieldsRetained = true; // ตั้งค่าสถานะว่ามีการคงค่าเดิม
+            }
+            $updateData[$rf] = $current[$rf]; // บังคับคืนค่าเดิม
         }
     }
 
-     // ------กรณี Soft Delete (เปิด/ปิด plan) ------ //
+    // ------กรณี Soft Delete (เปิด/ปิด plan) ------ //
     if (isset($input['is_active']) && count($input) === 2) {
         $stmt = $dbh->prepare("UPDATE maintenance_plans SET is_active=:is_active WHERE plan_id=:plan_id");
         $stmt->execute([
@@ -100,7 +107,7 @@ try {
         exit;
     }
 
-     // ------ตรวจสอบค่าที่ถูกต้อง ------ //
+    // ------ตรวจสอบค่าที่ถูกต้อง ------ //
     $allowed_type_ma = ['ภายใน', 'ภายนอก'];
     $allowed_cost_type = ['แยกรายรอบ', 'รวมตลอดทั้งสัญญา'];
     $allowed_frequency_unit = [1, 2, 3, 4];
@@ -155,7 +162,8 @@ try {
         // Plan เริ่มใช้งานแล้ว → ใช้ intervalCount เดิม
         $intervalCount = $current['interval_count'];
     }
-     // ------ตรวจสอบชื่อ plan ซ้ำ (ไม่รวม plan ตัวเอง) ------ //
+    
+    // ------ตรวจสอบชื่อ plan ซ้ำ (ไม่รวม plan ตัวเอง) ------ //
     $stmtCheckName = $dbh->prepare("
     SELECT COUNT(*) 
     FROM maintenance_plans 
@@ -171,7 +179,7 @@ try {
         exit;
     }
 
-     // ------Update plan ------ //
+    // ------Update plan ------ //
     $stmt = $dbh->prepare("UPDATE maintenance_plans SET
         plan_name=:plan_name, 
         user_id=:user_id,
@@ -196,7 +204,7 @@ try {
         ':plan_id' => $input['plan_id']
     ]));
 
-     // ------อัปเดตรอบ details_maintenance_plans เฉพาะ plan ที่ยังไม่เริ่มใช้งาน ------ //
+    // ------อัปเดตรอบ details_maintenance_plans เฉพาะ plan ที่ยังไม่เริ่มใช้งาน ------ //
     if (!$hasResult) {
         // ลบรอบเก่า
         $stmtDel = $dbh->prepare("DELETE FROM details_maintenance_plans WHERE plan_id=:plan_id");
@@ -213,7 +221,14 @@ try {
     }
 
     $dbh->commit();
-    echo json_encode(["status" => "success", "message" => "Plan updated"]);
+
+    // ------------------ JSON Response ที่รวม Flag ------------------
+    $response = [
+        "status" => "success", 
+        "message" => "Plan updated",
+        "restricted_fields" => $restrictedFieldsRetained 
+    ];
+    echo json_encode($response);
 } catch (Exception $e) {
     if ($dbh->inTransaction()) $dbh->rollBack();
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
