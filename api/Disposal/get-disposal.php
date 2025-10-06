@@ -1,5 +1,5 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -13,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $input = json_decode(file_get_contents("php://input"), true);
+    $user_id = trim($input['user_id'] ?? '');
     $search = trim($input['search'] ?? '');
     $statusFilter = trim($input['status'] ?? '');
     $page = (int)($input['page'] ?? 1);
@@ -26,6 +27,29 @@ try {
         'rejected' => 'ไม่อนุมัติ',
     ];
 
+    // ตรวจสอบสิทธิ์ผู้ใช้และกลุ่ม
+    $isAdminMain = false;
+    $groupUserIds = [];
+    if ($user_id !== '') {
+        $stmtGroup = $dbh->prepare("
+            SELECT gu.group_user_id, gu.type
+            FROM relation_user ru
+            INNER JOIN users u ON ru.u_id = u.ID
+            INNER JOIN group_user gu ON ru.group_user_id = gu.group_user_id
+            WHERE u.user_id = :user_id
+        ");
+        $stmtGroup->bindValue(':user_id', $user_id, PDO::PARAM_STR);
+        $stmtGroup->execute();
+        $rows = $stmtGroup->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as $row) {
+            $groupUserIds[] = $row['group_user_id'];
+            if ($row['type'] === 'ผู้ดูแลหลัก') {
+                $isAdminMain = true;
+            }
+        }
+    }
+
+    // Build WHERE
     $where = ["1"];
     $params = [];
 
@@ -39,8 +63,27 @@ try {
         $params[':statusFilter'] = $statusMap[$statusFilter];
     }
 
+    if ($isAdminMain && !empty($groupUserIds)) {
+        $inQuery = [];
+        foreach ($groupUserIds as $k => $id) {
+            $key = ":group_$k";
+            $inQuery[] = $key;
+            $params[$key] = $id;
+        }
+        $where[] = "w.equipment_id IN (
+            SELECT e.equipment_id
+            FROM equipments e
+            INNER JOIN relation_group rg ON e.subcategory_id = rg.subcategory_id
+            WHERE rg.group_user_id IN (" . implode(',', $inQuery) . ")
+        )";
+    } else {
+        $where[] = "w.user_id = :user_id";
+        $params[':user_id'] = $user_id;
+    }
+
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
+    // Query หลัก
     $query = "
         SELECT w.*, e.name AS equipment_name, u.full_name AS requester_name, 
                a.full_name AS approver_name, wt.name AS writeoff_type_name
@@ -55,9 +98,13 @@ try {
             w.writeoff_id DESC
     ";
 
-    $countQuery = "SELECT COUNT(*) FROM write_offs w
-                   LEFT JOIN equipments e ON w.equipment_id = e.equipment_id
-                   $whereSQL";
+    $countQuery = "
+        SELECT COUNT(*) 
+        FROM write_offs w
+        LEFT JOIN equipments e ON w.equipment_id = e.equipment_id
+        $whereSQL
+    ";
+
     $countStmt = $dbh->prepare($countQuery);
     foreach ($params as $key => $val) {
         $countStmt->bindValue($key, $val, PDO::PARAM_STR);
@@ -65,9 +112,7 @@ try {
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
 
-    if ($useLimit) {
-        $query .= " LIMIT :limit OFFSET :offset";
-    }
+    if ($useLimit) $query .= " LIMIT :limit OFFSET :offset";
 
     $stmt = $dbh->prepare($query);
     foreach ($params as $key => $val) {
@@ -80,14 +125,16 @@ try {
     $stmt->execute();
     $writeoffs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // ดึงไฟล์แนบ
     foreach ($writeoffs as &$wo) {
+        $wo['is_admin_main'] = $isAdminMain;
+
         $stmtFile = $dbh->prepare("
             SELECT DISTINCT file_writeoffs_id, File_name, url, type_name 
             FROM file_writeoffs 
-            WHERE writeoff_id = ?
+            WHERE writeoff_id = :writeoff_id
         ");
-        $stmtFile->execute([$wo['writeoff_id']]);
+        $stmtFile->bindValue(':writeoff_id', $wo['writeoff_id'], PDO::PARAM_INT);
+        $stmtFile->execute();
         $wo['files'] = $stmtFile->fetchAll(PDO::FETCH_ASSOC);
     }
 
