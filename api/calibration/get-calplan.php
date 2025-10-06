@@ -10,6 +10,22 @@ try {
     $method = $_SERVER['REQUEST_METHOD'];
     $input = $method === 'POST' ? json_decode(file_get_contents("php://input"), true) ?? [] : $_GET;
 
+    $user_id = trim($input['user_id'] ?? '');
+
+    // ดึง group_user_id ของผู้ใช้
+    $groupUserIds = [];
+    if ($user_id !== '') {
+        $stmtGroup = $dbh->prepare("
+            SELECT ru.group_user_id 
+            FROM relation_user ru 
+            INNER JOIN users u ON ru.u_id = u.ID
+            WHERE u.user_id = :user_id
+        ");
+        $stmtGroup->bindValue(':user_id', $user_id, PDO::PARAM_STR);
+        $stmtGroup->execute();
+        $groupUserIds = $stmtGroup->fetchAll(PDO::FETCH_COLUMN);
+    }
+
     $search = trim($input['search'] ?? '');
     $page = (int)($input['page'] ?? 1);
     $limit = (int)($input['limit'] ?? 10);
@@ -25,9 +41,14 @@ try {
         $params[':search'] = "%$search%";
     }
 
+    if (!empty($groupUserIds)) {
+        $inQuery = implode(',', array_fill(0, count($groupUserIds), '?'));
+        $where[] = "cp.group_user_id IN ($inQuery)";
+    }
+
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
-    // Main query
+    // Query หลัก
     $query = "
         SELECT cp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,
                COUNT(DISTINCT dcp.details_cal_id) AS total_schedules
@@ -41,7 +62,7 @@ try {
         ORDER BY cp.plan_id DESC
     ";
 
-
+    // Query นับจำนวนทั้งหมด
     $countQuery = "
         SELECT COUNT(DISTINCT cp.plan_id) 
         FROM calibration_plans cp
@@ -51,17 +72,26 @@ try {
         $whereSQL
     ";
 
-  
     $countStmt = $dbh->prepare($countQuery);
     foreach ($params as $k => $v) $countStmt->bindValue($k, $v, PDO::PARAM_STR);
+    if (!empty($groupUserIds)) {
+        foreach ($groupUserIds as $i => $id) {
+            $countStmt->bindValue($i + 1, $id, PDO::PARAM_INT);
+        }
+    }
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
 
-    // Limit
+    // เพิ่ม LIMIT OFFSET
     if ($useLimit) $query .= " LIMIT :limit OFFSET :offset";
 
     $stmt = $dbh->prepare($query);
     foreach ($params as $k => $v) $stmt->bindValue($k, $v, PDO::PARAM_STR);
+    if (!empty($groupUserIds)) {
+        foreach ($groupUserIds as $i => $id) {
+            $stmt->bindValue($i + 1, $id, PDO::PARAM_INT);
+        }
+    }
     if ($useLimit) {
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
@@ -71,7 +101,7 @@ try {
 
     $planIds = array_column($results, 'plan_id');
 
-    // ดึงอุปกรณ์
+    // Mapping equipments
     $equipmentsMap = [];
     if (!empty($planIds)) {
         $inQuery = implode(',', array_fill(0, count($planIds), '?'));
@@ -85,14 +115,14 @@ try {
         $equipmentsRaw = $equipStmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($equipmentsRaw as $eq) {
             $equipmentsMap[$eq['plan_id']][] = [
-                "equipment_id" => $eq['equipment_id'] ? (int)$eq['equipment_id'] : null,
+                "equipment_id" => (int)$eq['equipment_id'],
                 "name" => $eq['name'] ?? "-",
                 "asset_code" => $eq['asset_code'] ?? "-",
             ];
         }
     }
 
-    // ดึงไฟล์แนบ
+    // Mapping files
     $filesMap = [];
     if (!empty($planIds)) {
         $inQuery = implode(',', array_fill(0, count($planIds), '?'));
@@ -113,7 +143,7 @@ try {
         }
     }
 
-    // Mapping
+    // Mapping ผลลัพธ์
     foreach ($results as &$res) {
         $res['equipments'] = $equipmentsMap[$res['plan_id']] ?? [];
         $res['files'] = $filesMap[$res['plan_id']] ?? [];
