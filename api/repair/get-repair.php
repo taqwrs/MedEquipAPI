@@ -13,188 +13,157 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $input = json_decode(file_get_contents("php://input"), true);
-
-    $search = trim($input['search'] ?? '');
-    $statusFilter = trim($input['status_filter'] ?? '');
-    $page = (int)($input['page'] ?? 1);
-    $limit = (int)($input['limit'] ?? 5);
+    $page = isset($input['page']) ? (int)$input['page'] : 1;
+    $limit = isset($input['limit']) ? (int)$input['limit'] : 10;
     $offset = ($page - 1) * $limit;
+    $search = trim($input['search'] ?? '');
+    $user_id = isset($input['user_id']) ? (int)$input['user_id'] : 0;
+
     $useLimit = $limit > 0;
 
-    $where = ["r.active = 1"];
-    $params = [];
+    if ($user_id <= 0) {
+        echo json_encode(['status' => false, 'message' => 'user_id is required']);
+        exit;
+    }
 
-    if ($search !== "") {
-        $where[] = "(r.remark LIKE :search OR r.location LIKE :search OR u_reporter.full_name LIKE :search OR e.asset_code LIKE :search OR e.name LIKE :search)";
+    $where = "r.user_id = :user_id";
+    $params = [':user_id' => $user_id];
+
+    if (!empty($search)) {
+        $where .= " AND (r.title LIKE :search OR r.remark LIKE :search 
+                    OR e.asset_code LIKE :search OR e.name LIKE :search)";
         $params[':search'] = "%$search%";
     }
 
-    if ($statusFilter !== "") {
-        if ($statusFilter === "ซ่อมเสร็จ" || $statusFilter === "ซ่อมไม่ได้") {
-            $where[] = "EXISTS (
-                SELECT 1 FROM repair_result rr
-                WHERE rr.repair_id = r.repair_id
-                AND rr.status = :statusFilter
-                ORDER BY rr.repair_result_id DESC
-                LIMIT 1
-            )";
-            $params[':statusFilter'] = $statusFilter;
-        } else {
-            $where[] = "r.status = :statusFilter";
-            $params[':statusFilter'] = $statusFilter;
-        }
-    }
 
-    $whereSQL = "WHERE " . implode(" AND ", $where);
-
-    $query = "SELECT 
-        r.repair_id,
-        r.equipment_id,
-        e.name AS equipment_name,
-        e.asset_code,
-        r.title,
-        r.remark,
-        r.request_date,
-        r.location,
-        r.status AS repair_status,
-        u_reporter.full_name AS reporter,
-        rt.name_type AS repair_type,
-        gu.group_name AS responsible_group
-    FROM repair r
-    LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
-    LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
-    LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
-    LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
-    $whereSQL
-    ORDER BY r.repair_id DESC";
+    $sql = "SELECT 
+                r.repair_id,
+                r.equipment_id,
+                e.name AS equipment_name,
+                e.asset_code,
+                r.title,
+                r.remark,
+                r.request_date,
+                r.location,
+                r.status AS repair_status,
+                r.user_id,
+                u_reporter.full_name AS reporter,
+                r.repair_type_id,
+                rt.name_type AS repair_type,
+                rt.group_user_id,
+                gu.group_name AS responsible_group
+            FROM repair r
+            LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
+            LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
+            LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
+            LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
+            WHERE $where
+            ORDER BY r.request_date DESC";
 
     if ($useLimit) {
-        $query .= " LIMIT :limit OFFSET :offset";
+        $sql .= " LIMIT :offset, :limit";
     }
 
-    $stmt = $dbh->prepare($query);
-
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value, PDO::PARAM_STR);
+    $stmt = $dbh->prepare($sql);
+    foreach ($params as $key => $val) {
+        $stmt->bindValue($key, $val);
     }
     if ($useLimit) {
-        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
     }
-
     $stmt->execute();
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // ดึงจำนวนทั้งหมดสำหรับ pagination
-    $countQuery = "SELECT COUNT(*) FROM repair r
-                   LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
-                   LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
-                   LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
-                   LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
-                   $whereSQL";
-    $countStmt = $dbh->prepare($countQuery);
-    foreach ($params as $key => $value) {
-        $countStmt->bindValue($key, $value, PDO::PARAM_STR);
-    }
-    $countStmt->execute();
-    $totalItems = (int)$countStmt->fetchColumn();
-
-    // ดึงจำนวน repair ต่ออุปกรณ์
-    $sqlCounter = "SELECT 
-                        e.equipment_id,
-                        COUNT(rr.repair_result_id) AS repair_count
-                   FROM equipments e
-                   LEFT JOIN repair r ON e.equipment_id = r.equipment_id
-                   LEFT JOIN repair_result rr ON r.repair_id = rr.repair_id
-                   GROUP BY e.equipment_id";
-    $stmtCounter = $dbh->prepare($sqlCounter);
-    $stmtCounter->execute();
-    $equipmentCounts = $stmtCounter->fetchAll(PDO::FETCH_ASSOC);
-    $equipmentRepairs = [];
-    foreach ($equipmentCounts as $eq) {
-        $equipmentRepairs[$eq['equipment_id']] = $eq['repair_count'];
+    $repairCount = [];
+    foreach ($repairs as $row) {
+        $equipId = $row['equipment_id'];
+        if (!isset($repairCount[$equipId])) {
+            $repairCount[$equipId] = 0;
+        }
+        $repairCount[$equipId]++;
     }
 
-    // ดึง repair_result + spare_parts + files แบบไม่ซ้ำ
+
     foreach ($repairs as &$repair) {
-        $repair['counter'] = $equipmentRepairs[$repair['equipment_id']] ?? 0;
+        $sql2 = "SELECT 
+                    rr.repair_result_id,
+                    rr.user_id AS responsible_id,
+                    u_responsible.full_name AS responsible_name,
+                    rr.performed_date,
+                    rr.solution,
+                    rr.cost,
+                    rr.status,
+                    rr.remark
+                 FROM repair_result rr
+                 LEFT JOIN users u_responsible ON rr.user_id = u_responsible.user_id
+                 WHERE rr.repair_id = ?";
+        $stmt2 = $dbh->prepare($sql2);
+        $stmt2->execute([$repair['repair_id']]);
+        $repairResults = $stmt2->fetchAll(PDO::FETCH_ASSOC);
 
-        // repair_result
-        $sqlResults = "SELECT 
-                        rr.repair_result_id,
-                        rr.user_id AS responsible_id,
-                        u_responsible.full_name AS responsible_name,
-                        rr.performed_date,
-                        rr.solution,
-                        rr.cost,
-                        rr.status,
-                        rr.remark
-                       FROM repair_result rr
-                       LEFT JOIN users u_responsible ON rr.user_id = u_responsible.user_id
-                       WHERE rr.repair_id = ?
-                       ORDER BY rr.repair_result_id ASC";
-        $stmtResults = $dbh->prepare($sqlResults);
-        $stmtResults->execute([$repair['repair_id']]);
-        $repairResults = $stmtResults->fetchAll(PDO::FETCH_ASSOC);
+        $results = [];
+        foreach ($repairResults as $row) {
+            $stmtFiles = $dbh->prepare("SELECT 
+                                            file_repair_result_id,
+                                            repair_file_name, 
+                                            repair_file_url, 
+                                            repair_type_name
+                                        FROM file_repair_result
+                                        WHERE repair_result_id = ?");
+            $stmtFiles->execute([$row['repair_result_id']]);
+            $files = $stmtFiles->fetchAll(PDO::FETCH_ASSOC);
 
-        foreach ($repairResults as &$result) {
-            // spare_parts
-            $sqlSpare = "SELECT sp.spare_part_id, sp.name AS spare_name
-                         FROM spare_parts_used spu
-                         LEFT JOIN spare_parts sp ON spu.spare_part_id = sp.spare_part_id
-                         WHERE spu.repair_result_id = ?";
-            $stmtSpare = $dbh->prepare($sqlSpare);
-            $stmtSpare->execute([$result['repair_result_id']]);
-            $result['spares'] = $stmtSpare->fetchAll(PDO::FETCH_ASSOC);
+            $stmtSpares = $dbh->prepare("SELECT 
+                                            sp.spare_part_id,
+                                            sp.name AS spare_name
+                                         FROM spare_parts_used spu
+                                         LEFT JOIN spare_parts sp ON spu.spare_part_id = sp.spare_part_id
+                                         WHERE spu.repair_result_id = ?");
+            $stmtSpares->execute([$row['repair_result_id']]);
+            $spares = $stmtSpares->fetchAll(PDO::FETCH_ASSOC);
 
-            // files
-            $sqlFiles = "SELECT 
-                            file_repair_result_id,
-                            repair_file_name,
-                            repair_file_url,
-                            repair_type_name
-                         FROM file_repair_result
-                         WHERE repair_result_id = ?";
-            $stmtFiles = $dbh->prepare($sqlFiles);
-            $stmtFiles->execute([$result['repair_result_id']]);
-            $result['files'] = $stmtFiles->fetchAll(PDO::FETCH_ASSOC);
+            $results[] = [
+                "repair_result_id" => $row["repair_result_id"],
+                "responsible_id"   => $row["responsible_id"],
+                "responsible_name" => $row["responsible_name"],
+                "performed_date"   => $row["performed_date"],
+                "solution"         => $row["solution"],
+                "cost"             => $row["cost"],
+                "status"           => $row["status"],
+                "remark"           => $row["remark"],
+                "spares"           => $spares, 
+                "files"            => $files   
+            ];
         }
 
-        $repair['repair_results'] = $repairResults;
+        $repair['repair_results'] = $results;
+        $repair['repair_count'] = $repairCount[$repair['equipment_id']];
     }
 
-    // สรุปจำนวนซ่อมเสร็จ / ซ่อมไม่ได้ / กำลังดำเนินการ
-    $summaryQuery = "SELECT 
-                        SUM(CASE WHEN rr.status = 'ซ่อมเสร็จ' THEN 1 ELSE 0 END) AS completed,
-                        SUM(CASE WHEN rr.status = 'ซ่อมไม่ได้' THEN 1 ELSE 0 END) AS failed,
-                        SUM(CASE WHEN rr.status NOT IN ('ซ่อมเสร็จ','ซ่อมไม่ได้') THEN 1 ELSE 0 END) AS in_progress
-                     FROM repair_result rr
-                     LEFT JOIN repair r ON rr.repair_id = r.repair_id
-                     WHERE r.active = 1";
-    $summaryStmt = $dbh->prepare($summaryQuery);
-    $summaryStmt->execute();
-    $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
+
+    $countSql = "SELECT COUNT(*) 
+                 FROM repair r
+                 LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
+                 WHERE $where";
+    $stmtCount = $dbh->prepare($countSql);
+    foreach ($params as $key => $val) {
+        $stmtCount->bindValue($key, $val);
+    }
+    $stmtCount->execute();
+    $total = $stmtCount->fetchColumn();
 
     echo json_encode([
         "status" => "success",
-        "data" => $repairs,
-        "summary" => [
-            "completed" => (int)$summary['completed'],
-            "failed" => (int)$summary['failed'],
-            "in_progress" => (int)$summary['in_progress']
-        ],
-        "pagination" => [
-            "totalItems" => $totalItems,
-            "totalPages" => $limit > 0 ? ceil($totalItems / $limit) : 1,
-            "currentPage" => $page,
-            "limit" => $limit
-        ]
+        "page"   => $page,
+        "limit"  => $limit,
+        "total"  => (int)$total,
+        "data"   => $repairs
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     echo json_encode([
         "status" => "error",
         "message" => $e->getMessage()
-    ], JSON_UNESCAPED_UNICODE);
+    ]);
 }
-?>
