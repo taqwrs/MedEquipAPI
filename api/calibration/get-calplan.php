@@ -12,12 +12,11 @@ try {
 
     $user_id = trim($input['user_id'] ?? '');
 
-    // ดึง group_user_id ของผู้ใช้
     $groupUserIds = [];
     if ($user_id !== '') {
         $stmtGroup = $dbh->prepare("
-            SELECT ru.group_user_id 
-            FROM relation_user ru 
+            SELECT ru.group_user_id
+            FROM relation_user ru
             INNER JOIN users u ON ru.u_id = u.ID
             WHERE u.user_id = :user_id
         ");
@@ -32,7 +31,6 @@ try {
     $offset = ($page - 1) * $limit;
     $useLimit = $limit > 0;
 
-    // Build WHERE conditions
     $where = ["cp.is_active IN (1)"];
     $params = [];
 

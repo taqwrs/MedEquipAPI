@@ -26,7 +26,7 @@ try {
 
     $useLimit = $limit > 0;
 
-    // ดึง group_user_id ของ user ด้วย join users
+    // ดึงกลุ่มที่ user สังกัด
     $sqlUserGroups = "
         SELECT ru.group_user_id
         FROM relation_user ru
@@ -37,7 +37,6 @@ try {
     $stmtUserGroups->execute([':user_id' => $user_id]);
     $userGroups = $stmtUserGroups->fetchAll(PDO::FETCH_COLUMN);
 
-    // สร้าง WHERE condition สำหรับ user + group
     $where = "(r.user_id = :user_id"; 
     $params = [':user_id' => $user_id];
 
@@ -52,14 +51,12 @@ try {
     }
     $where .= ")";
 
-    // เพิ่ม search filter
     if (!empty($search)) {
         $where .= " AND (r.title LIKE :search OR r.remark LIKE :search 
                     OR e.asset_code LIKE :search OR e.name LIKE :search)";
         $params[':search'] = "%$search%";
     }
 
-    // Query หลัก
     $sql = "SELECT 
                 r.repair_id,
                 r.equipment_id,
@@ -149,7 +146,6 @@ try {
             $stmtSpares->execute([$row['repair_result_id']]);
             $spares = $stmtSpares->fetchAll(PDO::FETCH_ASSOC);
 
-            // ส่งเฉพาะชื่ออะไหล่เป็น array ของ string
             $spareNames = array_map(fn($sp) => $sp['spare_name'], $spares);
 
             $results[] = [
@@ -161,7 +157,7 @@ try {
                 "cost"             => $row["cost"],
                 "status"           => $row["status"],
                 "remark"           => $row["remark"],
-                "spares"           => $spareNames,  // <-- array ของ string
+                "spares"           => $spareNames,  
                 "files"            => $files
             ];
         }
@@ -188,7 +184,8 @@ try {
         "page"   => $page,
         "limit"  => $limit,
         "total"  => (int)$total,
-        "data"   => $repairs
+        "data"   => $repairs,
+        "user_groups" => $userGroups  
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
