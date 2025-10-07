@@ -339,7 +339,6 @@ try {
         "message" => "Equipment transfer created successfully",
         "transfer_id" => (int)$transfer_id,
         "transfer_type" => $input['transfer_type'],
-        "status" => $transfer_status,
         "status_transfer" => $transfer_status, // เพิ่มข้อมูลใน response
         "old_subcategory_id" => (int)$old_subcategory_id,
         "new_subcategory_id" => (int)$new_subcategory_id,
