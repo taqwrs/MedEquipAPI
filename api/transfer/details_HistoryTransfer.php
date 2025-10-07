@@ -1,4 +1,4 @@
-<?php 
+<?php
 include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
@@ -20,7 +20,8 @@ try {
     }
 
     $u_id = $decoded->data->ID ?? null;
-    if (!$u_id) throw new Exception("User ID not found");
+    if (!$u_id)
+        throw new Exception("User ID not found");
 
     $baseWhere = "WHERE (ht.transfer_user_id = :u_id OR ht.recipient_user_id = :u_id)
         AND (
@@ -30,7 +31,7 @@ try {
         AND ht.history_transfer_id = :history_transfer_id";
 
     $sql = "
-        SELECT DISTINCT
+    SELECT DISTINCT
         ht.history_transfer_id,
         ht.transfer_id,
         ht.transfer_type,
@@ -53,25 +54,30 @@ try {
         e.asset_code,
         u_transfer.full_name AS transfer_user_name,
         u_recipient.full_name AS recipient_user_name,
+        d_transfer_user.department_name AS transfer_user_department_name,
+        d_recipient_user.department_name AS recipient_user_department_name,
         d_from.department_name AS from_department_name,
         d_to.department_name AS to_department_name,
         d_now_location.department_name AS now_equip_location_department_name,
         CASE WHEN ht.transfer_type = 'โอนย้ายชั่วคราว' THEN sc_old.name ELSE NULL END AS old_subcategory_name,
         CASE WHEN ht.transfer_type = 'โอนย้ายถาวร' THEN sc_now.name ELSE NULL END AS now_subcategory_name
-        FROM history_transfer ht
-        LEFT JOIN equipments e ON ht.equipment_id = e.equipment_id
-        LEFT JOIN users u_transfer ON ht.transfer_user_id = u_transfer.ID
-        LEFT JOIN users u_recipient ON ht.recipient_user_id = u_recipient.ID
-        LEFT JOIN departments d_from ON ht.from_department_id = d_from.department_id
-        LEFT JOIN departments d_to ON ht.to_department_id = d_to.department_id
-        LEFT JOIN departments d_now_location ON ht.now_equip_location_department_id = d_now_location.department_id
-        LEFT JOIN equipment_subcategories sc_old ON ht.old_subcategory_id = sc_old.subcategory_id 
-                                                    AND ht.transfer_type = 'โอนย้ายชั่วคราว'
-        LEFT JOIN equipment_subcategories sc_now ON ht.now_subcategory_id = sc_now.subcategory_id 
-                                                    AND ht.transfer_type = 'โอนย้ายถาวร'
-        {$baseWhere}
-        ORDER BY ht.history_transfer_id DESC
-    ";
+    FROM history_transfer ht
+    LEFT JOIN equipments e ON ht.equipment_id = e.equipment_id
+    LEFT JOIN users u_transfer ON ht.transfer_user_id = u_transfer.ID
+    LEFT JOIN users u_recipient ON ht.recipient_user_id = u_recipient.ID
+    LEFT JOIN departments d_transfer_user ON u_transfer.department_id = d_transfer_user.department_id
+    LEFT JOIN departments d_recipient_user ON u_recipient.department_id = d_recipient_user.department_id
+    LEFT JOIN departments d_from ON ht.from_department_id = d_from.department_id
+    LEFT JOIN departments d_to ON ht.to_department_id = d_to.department_id
+    LEFT JOIN departments d_now_location ON ht.now_equip_location_department_id = d_now_location.department_id
+    LEFT JOIN equipment_subcategories sc_old ON ht.old_subcategory_id = sc_old.subcategory_id 
+                                                AND ht.transfer_type = 'โอนย้ายชั่วคราว'
+    LEFT JOIN equipment_subcategories sc_now ON ht.now_subcategory_id = sc_now.subcategory_id 
+                                                AND ht.transfer_type = 'โอนย้ายถาวร'
+    {$baseWhere}
+    ORDER BY ht.history_transfer_id DESC
+";
+
 
     $stmt = $dbh->prepare($sql);
     $stmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
@@ -148,12 +154,14 @@ try {
 
         $transfer_user = $history['transfer_user_id'] ? [
             "ID" => $history['transfer_user_id'],
-            "full_name" => $history['transfer_user_name']
+            "full_name" => $history['transfer_user_name'],
+            "department_name" => $history['transfer_user_department_name']
         ] : null;
 
         $recipient_user = $history['recipient_user_id'] ? [
             "ID" => $history['recipient_user_id'],
-            "full_name" => $history['recipient_user_name']
+            "full_name" => $history['recipient_user_name'],
+            "department_name" => $history['recipient_user_department_name']
         ] : null;
 
         $status_display = '';
