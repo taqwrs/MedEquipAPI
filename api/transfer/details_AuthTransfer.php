@@ -3,15 +3,18 @@ include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(["status" => "error", "message" => "Method not allowed"]);
+    echo json_encode(["status" => "error", "message" => "POST method only"]);
     exit;
 }
 
 try {
+    // เปลี่ยนจาก $_POST เป็น json_decode
+    $input = json_decode(file_get_contents("php://input"), true);
+    
     $u_id = $decoded->data->ID ?? null;
     if (!$u_id) {
         throw new Exception("User ID not found");
@@ -36,8 +39,9 @@ try {
         )";
     
     $searchWhere = '';
-    if (!empty($_POST['keyword'])) {
-        $keyword = trim($_POST['keyword']);
+    // เปลี่ยนจาก $_POST['keyword'] เป็น $input['keyword']
+    if (!empty($input['keyword'])) {
+        $keyword = trim($input['keyword']);
         $searchWhere .= " AND e.name LIKE :keyword";
         $params[':keyword'] = "%{$keyword}%";
     }
@@ -63,8 +67,9 @@ try {
     error_log("DEBUG: COUNT SQL => $countSQL");
 
     $countStmt = $dbh->prepare($countSQL);
-    foreach ($params as $key => $value) {
-        $countStmt->bindValue($key, $value);
+    $countStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
+    if (!empty($input['keyword'])) {
+        $countStmt->bindValue(':keyword', $params[':keyword'], PDO::PARAM_STR);
     }
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
@@ -93,8 +98,9 @@ try {
     error_log("DEBUG: DATA SQL => $dataSQL");
 
     $dataStmt = $dbh->prepare($dataSQL);
-    foreach ($params as $key => $value) {
-        $dataStmt->bindValue($key, $value);
+    $dataStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
+    if (!empty($input['keyword'])) {
+        $dataStmt->bindValue(':keyword', $params[':keyword'], PDO::PARAM_STR);
     }
     $dataStmt->execute();
 
@@ -115,12 +121,13 @@ try {
         $subcategory_ids[] = (int)$row['subcategory_id'];
     }
 
-
+    // ดึงข้อมูล admins
     $admins_data = [];
     if (!empty($subcategory_ids)) {
         $subcategory_ids = array_unique($subcategory_ids);
         $placeholders = str_repeat('?,', count($subcategory_ids) - 1) . '?';
 
+        // ใช้รูปแบบ SQL เหมือนไฟล์ที่ 2
         $adminSQL = "
             SELECT DISTINCT
                 es.subcategory_id,
@@ -153,20 +160,36 @@ try {
             if (!isset($admins_data[$subcategory_id])) {
                 $admins_data[$subcategory_id] = [];
             }
-            if (!isset($admins_data[$subcategory_id][$group_id])) {
-                $admins_data[$subcategory_id][$group_id] = [
+            
+            $found = false;
+            foreach ($admins_data[$subcategory_id] as &$group) {
+                if ($group['group_id'] == $group_id) {
+                    $group['user_group'][] = [
+                        "ID" => (int)$admin['ID'],
+                        "user_id" => $admin['user_id'],
+                        "full_name" => $admin['full_name'],
+                        "department_name" => $admin['department_name']
+                    ];
+                    $found = true;
+                    break;
+                }
+            }
+            
+            if (!$found) {
+                $admins_data[$subcategory_id][] = [
                     "group_id" => $group_id,
                     "group_name" => $admin['group_name'],
                     "group_type" => $admin['group_type'],
-                    "user_group" => []
+                    "user_group" => [
+                        [
+                            "ID" => (int)$admin['ID'],
+                            "user_id" => $admin['user_id'],
+                            "full_name" => $admin['full_name'],
+                            "department_name" => $admin['department_name']
+                        ]
+                    ]
                 ];
             }
-            $admins_data[$subcategory_id][$group_id]["user_group"][] = [
-                "ID" => (int)$admin['ID'],
-                "user_id" => $admin['user_id'],
-                "full_name" => $admin['full_name'],
-                "department_name" => $admin['department_name']
-            ];
         }
     }
 
@@ -174,7 +197,7 @@ try {
         $subcategory_id = $equipment['subcategory_id'];
         $equipment['admins'] = [];
         if (isset($admins_data[$subcategory_id])) {
-            $equipment['admins'] = array_values($admins_data[$subcategory_id]);
+            $equipment['admins'] = $admins_data[$subcategory_id];
         }
     }
 
@@ -186,7 +209,7 @@ try {
 } catch (Exception $e) {
     echo json_encode([
         "status" => "error",
-        "message" => "Database error: " . $e->getMessage()
+        "message" => $e->getMessage()
     ], JSON_UNESCAPED_UNICODE);
 }
 ?>
