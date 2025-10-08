@@ -12,17 +12,32 @@ try {
 
     $user_id = trim($input['user_id'] ?? '');
 
+
+    $isAdmin = false;
     $groupUserIds = [];
+    
     if ($user_id !== '') {
-        $stmtGroup = $dbh->prepare("
-            SELECT ru.group_user_id
-            FROM relation_user ru
-            INNER JOIN users u ON ru.u_id = u.ID
-            WHERE u.user_id = :user_id
-        ");
-        $stmtGroup->bindValue(':user_id', $user_id, PDO::PARAM_STR);
-        $stmtGroup->execute();
-        $groupUserIds = $stmtGroup->fetchAll(PDO::FETCH_COLUMN);
+
+        $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE user_id = :user_id");
+        $stmtRole->bindValue(':user_id', $user_id, PDO::PARAM_STR);
+        $stmtRole->execute();
+        $roleId = $stmtRole->fetchColumn();
+        
+
+        if ($roleId == 9) {
+            $isAdmin = true;
+        } else {
+
+            $stmtGroup = $dbh->prepare("
+                SELECT ru.group_user_id
+                FROM relation_user ru
+                INNER JOIN users u ON ru.u_id = u.ID
+                WHERE u.user_id = :user_id
+            ");
+            $stmtGroup->bindValue(':user_id', $user_id, PDO::PARAM_STR);
+            $stmtGroup->execute();
+            $groupUserIds = $stmtGroup->fetchAll(PDO::FETCH_COLUMN);
+        }
     }
 
     $search = trim($input['search'] ?? '');
@@ -39,14 +54,20 @@ try {
         $params[':search'] = "%$search%";
     }
 
-    if (!empty($groupUserIds)) {
-        $inQuery = implode(',', array_fill(0, count($groupUserIds), '?'));
-        $where[] = "cp.group_user_id IN ($inQuery)";
+
+    if (!$isAdmin && !empty($groupUserIds)) {
+        $placeholders = [];
+        foreach ($groupUserIds as $index => $groupId) {
+            $key = ":group_id_$index";
+            $placeholders[] = $key;
+            $params[$key] = $groupId;
+        }
+        $where[] = "cp.group_user_id IN (" . implode(',', $placeholders) . ")";
     }
 
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
-    // Query หลัก
+
     $query = "
         SELECT cp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,
                COUNT(DISTINCT dcp.details_cal_id) AS total_schedules
@@ -60,7 +81,7 @@ try {
         ORDER BY cp.plan_id DESC
     ";
 
-    // Query นับจำนวนทั้งหมด
+
     $countQuery = "
         SELECT COUNT(DISTINCT cp.plan_id) 
         FROM calibration_plans cp
@@ -71,46 +92,54 @@ try {
     ";
 
     $countStmt = $dbh->prepare($countQuery);
-    foreach ($params as $k => $v) $countStmt->bindValue($k, $v, PDO::PARAM_STR);
-    if (!empty($groupUserIds)) {
-        foreach ($groupUserIds as $i => $id) {
-            $countStmt->bindValue($i + 1, $id, PDO::PARAM_INT);
-        }
+    foreach ($params as $k => $v) {
+        $countStmt->bindValue($k, $v, is_int($v) ? PDO::PARAM_INT : PDO::PARAM_STR);
     }
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
 
-    // เพิ่ม LIMIT OFFSET
-    if ($useLimit) $query .= " LIMIT :limit OFFSET :offset";
+
+    if ($useLimit) {
+        $query .= " LIMIT :limit OFFSET :offset";
+        $params[':limit'] = $limit;
+        $params[':offset'] = $offset;
+    }
 
     $stmt = $dbh->prepare($query);
-    foreach ($params as $k => $v) $stmt->bindValue($k, $v, PDO::PARAM_STR);
-    if (!empty($groupUserIds)) {
-        foreach ($groupUserIds as $i => $id) {
-            $stmt->bindValue($i + 1, $id, PDO::PARAM_INT);
+    foreach ($params as $k => $v) {
+        if ($k === ':limit' || $k === ':offset') {
+            $stmt->bindValue($k, $v, PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue($k, $v, is_int($v) ? PDO::PARAM_INT : PDO::PARAM_STR);
         }
-    }
-    if ($useLimit) {
-        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     }
     $stmt->execute();
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $planIds = array_column($results, 'plan_id');
 
-    // Mapping equipments
     $equipmentsMap = [];
     if (!empty($planIds)) {
-        $inQuery = implode(',', array_fill(0, count($planIds), '?'));
+        $equipPlaceholders = [];
+        $equipParams = [];
+        foreach ($planIds as $index => $planId) {
+            $key = ":plan_id_equip_$index";
+            $equipPlaceholders[] = $key;
+            $equipParams[$key] = $planId;
+        }
+        
         $equipStmt = $dbh->prepare("
             SELECT pe.plan_id, e.equipment_id, e.name, e.asset_code
             FROM plan_equipments pe
             LEFT JOIN equipments e ON pe.equipment_id = e.equipment_id
-            WHERE pe.plan_id IN ($inQuery)
+            WHERE pe.plan_id IN (" . implode(',', $equipPlaceholders) . ")
         ");
-        $equipStmt->execute($planIds);
+        foreach ($equipParams as $k => $v) {
+            $equipStmt->bindValue($k, $v, PDO::PARAM_INT);
+        }
+        $equipStmt->execute();
         $equipmentsRaw = $equipStmt->fetchAll(PDO::FETCH_ASSOC);
+        
         foreach ($equipmentsRaw as $eq) {
             $equipmentsMap[$eq['plan_id']][] = [
                 "equipment_id" => (int)$eq['equipment_id'],
@@ -120,17 +149,27 @@ try {
         }
     }
 
-    // Mapping files
     $filesMap = [];
     if (!empty($planIds)) {
-        $inQuery = implode(',', array_fill(0, count($planIds), '?'));
+        $filePlaceholders = [];
+        $fileParams = [];
+        foreach ($planIds as $index => $planId) {
+            $key = ":plan_id_file_$index";
+            $filePlaceholders[] = $key;
+            $fileParams[$key] = $planId;
+        }
+        
         $fileStmt = $dbh->prepare("
             SELECT plan_id, file_cal_id, file_cal_name, file_cal_url, cal_type_name
             FROM file_cal
-            WHERE plan_id IN ($inQuery)
+            WHERE plan_id IN (" . implode(',', $filePlaceholders) . ")
         ");
-        $fileStmt->execute($planIds);
+        foreach ($fileParams as $k => $v) {
+            $fileStmt->bindValue($k, $v, PDO::PARAM_INT);
+        }
+        $fileStmt->execute();
         $filesRaw = $fileStmt->fetchAll(PDO::FETCH_ASSOC);
+        
         foreach ($filesRaw as $file) {
             $filesMap[$file['plan_id']][] = [
                 "file_cal_id" => (int)$file['file_cal_id'],
@@ -141,7 +180,7 @@ try {
         }
     }
 
-    // Mapping ผลลัพธ์
+
     foreach ($results as &$res) {
         $res['equipments'] = $equipmentsMap[$res['plan_id']] ?? [];
         $res['files'] = $filesMap[$res['plan_id']] ?? [];

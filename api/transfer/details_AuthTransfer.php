@@ -122,37 +122,37 @@ try {
     }
 
     // ดึงข้อมูล admins
-    $admins_data = [];
-    if (!empty($subcategory_ids)) {
-        $subcategory_ids = array_unique($subcategory_ids);
-        $placeholders = str_repeat('?,', count($subcategory_ids) - 1) . '?';
+  // ดึงข้อมูล admins
+$admins_data = [];
+if (!empty($subcategory_ids)) {
+    $subcategory_ids = array_unique($subcategory_ids);
+    $placeholders = str_repeat('?,', count($subcategory_ids) - 1) . '?';
 
-        // ใช้รูปแบบ SQL เหมือนไฟล์ที่ 2
-        $adminSQL = "
-            SELECT DISTINCT
-                es.subcategory_id,
-                gu.group_user_id as group_id,
-                gu.group_name,
-                gu.type as group_type,
-                u.ID,
-                u.user_id,
-                u.full_name,
-                ud.department_name
-            FROM equipment_subcategories es
-            INNER JOIN relation_group rg ON es.subcategory_id = rg.subcategory_id
-            INNER JOIN group_user gu ON rg.group_user_id = gu.group_user_id
-            INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
-            INNER JOIN users u ON ru.u_id = u.ID
-            LEFT JOIN departments ud ON u.department_id = ud.department_id
-            WHERE es.subcategory_id IN ($placeholders)
-                AND gu.type = 'ผู้ดูแลหลัก'
-            ORDER BY es.subcategory_id, gu.group_user_id, u.ID
-        ";
-        error_log("DEBUG: ADMIN SQL => $adminSQL");
+    $adminSQL = "
+        SELECT DISTINCT
+            es.subcategory_id,
+            gu.group_user_id as group_id,
+            gu.group_name,
+            gu.type as group_type,
+            u.ID,
+            u.user_id,
+            u.full_name,
+            ud.department_name
+        FROM equipment_subcategories es
+        INNER JOIN relation_group rg ON es.subcategory_id = rg.subcategory_id
+        INNER JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+        INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
+        INNER JOIN users u ON ru.u_id = u.ID
+        LEFT JOIN departments ud ON u.department_id = ud.department_id
+        WHERE es.subcategory_id IN ($placeholders)
+            AND gu.type = 'ผู้ดูแลหลัก'
+        ORDER BY es.subcategory_id, gu.group_user_id, u.ID
+    ";
+    error_log("DEBUG: ADMIN SQL => $adminSQL");
 
-        $adminStmt = $dbh->prepare($adminSQL);
-        $adminStmt->execute($subcategory_ids);
-
+    $adminStmt = $dbh->prepare($adminSQL);
+    // Fix: Execute with array values, not the array itself
+    $adminStmt->execute(array_values($subcategory_ids));
         while ($admin = $adminStmt->fetch(PDO::FETCH_ASSOC)) {
             $subcategory_id = (int)$admin['subcategory_id'];
             $group_id = (int)$admin['group_id'];
