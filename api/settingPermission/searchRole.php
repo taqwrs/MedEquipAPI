@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/pagination_helper.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -9,57 +10,30 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization");
 try {
     $input = json_decode(file_get_contents("php://input"), true);
 
-    $search = trim($input['search'] ?? '');
-    $page = (int) ($input['page'] ?? 1);
-    $limit = (int) ($input['limit'] ?? 5);
-    $offset = ($page - 1) * $limit;
-
-    $where = "WHERE 1";
-    $params = [];
-
-    if ($search !== '') {
-        $where .= " AND r.role_name LIKE :search";
-        $params[':search'] = "%{$search}%";
-    }
-
-    $stmtCount = $dbh->prepare("
-        SELECT COUNT(*) as total
-        FROM roles r
-        $where
-    ");
-    $stmtCount->execute($params);
-    $totalItems = (int) $stmtCount->fetchColumn();
-    $totalPages = ceil($totalItems / $limit);
-
-    $stmt = $dbh->prepare("
+    $baseSql = "
         SELECT 
             r.role_id,
             r.role_name
         FROM roles r
-        $where
-        ORDER BY r.role_id DESC
-        LIMIT :limit OFFSET :offset
-    ");
+    ";
 
-    foreach ($params as $key => $val) {
-        $stmt->bindValue($key, $val);
-    }
-    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    $countSql = "
+        SELECT COUNT(*) 
+        FROM roles r
+    ";
 
-    $stmt->execute();
-    $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $searchFields = ['role_name'];
 
-    echo json_encode([
-        "status" => "success",
-        "data" => $results,
-        "pagination" => [
-            "totalItems" => $totalItems,
-            "totalPages" => $totalPages,
-            "currentPage" => $page,
-            "limit" => $limit
-        ]
-    ], JSON_UNESCAPED_UNICODE);
+    $response = handlePaginatedSearch(
+        $dbh,
+        $input,
+        $baseSql,
+        $countSql,
+        $searchFields,
+        'ORDER BY r.role_id DESC'
+    );
+
+    echo json_encode($response, JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     echo json_encode([
