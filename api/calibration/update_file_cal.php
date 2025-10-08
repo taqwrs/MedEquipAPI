@@ -32,12 +32,13 @@ try {
         }
     }
 
-    // ---------------- ลบ URL ----------------
-    if (!empty($_POST['url_to_delete'])) {
-        $urlsToDelete = is_array($_POST['url_to_delete']) ? $_POST['url_to_delete'] : [$_POST['url_to_delete']];
-        foreach ($urlsToDelete as $url) {
-            $stmt = $dbh->prepare("DELETE FROM file_cal WHERE plan_id = ? AND file_cal_url = ?");
-            $stmt->execute([$plan_id, $url]);
+    // ---------------- ลบ URL (ใช้ ID แทน URL string) ----------------
+    if (!empty($_POST['url_ids_to_delete'])) {
+        $urlIds = is_array($_POST['url_ids_to_delete']) ? $_POST['url_ids_to_delete'] : [$_POST['url_ids_to_delete']];
+        foreach ($urlIds as $urlId) {
+            // ลบโดยใช้ ID เหมือนกับการลบไฟล์
+            $stmt = $dbh->prepare("DELETE FROM file_cal WHERE file_cal_id = ? AND plan_id = ?");
+            $stmt->execute([$urlId, $plan_id]);
         }
     }
 
@@ -67,10 +68,13 @@ try {
         $urls = is_array($_POST['file_cal_url']) ? $_POST['file_cal_url'] : [$_POST['file_cal_url']];
         foreach ($urls as $key => $url) {
             if (!filter_var($url, FILTER_VALIDATE_URL)) continue;
+            
+            // ตรวจสอบว่า URL ซ้ำหรือไม่
             $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM file_cal WHERE plan_id = ? AND file_cal_url = ?");
             $stmtCheck->execute([$plan_id, $url]);
             if ($stmtCheck->fetchColumn() > 0) continue;
 
+            // สร้างชื่อไฟล์ที่ไม่ซ้ำ
             $baseName = "ฟอร์มบันทึกผลการสอบเทียบ";
             $customName = $baseName;
             $counter = 1;
@@ -82,6 +86,7 @@ try {
                 $customName = $baseName . '-' . sprintf('%02d', $counter);
             }
 
+            // หา index ที่ถูกต้องสำหรับ cal_type_name
             $typeIndex = count($_FILES['file_cal']['name'] ?? []) + $key;
             $typeName = $_POST['cal_type_name'][$typeIndex] ?? "ลิงก์";
 
@@ -92,6 +97,7 @@ try {
 
     $dbh->commit();
 
+    // ดึงข้อมูลไฟล์ทั้งหมดหลังจากอัปเดต
     $stmt = $dbh->prepare("SELECT file_cal_id AS id, file_cal_name, file_cal_url, cal_type_name FROM file_cal WHERE plan_id = ? ORDER BY file_cal_id ASC");
     $stmt->execute([$plan_id]);
     $allFiles = $stmt->fetchAll(PDO::FETCH_ASSOC);

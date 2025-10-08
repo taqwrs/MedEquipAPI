@@ -27,10 +27,18 @@ try {
         'rejected' => 'ไม่อนุมัติ',
     ];
 
-    // ตรวจสอบสิทธิ์ผู้ใช้และกลุ่ม
+    // ตรวจ role_id ของผู้ใช้
+    $roleId = 0;
+    if ($user_id !== '') {
+        $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE user_id = :user_id");
+        $stmtRole->bindValue(':user_id', $user_id, PDO::PARAM_STR);
+        $stmtRole->execute();
+        $roleId = (int)$stmtRole->fetchColumn();
+    }
+
     $isAdminMain = false;
     $groupUserIds = [];
-    if ($user_id !== '') {
+    if ($user_id !== '' && $roleId !== 9) { // ถ้าไม่ใช่ role_id 9
         $stmtGroup = $dbh->prepare("
             SELECT gu.group_user_id, gu.type
             FROM relation_user ru
@@ -63,22 +71,25 @@ try {
         $params[':statusFilter'] = $statusMap[$statusFilter];
     }
 
-    if ($isAdminMain && !empty($groupUserIds)) {
-        $inQuery = [];
-        foreach ($groupUserIds as $k => $id) {
-            $key = ":group_$k";
-            $inQuery[] = $key;
-            $params[$key] = $id;
+    // เงื่อนไขกรองรายการ
+    if ($roleId !== 9) { // ถ้าไม่ใช่ role_id 9
+        if ($isAdminMain && !empty($groupUserIds)) {
+            $inQuery = [];
+            foreach ($groupUserIds as $k => $id) {
+                $key = ":group_$k";
+                $inQuery[] = $key;
+                $params[$key] = $id;
+            }
+            $where[] = "w.equipment_id IN (
+                SELECT e.equipment_id
+                FROM equipments e
+                INNER JOIN relation_group rg ON e.subcategory_id = rg.subcategory_id
+                WHERE rg.group_user_id IN (" . implode(',', $inQuery) . ")
+            )";
+        } else {
+            $where[] = "w.user_id = :user_id";
+            $params[':user_id'] = $user_id;
         }
-        $where[] = "w.equipment_id IN (
-            SELECT e.equipment_id
-            FROM equipments e
-            INNER JOIN relation_group rg ON e.subcategory_id = rg.subcategory_id
-            WHERE rg.group_user_id IN (" . implode(',', $inQuery) . ")
-        )";
-    } else {
-        $where[] = "w.user_id = :user_id";
-        $params[':user_id'] = $user_id;
     }
 
     $whereSQL = "WHERE " . implode(" AND ", $where);
