@@ -1,6 +1,6 @@
 <?php
 include "../config/jwt.php";
-// include "../config/LogModel.php";
+include "../config/LogModel.php";
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(["status" => "error", "message" => "POST method only"]);
@@ -9,7 +9,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $dbh->beginTransaction();
-    // $log = new LogModel($dbh);
+    $log = new LogModel($dbh);
+    $user_id = $decoded->data->ID ?? null;
+    if (!$user_id)
+        throw new Exception("User ID not found");
 
     $equipment_id = $_POST['equipment_id'] ?? null;
     if (!$equipment_id)
@@ -17,52 +20,73 @@ try {
 
     $uploadedFiles = [];
     $uploadDir = __DIR__ . "/../file-upload/file_equip/";
+    if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+
     $files = $_FILES['file_equip'] ?? null;
 
-    // ตรวจสอบว่ามีไฟล์อัปโหลดหรือไม่
-    if ($files && $files['name'][0] !== "") {
-        // ถ้าเป็น single file → แปลงเป็น array
-        if (!is_array($files['name'])) {
-            $files = [
-                'name' => [$files['name']],
-                'type' => [$files['type']],
-                'tmp_name' => [$files['tmp_name']],
-                'error' => [$files['error']],
-                'size' => [$files['size']],
-            ];
-        }
+    // ไม่มีไฟล์ → ส่งกลับสำเร็จ
+    if (!$files || $files['name'][0] === "") {
+        echo json_encode(["status" => "success", "files" => []]);
+        exit;
+    }
+
+    // normalize single file → array
+    if (!is_array($files['name'])) {
+        $files = [
+            'name' => [$files['name']],
+            'type' => [$files['type']],
+            'tmp_name' => [$files['tmp_name']],
+            'error' => [$files['error']],
+            'size' => [$files['size']],
+        ];
     }
 
     foreach ($files['name'] as $key => $name) {
-        if ($files['error'][$key] === UPLOAD_ERR_OK) {
+        try {
+            if ($files['error'][$key] !== UPLOAD_ERR_OK) continue;
+
             $tmp = $files['tmp_name'][$key];
             $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
             $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'docx'];
-            if (!in_array($ext, $allowed))
-                throw new Exception("Invalid file format: $name");
+            if (!in_array($ext, $allowed)) continue;
 
             $newName = uniqid('equip_', true) . '.' . $ext;
-            if (!move_uploaded_file($tmp, $uploadDir . $newName))
-                throw new Exception("Upload failed: $name");
+            if (!move_uploaded_file($tmp, $uploadDir . $newName)) continue;
 
             $url = "/file-upload/file_equip/$newName";
-            // $typeName = trim($_POST['equip_type_name'][$key] ?? "");
-            // if ($typeName === "") {
-            //     throw new Exception("equip_type_name ห้ามว่างสำหรับไฟล์: $name");
-            // }
             $typeName = $_POST['equip_type_name'][$key] ?? "";
-            $stmt = $dbh->prepare("INSERT INTO file_equip(file_equip_name, equipment_id, equip_url, equip_type_name, upload_at) VALUES (?, ?, ?, ?, NOW())");
+
+            // บันทึกลง DB
+            $stmt = $dbh->prepare("
+                INSERT INTO file_equip(file_equip_name, equipment_id, equip_url, equip_type_name, upload_at) 
+                VALUES (?, ?, ?, ?, NOW())
+            ");
             $stmt->execute([$name, $equipment_id, $url, $typeName]);
 
-            $uploadedFiles[] = $url;
+            // บันทึก log
+            $log->insertLog($user_id, 'file_equip', 'INSERT', null, [
+                'equipment_id' => $equipment_id,
+                'file_name' => $name,
+                'file_url' => $url,
+                'type' => $typeName
+            ], 'register_logs');
 
-            // $log->insertLog($employee_code, 'file_equip', 'INSERT', null, ['equipment_id'=>$equipment_id,'file'=>$name]);
+            $uploadedFiles[] = [
+                "name" => $name,
+                "saved" => $newName,
+                "url" => $url,
+                "type" => $typeName
+            ];
+        } catch (Exception $e) {
+            // ถ้าไฟล์นี้ล้มเหลว → ข้ามไปไฟล์ต่อไป
+            continue;
         }
     }
 
     $dbh->commit();
     echo json_encode(["status" => "success", "files" => $uploadedFiles]);
+
 } catch (Exception $e) {
-    $dbh->rollBack();
+    if ($dbh->inTransaction()) $dbh->rollBack();
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
