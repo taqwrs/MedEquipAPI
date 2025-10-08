@@ -17,12 +17,15 @@ try {
         throw new Exception("User ID not found");
     }
     
-    // แปลงเป็น int เพื่อความปลอดภัย
     $u_id = (int)$u_id;
     if ($u_id <= 0) {
         throw new Exception("Invalid User ID");
     }
-    
+
+    $params = [
+        ':u_id' => $u_id
+    ];
+
     $baseWhere = "
         ru.u_id = :u_id 
         AND gu.type = 'ผู้ดูแลหลัก'
@@ -33,7 +36,12 @@ try {
         )";
     
     $searchWhere = '';
-    
+    if (!empty($_POST['keyword'])) {
+        $keyword = trim($_POST['keyword']);
+        $searchWhere .= " AND e.name LIKE :keyword";
+        $params[':keyword'] = "%{$keyword}%";
+    }
+
     $joinTables = "
         FROM equipments e
         INNER JOIN equipment_subcategories es ON e.subcategory_id = es.subcategory_id
@@ -51,13 +59,17 @@ try {
         WHERE $baseWhere $searchWhere
     ";
 
-    // นับจำนวนทั้งหมด
-    $countStmt = $dbh->prepare("SELECT COUNT(DISTINCT e.equipment_id) as total $joinTables");
-    $countStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
+    $countSQL = "SELECT COUNT(DISTINCT e.equipment_id) as total $joinTables";
+    error_log("DEBUG: COUNT SQL => $countSQL");
+
+    $countStmt = $dbh->prepare($countSQL);
+    foreach ($params as $key => $value) {
+        $countStmt->bindValue($key, $value);
+    }
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
 
-    $dataStmt = $dbh->prepare("
+    $dataSQL = "
         SELECT DISTINCT
             e.equipment_id,
             e.name as equipment_name,
@@ -77,14 +89,17 @@ try {
             END as transfer_status
         $joinTables
         ORDER BY e.updated_at DESC
-    ");
-    
-    $dataStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
+    ";
+    error_log("DEBUG: DATA SQL => $dataSQL");
+
+    $dataStmt = $dbh->prepare($dataSQL);
+    foreach ($params as $key => $value) {
+        $dataStmt->bindValue($key, $value);
+    }
     $dataStmt->execute();
-    
+
     $equipment_list = [];
     $subcategory_ids = [];
-    
     while ($row = $dataStmt->fetch(PDO::FETCH_ASSOC)) {
         $equipment_list[] = [
             "equipment_id" => (int)$row['equipment_id'],
@@ -97,16 +112,16 @@ try {
             "location_details" => $row['location_details'],
             "category_id" => (int)$row['category_id']
         ];
-        
         $subcategory_ids[] = (int)$row['subcategory_id'];
     }
-    
+
+
     $admins_data = [];
     if (!empty($subcategory_ids)) {
         $subcategory_ids = array_unique($subcategory_ids);
         $placeholders = str_repeat('?,', count($subcategory_ids) - 1) . '?';
-        
-        $adminStmt = $dbh->prepare("
+
+        $adminSQL = "
             SELECT DISTINCT
                 es.subcategory_id,
                 gu.group_user_id as group_id,
@@ -125,18 +140,19 @@ try {
             WHERE es.subcategory_id IN ($placeholders)
                 AND gu.type = 'ผู้ดูแลหลัก'
             ORDER BY es.subcategory_id, gu.group_user_id, u.ID
-        ");
-        
+        ";
+        error_log("DEBUG: ADMIN SQL => $adminSQL");
+
+        $adminStmt = $dbh->prepare($adminSQL);
         $adminStmt->execute($subcategory_ids);
-        
+
         while ($admin = $adminStmt->fetch(PDO::FETCH_ASSOC)) {
             $subcategory_id = (int)$admin['subcategory_id'];
             $group_id = (int)$admin['group_id'];
-            
+
             if (!isset($admins_data[$subcategory_id])) {
                 $admins_data[$subcategory_id] = [];
             }
-            
             if (!isset($admins_data[$subcategory_id][$group_id])) {
                 $admins_data[$subcategory_id][$group_id] = [
                     "group_id" => $group_id,
@@ -145,7 +161,6 @@ try {
                     "user_group" => []
                 ];
             }
-            
             $admins_data[$subcategory_id][$group_id]["user_group"][] = [
                 "ID" => (int)$admin['ID'],
                 "user_id" => $admin['user_id'],
@@ -154,16 +169,15 @@ try {
             ];
         }
     }
-    
+
     foreach ($equipment_list as &$equipment) {
         $subcategory_id = $equipment['subcategory_id'];
         $equipment['admins'] = [];
-        
         if (isset($admins_data[$subcategory_id])) {
             $equipment['admins'] = array_values($admins_data[$subcategory_id]);
         }
     }
-    
+
     echo json_encode([
         "status" => "success",
         "data" => $equipment_list
@@ -171,7 +185,7 @@ try {
 
 } catch (Exception $e) {
     echo json_encode([
-        "status" => "error", 
+        "status" => "error",
         "message" => "Database error: " . $e->getMessage()
     ], JSON_UNESCAPED_UNICODE);
 }
