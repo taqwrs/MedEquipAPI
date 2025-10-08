@@ -45,11 +45,17 @@ try {
 
     foreach ($fields as $f) {
         if (isset($_POST[$f])) {
+            $newVal = $_POST[$f];
+
+            // เงื่อนไขเปลี่ยน record_status จาก draft เป็น complete
+            if ($f === 'record_status' && $oldData['record_status'] === 'draft') {
+                $newVal = 'complete';
+            }
+
             $setParts[] = "$f=:$f";
-            $params[":$f"] = $_POST[$f];
+            $params[":$f"] = $newVal;
 
             $oldVal = $oldData[$f] ?? null;
-            $newVal = $_POST[$f];
             if ($oldVal != $newVal) {
                 $old_log[$f] = $oldVal;
                 $new_log[$f] = $newVal;
