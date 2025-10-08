@@ -10,21 +10,29 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(["status" => "error", "message" => "Method not allowed"]);
     exit;
 }
+
 try {
     $u_id = $decoded->data->ID ?? null;
     if (!$u_id) {
         throw new Exception("User ID not found");
     }
+    
+    // แปลงเป็น int เพื่อความปลอดภัย
+    $u_id = (int)$u_id;
+    if ($u_id <= 0) {
+        throw new Exception("Invalid User ID");
+    }
+    
     $baseWhere = "
         ru.u_id = :u_id 
         AND gu.type = 'ผู้ดูแลหลัก'
         AND e.active = 1
         AND (
             et.equipment_id IS NULL 
-            OR et.status != 0 )";
+            OR et.status != 0
+        )";
     
     $searchWhere = '';
-    $params = [':u_id' => $u_id];
     
     $joinTables = "
         FROM equipments e
@@ -43,10 +51,9 @@ try {
         WHERE $baseWhere $searchWhere
     ";
 
+    // นับจำนวนทั้งหมด
     $countStmt = $dbh->prepare("SELECT COUNT(DISTINCT e.equipment_id) as total $joinTables");
-    foreach ($params as $key => $value) {
-        $countStmt->bindValue($key, $value);
-    }
+    $countStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
     $countStmt->execute();
     $totalItems = (int)$countStmt->fetchColumn();
 
@@ -72,9 +79,7 @@ try {
         ORDER BY e.updated_at DESC
     ");
     
-    foreach ($params as $key => $value) {
-        $dataStmt->bindValue($key, $value);
-    }
+    $dataStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
     $dataStmt->execute();
     
     $equipment_list = [];
