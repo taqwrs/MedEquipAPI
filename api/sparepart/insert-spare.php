@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php"; 
 
 $isJsonRequest = (strpos(strtolower(getenv("CONTENT_TYPE")), 'application/json') !== false);
 $input = $isJsonRequest ? json_decode(file_get_contents('php://input'), true) : $_POST;
@@ -10,7 +11,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $dbh->beginTransaction();
-    $userId = $decoded->user_id ?? null;
+    $user_id = $decoded->data->ID ?? null;
+    $log = new LogModel($dbh); 
 
     // ------------------ CONFIG ------------------
     $requiredFields = ['name','asset_code'];
@@ -63,7 +65,7 @@ try {
         $cols[]=$f; $placeholders[]=":$f";
         if($f==='active' && !isset($input['active'])) $values[":$f"]=1;
         elseif($f==='status' && !isset($input['status'])) $values[":$f"]='ใช้งาน';
-        elseif($f==='user_id'||$f==='updated_by') $values[":$f"]=$input[$f]??$userId;
+        elseif($f==='user_id'||$f==='updated_by') $values[":$f"]=$input[$f]??$user_id;
         else $values[":$f"]=$input[$f]??null;
     }
     $cols[]='updated_at'; $placeholders[]='NOW()';
@@ -73,6 +75,9 @@ try {
     foreach($values as $k=>$v) $stmt->bindValue($k,$v);
     $stmt->execute();
     $spareId = $dbh->lastInsertId();
+
+    // --- Log insert spare part ---
+    $log->insertLog($user_id, 'spare_parts', 'INSERT', null, $values + ['spare_part_id' => $spareId], 'register_logs'); 
 
     $dbh->commit();
     echo json_encode(["status"=>"success","message"=>"Spare part inserted","id"=>$spareId,"record_status"=>$input['record_status']]);

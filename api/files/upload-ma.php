@@ -130,7 +130,7 @@ try {
     }
 
     $dbh->commit();
-    echo json_encode(["status" => "success", "files" => $uploadedFiles]);
+    echo json_encode(["status" => "success", "files" => $uploadedFiles], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     if ($dbh->inTransaction()) $dbh->rollBack();
