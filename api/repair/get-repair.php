@@ -32,9 +32,11 @@ try {
     $role_id = (int)$stmtRole->fetchColumn();
 
     if ($role_id === 9) {
+        // role_id 9 เห็นทุก record
         $where = "1=1";
         $params = [];
     } else {
+        // ดึง group ของผู้ใช้
         $sqlUserGroups = "
             SELECT ru.group_user_id
             FROM relation_user ru
