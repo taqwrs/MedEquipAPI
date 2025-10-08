@@ -26,7 +26,7 @@ try {
 
     // ไม่มีไฟล์ → ส่งกลับสำเร็จ
     if (!$files || $files['name'][0] === "") {
-        echo json_encode(["status" => "success", "files" => []]);
+        echo json_encode(["status" => "success", "files" => []], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -84,7 +84,7 @@ try {
     }
 
     $dbh->commit();
-    echo json_encode(["status" => "success", "files" => $uploadedFiles]);
+    echo json_encode(["status" => "success", "files" => $uploadedFiles], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     if ($dbh->inTransaction()) $dbh->rollBack();

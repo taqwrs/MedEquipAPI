@@ -1,6 +1,6 @@
 <?php
 include "../config/jwt.php";
-// include "../config/LogModel.php";
+include "../config/LogModel.php"; 
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(["status" => "error", "message" => "POST method only"]);
@@ -9,7 +9,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $dbh->beginTransaction();
-    // $log = new LogModel($dbh);
+    $log = new LogModel($dbh); 
+    $user_id = $decoded->data->ID ?? null; 
 
     $spare_part_id = $_POST['spare_part_id'] ?? null;
     if (!$spare_part_id)
@@ -53,6 +54,14 @@ try {
             $typeName = $_POST['spare_type_name'][$key] ?? "";
             $stmt = $dbh->prepare("INSERT INTO file_spare(file_spare_name, spare_part_id, spare_url, spare_type_name, upload_at) VALUES (?, ?, ?, ?, NOW())");
             $stmt->execute([$name, $spare_part_id, $url, $typeName]);
+
+            // --- Log upload file ---
+            $log->insertLog($user_id, 'file_spare', 'INSERT', null, [
+                'file_spare_name' => $name,
+                'spare_part_id' => $spare_part_id,
+                'spare_url' => $url,
+                'spare_type_name' => $typeName
+            ], 'register_logs'); 
 
             $uploadedFiles[] = $url;
         }

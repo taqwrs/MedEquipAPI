@@ -4,6 +4,7 @@ header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 
 include "../config/jwt.php";
+include "../config/LogModel.php"; 
 
 $uploadDirectory = 'C:\xampp\htdocs\back_equip\uploads\\';
 
@@ -18,9 +19,17 @@ try {
         : $_POST;
 
     $spare_part_id = $input['spare_part_id'] ?? null;
+    $user_id = $decoded->data->ID ?? null; 
+    $log = new LogModel($dbh); 
+
     if (!$spare_part_id) throw new Exception("spare_part_id required");
 
     $dbh->beginTransaction();
+
+    // --- ดึงข้อมูลเก่าสำหรับ log ---
+    $stmtOld = $dbh->prepare("SELECT * FROM spare_parts WHERE spare_part_id = :id");
+    $stmtOld->execute([':id' => $spare_part_id]);
+    $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
     // ------------------ CHECK EXISTS ------------------
     $stmt = $dbh->prepare("SELECT COUNT(*) FROM spare_parts WHERE spare_part_id = :id");
@@ -48,6 +57,9 @@ try {
     // ------------------ DELETE SPARE ------------------
     $dbh->prepare("DELETE FROM spare_parts WHERE spare_part_id = :id")
         ->execute([':id' => $spare_part_id]);
+
+    // --- Log delete spare part ---
+    $log->insertLog($user_id, 'spare_parts', 'DELETE', $oldData, [], 'register_logs');
 
     $dbh->commit();
     echo json_encode(["status" => "success", "message" => "Spare part deleted", "id" => $spare_part_id]);

@@ -11,7 +11,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// รับค่าจาก React
 $equipment_id   = $_POST['equipment_id'] ?? null;
 $user_id        = $_POST['user_id'] ?? null;
 $performed_date = $_POST['performed_date'] ?? null;
@@ -19,7 +18,7 @@ $result         = $_POST['result'] ?? "ผ่าน";
 $remarks        = $_POST['remarks'] ?? "";
 $reason         = $_POST['reason'] ?? "";
 $details_cal_id = $_POST['details_cal_id'] ?? null;
-$send_repair    = $_POST['sendToRepair'] ?? "false"; // string "true" / "false"
+$send_repair    = $_POST['sendToRepair'] ?? "false"; 
 
 if (!$equipment_id || !$performed_date || !$user_id || !$details_cal_id) {
     echo json_encode(["status" => "error", "message" => "Missing required fields"]);
@@ -27,7 +26,7 @@ if (!$equipment_id || !$performed_date || !$user_id || !$details_cal_id) {
 }
 
 try {
-    // ตรวจสอบผลการสอบเทียบซ้ำ
+
     $checkStmt = $dbh->prepare("
         SELECT COUNT(*) 
         FROM calibration_result
@@ -43,7 +42,7 @@ try {
         exit;
     }
 
-    // บันทึกลง DB
+
     $stmt = $dbh->prepare("
         INSERT INTO calibration_result 
         (details_cal_id, equipment_id, user_id, performed_date, result, remarks, reason, send_repair)
@@ -58,7 +57,7 @@ try {
         ":result" => $result,
         ":remarks" => ($remarks === "null" || !$remarks) ? null : $remarks,
         ":reason" => ($reason === "null" || !$reason) ? null : $reason,
-        ":send_repair" => $send_repair // ตรงกับ DB string "true"/"false"
+        ":send_repair" => $send_repair 
     ]);
 
     $cal_result_id = $dbh->lastInsertId();

@@ -26,30 +26,42 @@ try {
 
     $useLimit = $limit > 0;
 
-    // ดึงกลุ่มที่ user สังกัด
-    $sqlUserGroups = "
-        SELECT ru.group_user_id
-        FROM relation_user ru
-        INNER JOIN users u ON ru.u_id = u.ID
-        WHERE u.user_id = :user_id
-    ";
-    $stmtUserGroups = $dbh->prepare($sqlUserGroups);
-    $stmtUserGroups->execute([':user_id' => $user_id]);
-    $userGroups = $stmtUserGroups->fetchAll(PDO::FETCH_COLUMN);
+    // ดึง role ของผู้ใช้
+    $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE user_id = :user_id");
+    $stmtRole->execute([':user_id' => $user_id]);
+    $role_id = (int)$stmtRole->fetchColumn();
 
-    $where = "(r.user_id = :user_id"; 
-    $params = [':user_id' => $user_id];
+    if ($role_id === 9) {
+        // role_id 9 เห็นทุก record
+        $where = "1=1";
+        $params = [];
+    } else {
+        // ดึง group ของผู้ใช้
+        $sqlUserGroups = "
+            SELECT ru.group_user_id
+            FROM relation_user ru
+            INNER JOIN users u ON ru.u_id = u.ID
+            WHERE u.user_id = :user_id
+        ";
+        $stmtUserGroups = $dbh->prepare($sqlUserGroups);
+        $stmtUserGroups->execute([':user_id' => $user_id]);
+        $userGroups = $stmtUserGroups->fetchAll(PDO::FETCH_COLUMN);
 
-    if (!empty($userGroups)) {
-        $groupPlaceholders = [];
-        foreach ($userGroups as $idx => $groupId) {
-            $placeholder = ":group_id_$idx";
-            $groupPlaceholders[] = $placeholder;
-            $params[$placeholder] = $groupId;
+        // เงื่อนไขปกติ
+        $where = "(r.user_id = :user_id"; 
+        $params = [':user_id' => $user_id];
+
+        if (!empty($userGroups)) {
+            $groupPlaceholders = [];
+            foreach ($userGroups as $idx => $groupId) {
+                $placeholder = ":group_id_$idx";
+                $groupPlaceholders[] = $placeholder;
+                $params[$placeholder] = $groupId;
+            }
+            $where .= " OR rt.group_user_id IN (" . implode(',', $groupPlaceholders) . ")";
         }
-        $where .= " OR rt.group_user_id IN (" . implode(',', $groupPlaceholders) . ")";
+        $where .= ")";
     }
-    $where .= ")";
 
     if (!empty($search)) {
         $where .= " AND (r.title LIKE :search OR r.remark LIKE :search 
@@ -57,6 +69,7 @@ try {
         $params[':search'] = "%$search%";
     }
 
+    // ดึงข้อมูลหลัก
     $sql = "SELECT 
                 r.repair_id,
                 r.equipment_id,
@@ -106,7 +119,7 @@ try {
         $repairCount[$equipId]++;
     }
 
-    // ดึง repair_results + files + spares
+    // ดึง repair_results + files + spare parts
     foreach ($repairs as &$repair) {
         $stmt2 = $dbh->prepare("
             SELECT 
@@ -185,7 +198,8 @@ try {
         "limit"  => $limit,
         "total"  => (int)$total,
         "data"   => $repairs,
-        "user_groups" => $userGroups  
+        "role_id" => $role_id,
+        "user_groups" => $userGroups ?? []
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
