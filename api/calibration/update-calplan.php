@@ -47,6 +47,35 @@ try {
     $stmtCheckResult->execute([':plan_id' => $input['plan_id']]);
     $hasResult = $stmtCheckResult->fetchColumn() > 0;
 
+    // ตรวจสอบว่ามีการพยายามแก้ไขฟิลด์ที่ถูกจำกัดหรือไม่
+    if ($hasResult) {
+        $restrictedFields = [
+            'frequency_number' => 'ความถี่ (จำนวน)',
+            'frequency_unit' => 'หน่วยความถี่',
+            'frequency_type' => 'ประเภทความถี่',
+            'start_date' => 'วันที่เริ่มต้น',
+            'end_date' => 'วันที่สิ้นสุด'
+        ];
+
+        $changedFields = [];
+        foreach ($restrictedFields as $field => $fieldName) {
+            if (array_key_exists($field, $input) && $input[$field] != $current[$field]) {
+                $changedFields[] = $fieldName;
+            }
+        }
+
+        if (!empty($changedFields)) {
+            $dbh->rollBack();
+            echo json_encode([
+                "status" => "error",
+                "message" => "ไม่สามารถแก้ไข " . implode(', ', $changedFields) . " ได้ เนื่องจากแผนนี้มีการบันทึกผลแล้ว กรุณาสร้างแผนใหม่",
+                "has_result" => true,
+                "changed_fields" => $changedFields
+            ]);
+            exit;
+        }
+    }
+
     $fields = [
         'plan_name','user_id','group_user_id','company_id',
         'frequency_number','frequency_unit','frequency_type',
@@ -56,18 +85,7 @@ try {
 
     $updateData = [];
     foreach ($fields as $f) {
-        if ($hasResult) {
-            // Plan มีผลลัพธ์แล้ว → จำกัดฟิลด์บางตัวเท่านั้น
-            $restrictedFields = ['frequency_number','frequency_unit','frequency_type','start_date','end_date'];
-            if (in_array($f, $restrictedFields)) {
-                $updateData[$f] = $current[$f]; // คืนค่าเดิม
-            } else {
-                $updateData[$f] = array_key_exists($f, $input) ? $input[$f] : $current[$f];
-            }
-        } else {
-            // Plan ยังไม่มีผลลัพธ์ → อัปเดตทุกฟิลด์
-            $updateData[$f] = array_key_exists($f, $input) ? $input[$f] : $current[$f];
-        }
+        $updateData[$f] = array_key_exists($f, $input) ? $input[$f] : $current[$f];
     }
 
     // Soft delete plan
@@ -77,7 +95,6 @@ try {
             ':is_active' => $input['is_active'],
             ':plan_id'   => $input['plan_id']
         ]);
-        $dbh->commit();
         echo json_encode(["status"=>"success","message"=>"Soft delete success"]);
         exit;
     }

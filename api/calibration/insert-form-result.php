@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// รับค่าจาก React
 $equipment_id   = $_POST['equipment_id'] ?? null;
 $user_id        = $_POST['user_id'] ?? null;
 $performed_date = $_POST['performed_date'] ?? null;
@@ -18,7 +19,7 @@ $result         = $_POST['result'] ?? "ผ่าน";
 $remarks        = $_POST['remarks'] ?? "";
 $reason         = $_POST['reason'] ?? "";
 $details_cal_id = $_POST['details_cal_id'] ?? null;
-$send_repair    = $_POST['send_repair'] ?? "false";
+$send_repair    = $_POST['sendToRepair'] ?? "false"; // string "true" / "false"
 
 if (!$equipment_id || !$performed_date || !$user_id || !$details_cal_id) {
     echo json_encode(["status" => "error", "message" => "Missing required fields"]);
@@ -26,6 +27,7 @@ if (!$equipment_id || !$performed_date || !$user_id || !$details_cal_id) {
 }
 
 try {
+    // ตรวจสอบผลการสอบเทียบซ้ำ
     $checkStmt = $dbh->prepare("
         SELECT COUNT(*) 
         FROM calibration_result
@@ -44,25 +46,22 @@ try {
     // บันทึกลง DB
     $stmt = $dbh->prepare("
         INSERT INTO calibration_result 
-        (details_cal_id, user_id, equipment_id, performed_date, result, remarks, reason, send_repair)
+        (details_cal_id, equipment_id, user_id, performed_date, result, remarks, reason, send_repair)
         VALUES 
-        (:details_cal_id, :user_id, :equipment_id, :performed_date, :result, :remarks, :reason, :send_repair)
+        (:details_cal_id, :equipment_id, :user_id, :performed_date, :result, :remarks, :reason, :send_repair)
     ");
     $stmt->execute([
         ":details_cal_id" => $details_cal_id,
-        ":user_id" => $user_id,
         ":equipment_id" => $equipment_id,
+        ":user_id" => $user_id,
         ":performed_date" => $performed_date,
         ":result" => $result,
         ":remarks" => ($remarks === "null" || !$remarks) ? null : $remarks,
         ":reason" => ($reason === "null" || !$reason) ? null : $reason,
-        ":send_repair" => $send_repair
+        ":send_repair" => $send_repair // ตรงกับ DB string "true"/"false"
     ]);
 
     $cal_result_id = $dbh->lastInsertId();
-
-    // Debug: ตรวจสอบ cal_result_id
-    error_log("Insert successful, cal_result_id: " . $cal_result_id);
 
     echo json_encode([
         "status" => "success", 
