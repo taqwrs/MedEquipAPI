@@ -83,7 +83,7 @@ try {
         elseif ($f === 'record_status' && !isset($_POST['record_status']))
             $values[":$f"] = 'complete';
         elseif ($f === 'user_id' || $f === 'updated_by')
-            $values[":$f"] = $_POST[$f] ?? $userId;
+            $values[":$f"] = $_POST[$f] ?? $user_id;
         else
             $values[":$f"] = $_POST[$f] ?? null;
     }
@@ -99,7 +99,7 @@ try {
     $equipId = $dbh->lastInsertId();
 
     // --- Log insert main equipment ---
-    $log->insertLog($userId, 'equipments', 'INSERT', null, $values + ['equipment_id' => $equipId], 'register_logs');
+    $log->insertLog($user_id, 'equipments', 'INSERT', null, $values + ['equipment_id' => $equipId], 'register_logs');
 
     // --- Relations ---
     foreach ($relations as $relKey => $relConfig) {
@@ -120,10 +120,8 @@ try {
                     $stmt = $dbh->prepare("UPDATE {$relConfig['table']} 
                                          SET {$relConfig['fk']}=:main, updated_by=:updated_by, updated_at=NOW() 
                                          WHERE {$relConfig['idField']}=:id");
-                    $stmt->execute([':main' => $equipId, ':id' => $item[$relConfig['idField']], ':updated_by' => $userId]);
-
-                    // --- Log update relation ---
-                    $log->insertLog($userId, $relConfig['table'], 'UPDATE', $oldData, ['equipment_id' => $equipId, 'updated_id' => $item[$relConfig['idField']]], 'register_logs');
+                    $stmt->execute([':main' => $equipId, ':id' => $item[$relConfig['idField']], ':updated_by' => $user_id]);
+                    $log->insertLog($user_id, $relConfig['table'], 'UPDATE', $oldData, ['equipment_id' => $equipId, 'updated_id' => $item[$relConfig['idField']]], 'register_logs');
                 }
             }
         }

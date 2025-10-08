@@ -3,6 +3,7 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 include "../config/jwt.php";
+include "../config/LogModel.php"; 
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit(0);
 
@@ -20,6 +21,12 @@ if (empty($updated_by)) {
 
 try {
     $dbh->beginTransaction();
+    $log = new LogModel($dbh); 
+
+    // --- ดึงข้อมูลเก่าสำหรับ log ---
+    $stmtOld = $dbh->prepare("SELECT * FROM spare_parts WHERE spare_part_id = :id");
+    $stmtOld->execute([':id' => $spare_part_id]);
+    $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
     // Fields for partial update
     $fields = [
@@ -32,10 +39,21 @@ try {
     $setParts = [];
     $params = [':spare_part_id' => $spare_part_id, ':updated_by' => $updated_by];
 
+    // เก็บเฉพาะ field ที่เปลี่ยนแปลง
+    $old_log = ['spare_part_id' => $spare_part_id];
+    $new_log = ['spare_part_id' => $spare_part_id];
+
     foreach ($fields as $f) {
         if (isset($_POST[$f])) {
             $setParts[] = "$f=:$f";
             $params[":$f"] = $_POST[$f];
+
+            $oldVal = $oldData[$f] ?? null;
+            $newVal = $_POST[$f];
+            if ($oldVal != $newVal) {
+                $old_log[$f] = $oldVal;
+                $new_log[$f] = $newVal;
+            }
         }
     }
     $setParts[] = "updated_by=:updated_by";
@@ -45,6 +63,11 @@ try {
         $sql = "UPDATE spare_parts SET " . implode(',', $setParts) . " WHERE spare_part_id=:spare_part_id";
         $stmt = $dbh->prepare($sql);
         $stmt->execute($params);
+    }
+
+    // --- Log update spare part (เฉพาะ PK และ field ที่เปลี่ยน) ---
+    if (count($old_log) > 1 || count($new_log) > 1) { // มี field ที่เปลี่ยนมากกว่าแค่ PK
+        $log->insertLog($updated_by, 'spare_parts', 'UPDATE', $old_log, $new_log, 'register_logs');
     }
 
     $dbh->commit();
