@@ -12,22 +12,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-    // เปลี่ยนจาก $_POST เป็น json_decode
     $input = json_decode(file_get_contents("php://input"), true);
-    
     $u_id = $decoded->data->ID ?? null;
     if (!$u_id) {
         throw new Exception("User ID not found");
     }
-    
-    $u_id = (int)$u_id;
+
+    $u_id = (int) $u_id;
     if ($u_id <= 0) {
         throw new Exception("Invalid User ID");
     }
 
-    $params = [
-        ':u_id' => $u_id
-    ];
+    $params = [':u_id' => $u_id];
 
     $baseWhere = "
         ru.u_id = :u_id 
@@ -37,9 +33,8 @@ try {
             et.equipment_id IS NULL 
             OR et.status != 0
         )";
-    
+
     $searchWhere = '';
-    // เปลี่ยนจาก $_POST['keyword'] เป็น $input['keyword']
     if (!empty($input['keyword'])) {
         $keyword = trim($input['keyword']);
         $searchWhere .= " AND e.name LIKE :keyword";
@@ -72,7 +67,7 @@ try {
         $countStmt->bindValue(':keyword', $params[':keyword'], PDO::PARAM_STR);
     }
     $countStmt->execute();
-    $totalItems = (int)$countStmt->fetchColumn();
+    $totalItems = (int) $countStmt->fetchColumn();
 
     $dataSQL = "
         SELECT DISTINCT
@@ -108,27 +103,26 @@ try {
     $subcategory_ids = [];
     while ($row = $dataStmt->fetch(PDO::FETCH_ASSOC)) {
         $equipment_list[] = [
-            "equipment_id" => (int)$row['equipment_id'],
+            "equipment_id" => (int) $row['equipment_id'],
             "asset_code" => $row['asset_code'],
             "equipment_name" => $row['equipment_name'],
-            "subcategory_id" => (int)$row['subcategory_id'],
+            "subcategory_id" => (int) $row['subcategory_id'],
             "subcategory_name" => $row['subcategory_name'],
-            "location_department_id" => $row['location_department_id'] ? (int)$row['location_department_id'] : null,
+            "location_department_id" => $row['location_department_id'] ? (int) $row['location_department_id'] : null,
             "location_department_name" => $row['location_department_name'],
             "location_details" => $row['location_details'],
-            "category_id" => (int)$row['category_id']
+            "category_id" => (int) $row['category_id']
         ];
-        $subcategory_ids[] = (int)$row['subcategory_id'];
+        $subcategory_ids[] = (int) $row['subcategory_id'];
     }
 
     // ดึงข้อมูล admins
-  // ดึงข้อมูล admins
-$admins_data = [];
-if (!empty($subcategory_ids)) {
-    $subcategory_ids = array_unique($subcategory_ids);
-    $placeholders = str_repeat('?,', count($subcategory_ids) - 1) . '?';
+    $admins_data = [];
+    if (!empty($subcategory_ids)) {
+        $subcategory_ids = array_unique($subcategory_ids);
+        $placeholders = str_repeat('?,', count($subcategory_ids) - 1) . '?';
 
-    $adminSQL = "
+        $adminSQL = "
         SELECT DISTINCT
             es.subcategory_id,
             gu.group_user_id as group_id,
@@ -148,24 +142,23 @@ if (!empty($subcategory_ids)) {
             AND gu.type = 'ผู้ดูแลหลัก'
         ORDER BY es.subcategory_id, gu.group_user_id, u.ID
     ";
-    error_log("DEBUG: ADMIN SQL => $adminSQL");
+        error_log("DEBUG: ADMIN SQL => $adminSQL");
 
-    $adminStmt = $dbh->prepare($adminSQL);
-    // Fix: Execute with array values, not the array itself
-    $adminStmt->execute(array_values($subcategory_ids));
+        $adminStmt = $dbh->prepare($adminSQL);
+        $adminStmt->execute(array_values($subcategory_ids));
         while ($admin = $adminStmt->fetch(PDO::FETCH_ASSOC)) {
-            $subcategory_id = (int)$admin['subcategory_id'];
-            $group_id = (int)$admin['group_id'];
+            $subcategory_id = (int) $admin['subcategory_id'];
+            $group_id = (int) $admin['group_id'];
 
             if (!isset($admins_data[$subcategory_id])) {
                 $admins_data[$subcategory_id] = [];
             }
-            
+
             $found = false;
             foreach ($admins_data[$subcategory_id] as &$group) {
                 if ($group['group_id'] == $group_id) {
                     $group['user_group'][] = [
-                        "ID" => (int)$admin['ID'],
+                        "ID" => (int) $admin['ID'],
                         "user_id" => $admin['user_id'],
                         "full_name" => $admin['full_name'],
                         "department_name" => $admin['department_name']
@@ -174,7 +167,7 @@ if (!empty($subcategory_ids)) {
                     break;
                 }
             }
-            
+
             if (!$found) {
                 $admins_data[$subcategory_id][] = [
                     "group_id" => $group_id,
@@ -182,7 +175,7 @@ if (!empty($subcategory_ids)) {
                     "group_type" => $admin['group_type'],
                     "user_group" => [
                         [
-                            "ID" => (int)$admin['ID'],
+                            "ID" => (int) $admin['ID'],
                             "user_id" => $admin['user_id'],
                             "full_name" => $admin['full_name'],
                             "department_name" => $admin['department_name']

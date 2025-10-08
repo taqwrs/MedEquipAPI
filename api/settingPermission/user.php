@@ -7,7 +7,12 @@ header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 $method = $_SERVER['REQUEST_METHOD'];
-$input = json_decode(file_get_contents("php://input"), true);
+
+if ($method === 'GET') {
+    $input = $_GET;
+} else {
+    $input = json_decode(file_get_contents("php://input"), true);
+}
 
 // รองรับ _method จาก POST
 if ($method === 'POST' && isset($input['_method'])) {
@@ -43,6 +48,7 @@ try {
         }
         $countStmt->execute();
         $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+        
         $sql = "
             SELECT 
                 u.ID,
@@ -58,7 +64,6 @@ try {
             LEFT JOIN roles r ON u.role_id = r.role_id
             LEFT JOIN departments d ON u.department_id = d.department_id
             WHERE 1=1
-            
         ";
 
         if (!empty($search)) {
