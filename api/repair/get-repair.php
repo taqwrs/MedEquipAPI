@@ -26,27 +26,26 @@ try {
 
     $useLimit = $limit > 0;
 
-  
+    // ดึง role ของผู้ใช้
     $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE user_id = :user_id");
     $stmtRole->execute([':user_id' => $user_id]);
     $role_id = (int)$stmtRole->fetchColumn();
 
-    if ($role_id === 6) {
+    // ดึงกลุ่มของผู้ใช้
+    $sqlUserGroups = "
+        SELECT ru.group_user_id
+        FROM relation_user ru
+        INNER JOIN users u ON ru.u_id = u.ID
+        WHERE u.user_id = :user_id
+    ";
+    $stmtUserGroups = $dbh->prepare($sqlUserGroups);
+    $stmtUserGroups->execute([':user_id' => $user_id]);
+    $userGroups = $stmtUserGroups->fetchAll(PDO::FETCH_COLUMN);
 
+    if ($role_id === 6) {
         $where = "1=1";
         $params = [];
     } else {
-
-        $sqlUserGroups = "
-            SELECT ru.group_user_id
-            FROM relation_user ru
-            INNER JOIN users u ON ru.u_id = u.ID
-            WHERE u.user_id = :user_id
-        ";
-        $stmtUserGroups = $dbh->prepare($sqlUserGroups);
-        $stmtUserGroups->execute([':user_id' => $user_id]);
-        $userGroups = $stmtUserGroups->fetchAll(PDO::FETCH_COLUMN);
-
         // เงื่อนไขปกติ
         $where = "(r.user_id = :user_id"; 
         $params = [':user_id' => $user_id];
@@ -69,30 +68,32 @@ try {
         $params[':search'] = "%$search%";
     }
 
-    // ดึงข้อมูลหลัก
-    $sql = "SELECT 
-                r.repair_id,
-                r.equipment_id,
-                e.name AS equipment_name,
-                e.asset_code,
-                r.title,
-                r.remark,
-                r.request_date,
-                r.location,
-                r.status AS repair_status,
-                r.user_id,
-                u_reporter.full_name AS reporter,
-                r.repair_type_id,
-                rt.name_type AS repair_type,
-                rt.group_user_id,
-                gu.group_name AS responsible_group
-            FROM repair r
-            LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
-            LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
-            LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
-            LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
-            WHERE $where
-            ORDER BY r.request_date DESC";
+$sql = "SELECT 
+            r.repair_id,
+            r.equipment_id,
+            e.name AS equipment_name,
+            e.asset_code,
+            r.title,
+            r.remark,
+            r.request_date,
+            r.location,
+            r.status AS repair_status,
+            r.user_id,
+            u_reporter.full_name AS reporter,
+            r.repair_type_id,
+            rt.name_type AS repair_type,
+            rt.group_user_id,
+            gu.group_name AS responsible_group
+        FROM repair r
+        LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
+        LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
+        LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
+        LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
+        WHERE $where 
+          AND r.active = 1 
+          AND (e.active = 1 )
+        ORDER BY r.request_date DESC";
+
 
     if ($useLimit) {
         $sql .= " LIMIT :offset, :limit";
@@ -121,6 +122,18 @@ try {
 
     // ดึง repair_results + files + spare parts
     foreach ($repairs as &$repair) {
+        // ✅ ตรวจสอบสิทธิ์จัดการแต่ละรายการ
+        $canHandle = false;
+        if ($role_id === 6) {
+            $canHandle = true;
+        } elseif ($repair['user_id'] == $user_id) {
+            $canHandle = false; 
+        } elseif (!empty($repair['group_user_id']) && in_array($repair['group_user_id'], $userGroups)) {
+
+            $canHandle = true;
+        }
+        $repair['can_handle'] = $canHandle;
+
         $stmt2 = $dbh->prepare("
             SELECT 
                 rr.repair_result_id,
@@ -199,7 +212,7 @@ try {
         "total"  => (int)$total,
         "data"   => $repairs,
         "role_id" => $role_id,
-        "user_groups" => $userGroups ?? []
+        "user_groups" => $userGroups
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
