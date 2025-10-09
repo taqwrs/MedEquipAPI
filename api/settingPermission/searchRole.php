@@ -33,6 +33,15 @@ try {
         'ORDER BY r.role_id DESC'
     );
 
+    if (isset($response['pagination'])) {
+        $response['pagination'] = [
+            'current_page' => $response['pagination']['current_page'] ?? 1,
+            'total_pages' => $response['pagination']['total_pages'] ?? 1,
+            'total_items' => $response['pagination']['total_items'] ?? 0,
+            'limit' => $response['pagination']['limit'] ?? 5
+        ];
+    }
+
     echo json_encode($response, JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
