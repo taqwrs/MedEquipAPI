@@ -26,17 +26,17 @@ try {
 
     $useLimit = $limit > 0;
 
-    // ดึง role ของผู้ใช้
+  
     $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE user_id = :user_id");
     $stmtRole->execute([':user_id' => $user_id]);
     $role_id = (int)$stmtRole->fetchColumn();
 
-    if ($role_id === 9) {
-        // role_id 9 เห็นทุก record
+    if ($role_id === 6) {
+
         $where = "1=1";
         $params = [];
     } else {
-        // ดึง group ของผู้ใช้
+
         $sqlUserGroups = "
             SELECT ru.group_user_id
             FROM relation_user ru

@@ -16,10 +16,9 @@ try {
     $groupUserIds = [];
     $groupType = '';
 
-    // ✅ ตรวจสอบสิทธิ์ของผู้ใช้
     if ($user_id !== '') {
 
-        // ดึง role และ type ของกลุ่ม
+
         $stmtUserInfo = $dbh->prepare("
             SELECT u.role_id, gu.type
             FROM users u
@@ -35,7 +34,7 @@ try {
         $roleId = $userInfo['role_id'] ?? null;
         $groupType = $userInfo['type'] ?? null;
 
-        if ($roleId == 9) {
+        if ($roleId == 6) {
             $isAdmin = true;
         } else {
             // ดึง group_user_id ของผู้ใช้ (สำหรับผู้ใช้ทั่วไป)
@@ -68,7 +67,6 @@ try {
 
     // ✅ ระบบสิทธิ์การเข้าถึง
     if ($isAdmin) {
-        // 🟥 ถ้า role = 9 → แสดงทั้งหมด ไม่ต้องกรอง
         $where = ["cp.is_active IN (1)"];
         $params = [];
         if ($search !== '') {
