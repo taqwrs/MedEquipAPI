@@ -171,6 +171,14 @@ try {
             $status_display = ($history['status_transfer'] == 0) ? 'ยังไม่คืน' : 'คืนแล้ว';
         }
 
+        $transfer_date = $history['transfer_date']
+            ? date("d/m/Y H:i:s", strtotime($history['transfer_date']))
+            : null;
+
+        $returned_date = $history['returned_date']
+            ? date("d/m/Y H:i:s", strtotime($history['returned_date']))
+            : null;
+
         $finalData[] = [
             "history_transfer_id" => $history['history_transfer_id'],
             "transfer_id" => $history['transfer_id'],
@@ -190,9 +198,10 @@ try {
             "status_display" => $status_display,
             "updated_at" => $history['updated_at'],
             "reason" => $history['reason'],
-            "transfer_date" => $history['transfer_date'],
-            "returned_date" => $history['returned_date']
+            "transfer_date" => $transfer_date,
+            "returned_date" => $returned_date
         ];
+
     }
 
     echo json_encode([

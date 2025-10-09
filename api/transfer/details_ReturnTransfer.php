@@ -1,5 +1,5 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET");
@@ -115,7 +115,7 @@ try {
                 WHERE rg.subcategory_id = :subcategory_id 
                 AND gu.type = 'ผู้ดูแลหลัก'
             ";
-            
+
             $adminStmt = $dbh->prepare($adminSql);
             $adminStmt->bindParam(":subcategory_id", $subcategory_id, PDO::PARAM_INT);
             $adminStmt->execute();
@@ -126,16 +126,16 @@ try {
                 $groupId = $admin['group_user_id'];
                 if (!isset($adminGroups[$groupId])) {
                     $adminGroups[$groupId] = [
-                        'group_id' => (int)$groupId,
+                        'group_id' => (int) $groupId,
                         'group_name' => $admin['group_name'],
                         'group_type' => $admin['group_type'],
                         'user_group' => []
                     ];
                 }
-                
+
                 if ($admin['full_name']) {
                     $adminGroups[$groupId]['user_group'][] = [
-                        'ID' => (int)$admin['ID'],
+                        'ID' => (int) $admin['ID'],
                         'user_id' => $admin['user_id'],
                         'full_name' => $admin['full_name'],
                         'department_name' => $admin['department_name']
@@ -155,28 +155,36 @@ try {
             $status_text = "สถานะอื่น ๆ";
         }
 
+        $transfer_date = $row['transfer_date']
+            ? date("d/m/Y H:i:s", strtotime($row['transfer_date']))
+            : null;
+
+        $returned_date = $row['returned_date']
+            ? date("d/m/Y H:i:s", strtotime($row['returned_date']))
+            : null;
+
         $equipmentData = [
-            'equipment_id' => (int)$row['equipment_id'],
+            'equipment_id' => (int) $row['equipment_id'],
             'asset_code' => $row['asset_code'],
             'equipment_name' => $row['equipment_name'],
             'transfer_type' => $row['transfer_type'],
             'status' => $row['status'],
             'status_text' => $status_text,
-            'subcategory_id' => (int)$row['subcategory_id'],
+            'subcategory_id' => (int) $row['subcategory_id'],
             'subcategory_name' => $row['subcategory_name'],
-            'location_department_id' => (int)$row['location_department_id'],
+            'location_department_id' => (int) $row['location_department_id'],
             'location_department_name' => $row['location_department_name'],
             'location_details' => $row['location_details'],
-            'category_id' => (int)$row['category_id'],
+            'category_id' => (int) $row['category_id'],
             'from_department' => $row['from_department'],
             'to_department' => $row['to_department'],
-            'transfer_date' => $row['transfer_date'],
-            'returned_date' => $row['returned_date'],
+            'transfer_date' => $transfer_date,
+            'returned_date' => $returned_date,
             'reason' => $row['reason'],
             'admins' => $adminGroupsCache[$subcategory_id],
             'transfer_user_id' => [
                 [
-                    'ID' => (int)$row['transfer_user_ID'],
+                    'ID' => (int) $row['transfer_user_ID'],
                     'user_id' => $row['transfer_user_user_id'],
                     'full_name' => $row['transfer_user_name'],
                     'department_name' => $row['transfer_user_department']
@@ -184,13 +192,14 @@ try {
             ],
             'recipient_user' => [
                 [
-                    'ID' => (int)$row['recipient_user_ID'],
+                    'ID' => (int) $row['recipient_user_ID'],
                     'user_id' => $row['recipient_user_user_id'],
                     'full_name' => $row['recipient_user_name'],
                     'department_name' => $row['recipient_user_department']
                 ]
             ]
         ];
+
         $result[] = $equipmentData;
     }
 
