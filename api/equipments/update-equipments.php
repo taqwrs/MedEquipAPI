@@ -56,6 +56,11 @@ try {
     foreach($fields as $f){
         $newValue = array_key_exists($f, $_POST) ? $_POST[$f] : null;
 
+        // เงื่อนไขเปลี่ยน record_status จาก draft เป็น complete
+        if($f === 'record_status' && $oldEquipment['record_status'] === 'draft') {
+            $newValue = 'complete';
+        }
+
         $setParts[] = "$f=:$f";
         $params[":$f"] = $newValue;
 
