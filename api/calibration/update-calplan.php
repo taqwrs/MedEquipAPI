@@ -88,16 +88,14 @@ try {
         $updateData[$f] = array_key_exists($f, $input) ? $input[$f] : $current[$f];
     }
 
-    // Soft delete plan
-    if (isset($input['is_active']) && count($input) === 2) {
-        $stmt = $dbh->prepare("UPDATE calibration_plans SET is_active=:is_active WHERE plan_id=:plan_id");
-        $stmt->execute([
-            ':is_active' => $input['is_active'],
-            ':plan_id'   => $input['plan_id']
-        ]);
+
+    if (isset($input['action']) && $input['action'] === 'deactivate') {
+        $stmt = $dbh->prepare("UPDATE calibration_plans SET is_active=0 WHERE plan_id=:plan_id");
+        $stmt->execute([':plan_id' => $input['plan_id']]);
         echo json_encode(["status"=>"success","message"=>"Soft delete success"]);
         exit;
     }
+
 
     // Validate
     $allowed_type_cal = ['ภายใน','ภายนอก'];

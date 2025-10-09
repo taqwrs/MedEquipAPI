@@ -38,7 +38,7 @@ try {
 
     $isAdminMain = false;
     $groupUserIds = [];
-    if ($user_id !== '' && $roleId !== 9) { // ถ้าไม่ใช่ role_id 9
+    if ($user_id !== '' && $roleId !== 6) { 
         $stmtGroup = $dbh->prepare("
             SELECT gu.group_user_id, gu.type
             FROM relation_user ru
@@ -72,7 +72,7 @@ try {
     }
 
     // เงื่อนไขกรองรายการ
-    if ($roleId !== 9) { // ถ้าไม่ใช่ role_id 9
+    if ($roleId !== 6) {
         if ($isAdminMain && !empty($groupUserIds)) {
             $inQuery = [];
             foreach ($groupUserIds as $k => $id) {
@@ -80,23 +80,27 @@ try {
                 $inQuery[] = $key;
                 $params[$key] = $id;
             }
-            $where[] = "w.equipment_id IN (
-                SELECT e.equipment_id
-                FROM equipments e
-                INNER JOIN relation_group rg ON e.subcategory_id = rg.subcategory_id
-                WHERE rg.group_user_id IN (" . implode(',', $inQuery) . ")
+            $where[] = "(
+                w.equipment_id IN (
+                    SELECT e.equipment_id
+                    FROM equipments e
+                    INNER JOIN relation_group rg ON e.subcategory_id = rg.subcategory_id
+                    WHERE rg.group_user_id IN (" . implode(',', $inQuery) . ")
+                )
+                OR w.user_id = :user_id
             )";
+            $params[':user_id'] = $user_id;
         } else {
             $where[] = "w.user_id = :user_id";
             $params[':user_id'] = $user_id;
         }
     }
-
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
     // Query หลัก
     $query = "
-        SELECT w.*, e.name AS equipment_name, u.full_name AS requester_name, 
+        SELECT w.*, e.name AS equipment_name, e.subcategory_id,
+               u.full_name AS requester_name, 
                a.full_name AS approver_name, wt.name AS writeoff_type_name
         FROM write_offs w
         LEFT JOIN equipments e ON w.equipment_id = e.equipment_id
@@ -137,8 +141,34 @@ try {
     $writeoffs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($writeoffs as &$wo) {
-        $wo['is_admin_main'] = $isAdminMain;
+        // ตรวจสอบสิทธิ์อนุมัติสำหรับแต่ละรายการ
+        $canApprove = false;
+        
+        // กรณีเป็น role_id = 6 (Super Admin)
+        if ($roleId === 6) {
+            $canApprove = true;
+        } 
+        // กรณีเป็น admin หลักและอุปกรณ์อยู่ในกลุ่มที่ดูแล
+        elseif ($isAdminMain && !empty($groupUserIds) && !empty($wo['subcategory_id'])) {
+            // ตรวจสอบว่าอุปกรณ์นี้อยู่ในกลุ่มที่ user ดูแลหรือไม่
+            $checkGroupStmt = $dbh->prepare("
+                SELECT COUNT(*) 
+                FROM relation_group 
+                WHERE subcategory_id = :subcategory_id 
+                AND group_user_id IN (" . implode(',', array_map(function($k) { return ":chk_group_$k"; }, array_keys($groupUserIds))) . ")
+            ");
+            $checkGroupStmt->bindValue(':subcategory_id', $wo['subcategory_id'], PDO::PARAM_INT);
+            foreach ($groupUserIds as $k => $id) {
+                $checkGroupStmt->bindValue(":chk_group_$k", $id, PDO::PARAM_INT);
+            }
+            $checkGroupStmt->execute();
+            $inGroup = (int)$checkGroupStmt->fetchColumn() > 0;
+            $canApprove = $inGroup;
+        }
+        
+        $wo['can_approve'] = $canApprove;
 
+        // ดึงไฟล์แนบ
         $stmtFile = $dbh->prepare("
             SELECT DISTINCT file_writeoffs_id, File_name, url, type_name 
             FROM file_writeoffs 
@@ -159,8 +189,6 @@ try {
             "limit" => $limit
         ]
     ], JSON_UNESCAPED_UNICODE);
-
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>
