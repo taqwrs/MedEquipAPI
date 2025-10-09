@@ -24,6 +24,7 @@ try {
         SELECT 
             ht.history_transfer_id,
             ht.transfer_type,
+            ht.updated_at,
             ht.transfer_date,
             ht.returned_date,
             ht.status_transfer,
@@ -68,7 +69,7 @@ try {
         $timeline[] = [
             "history_transfer_id" => $row['history_transfer_id'],
             "ประเภทการโอนย้าย" => $row['transfer_type'] ?? "-",
-            "วันที่โอนย้าย" => $row['transfer_date'] ? date("d/m/Y", strtotime($row['transfer_date'])) : "-",
+            "วันที่โอนย้าย" => $row['updated_at'] ? date("d/m/Y H:i:s", strtotime($row['updated_at'])) : "-",
             "ผู้โอนย้าย" => $transferUser,
             "แผนกผู้โอน" => $row['transfer_user_department'] ?? "-",
             "ผู้รับโอน" => $recipientUser,

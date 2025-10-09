@@ -21,16 +21,16 @@ try {
         echo json_encode(["status" => "error", "message" => "Invalid JSON input"]);
         exit;
     }
+
+    $now = date('Y-m-d H:i:s');
     
-    // ตรวจสอบข้อมูลที่จำเป็น
-    $required = ['transfer_type', 'equipment_id', 'transfer_date'];
+    $required = ['transfer_type', 'equipment_id'];
     foreach ($required as $field) {
         if (!isset($input[$field]) || empty($input[$field])) {
             echo json_encode(["status" => "error", "message" => "Missing required field: $field"]);
             exit;
         }
     }
-    
     // ตรวจสอบว่า equipment_id มีอยู่และ active = 1 พร้อมดึงข้อมูล location เดิม
     $checkEquipment = $dbh->prepare("
         SELECT e.equipment_id, e.asset_code, e.subcategory_id, e.active, 
@@ -246,7 +246,7 @@ try {
     $updateEquipLocation->bindParam(':location_department_id', $location_dept_id, PDO::PARAM_INT);
     $updateEquipLocation->bindParam(':location_details', $location_details);
     $updateEquipLocation->bindParam(':updated_by', $transfer_user_id, PDO::PARAM_INT);
-    $updateEquipLocation->bindParam(':updated_at', $input['transfer_date']);
+    $updateEquipLocation->bindParam(':updated_at', $now); 
     $updateEquipLocation->bindParam(':equipment_id', $input['equipment_id'], PDO::PARAM_INT);
     $updateEquipLocation->execute();
 
@@ -266,7 +266,7 @@ try {
     $stmt->bindParam(':equipment_id', $input['equipment_id'], PDO::PARAM_INT);
     $stmt->bindParam(':from_department_id', $from_dept_id, PDO::PARAM_INT);
     $stmt->bindParam(':to_department_id', $to_dept_id, PDO::PARAM_INT);
-    $stmt->bindParam(':transfer_date', $input['transfer_date']);
+    $stmt->bindParam(':transfer_date', $now);
     $stmt->bindParam(':reason', $reason);
     $stmt->bindParam(':transfer_user_id', $transfer_user_id, PDO::PARAM_INT);
     $stmt->bindParam(':recipient_user_id', $recipient_user_id, PDO::PARAM_INT);
@@ -311,7 +311,7 @@ try {
     $historyStmt->bindParam(':equipment_id', $input['equipment_id'], PDO::PARAM_INT);
     $historyStmt->bindParam(':from_department_id', $from_dept_id, PDO::PARAM_INT);
     $historyStmt->bindParam(':to_department_id', $to_dept_id, PDO::PARAM_INT);
-    $historyStmt->bindParam(':transfer_date', $input['transfer_date']);
+    $historyStmt->bindParam(':transfer_date', $now);
     $historyStmt->bindParam(':reason', $reason);
     $historyStmt->bindParam(':transfer_user_id', $transfer_user_id, PDO::PARAM_INT);
     $historyStmt->bindParam(':recipient_user_id', $recipient_user_id, PDO::PARAM_INT);
@@ -337,6 +337,7 @@ try {
     echo json_encode([
         "status" => "success", 
         "message" => "Equipment transfer created successfully",
+         "transfer_date" => $now, 
         "transfer_id" => (int)$transfer_id,
         "transfer_type" => $input['transfer_type'],
         "status_transfer" => $transfer_status, // เพิ่มข้อมูลใน response
