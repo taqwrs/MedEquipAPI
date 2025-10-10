@@ -48,7 +48,7 @@ Thumbs.db
 *.gz
 """
 # Ignore user uploaded files but keep folder tracked separately
-api/file-upload/
+# api/file-upload/
 
 with open(".gitignore", "w") as f:
     f.write(gitignore_content.strip())

@@ -17,7 +17,7 @@ try {
     $useLimit = $limit > 0;
 
     // Build WHERE conditions
-    $where = ["mp.is_active IN (0,1)"];
+    $where = ["mp.is_active IN (1)"];
     $params = [];
 
     if ($search !== '') {
