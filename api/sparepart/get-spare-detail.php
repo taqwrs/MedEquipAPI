@@ -1,31 +1,53 @@
 <?php
 
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Methods: POST, OPTIONS, GET");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-// ตรวจสอบให้แน่ใจว่าไฟล์นี้ถูก include อย่างถูกต้อง
-include "../config/jwt.php"; 
+// Ensure DB connection is available
+include_once __DIR__ . "/../config/config.php";
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+// โหลด JWT เฉพาะกรณีมี Authorization header
+$authHeader = null;
+if (function_exists('apache_request_headers')) {
+    $reqHeaders = apache_request_headers();
+    $authHeader = $reqHeaders['Authorization'] ?? $reqHeaders['authorization'] ?? null;
+}
+if (!$authHeader) {
+    if (!empty($_SERVER['HTTP_AUTHORIZATION'])) $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
+    elseif (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) $authHeader = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+}
+if ($authHeader) {
+    include "../config/jwt.php"; // optional auth
+}
+
+// CORS preflight
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+// รองรับทั้ง GET และ POST
+$method = $_SERVER['REQUEST_METHOD'];
+$sparePartId = 0;
+
+if ($method === 'GET') {
+    $sparePartId = (int)($_GET['spare_id'] ?? $_GET['spare_part_id'] ?? 0);
+} elseif ($method === 'POST') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    $sparePartId = (int)($input['spare_id'] ?? $input['spare_part_id'] ?? 0);
+} else {
     http_response_code(405);
-    echo json_encode(["status" => "error", "message" => "POST method only"]);
+    echo json_encode(["status" => "error", "message" => "Method not allowed"]);
     exit;
 }
 
-$input = json_decode(file_get_contents('php://input'), true);
-// ดึง spare_part_id เท่านั้น
-$sparePartId = (int)($input['spare_id'] ?? $input['spare_part_id'] ?? 0);
-
-
 if (!$sparePartId) {
-    http_response_code(400); // Bad Request
+    http_response_code(400);
     echo json_encode(["status" => "error", "message" => "Missing spare part ID."]);
     exit;
 }
 
 try {
-    // นำ SQL เดิมของ Spare Part มาใช้ แต่เปลี่ยนส่วนเงื่อนไข
     $sql = "
     SELECT
         sp.*,
@@ -77,14 +99,11 @@ try {
     ) rg_responsible ON rg_responsible.subcategory_id = sp.spare_subcategory_id
     LEFT JOIN group_user gu2 ON gu2.group_user_id = rg_responsible.group_user_id
 
-    -- ใช้ users.ID แทน user_id
     LEFT JOIN users u1 ON u1.ID = sp.user_id
     LEFT JOIN users u2 ON u2.ID = sp.updated_by
-
     LEFT JOIN file_spare fs ON fs.spare_part_id = sp.spare_part_id
     LEFT JOIN equipments e ON e.equipment_id = sp.equipment_id
 
-    -- *** เงื่อนไขหลัก: ดึงข้อมูลเฉพาะ ID ที่ระบุเท่านั้น ***
     WHERE sp.spare_part_id = :id
     GROUP BY sp.spare_part_id
     LIMIT 1
@@ -93,20 +112,19 @@ try {
     $stmt = $dbh->prepare($sql);
     $stmt->bindValue(':id', $sparePartId, PDO::PARAM_INT);
     $stmt->execute();
-    $data = $stmt->fetch(PDO::FETCH_ASSOC); // ดึงข้อมูลเดียวเท่านั้น
+    $data = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$data) {
-        http_response_code(404); // Not Found
+        http_response_code(404);
         echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลอะไหล่ ID $sparePartId"]);
         exit;
     }
 
-    // decode JSON fields
     $data['filesInfo'] = json_decode($data['filesInfo'], true);
 
     echo json_encode([
         "status" => "success",
-        "data" => $data, // คืนค่าเป็น Object เดียว
+        "data" => $data
     ]);
 
 } catch (Exception $e) {
