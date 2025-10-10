@@ -88,6 +88,21 @@ try {
         $new_data['warranty_duration_days'] = $warranty_days;
     }
 
+    // --- ตรวจ asset_code unique ---
+    if (isset($_POST['asset_code']) && $_POST['asset_code'] !== '') {
+        $newAsset = $_POST['asset_code'];
+        $currentAsset = $oldEquipment['asset_code'] ?? null;
+        // only check if asset_code is changed
+        if ($newAsset !== $currentAsset) {
+            $stmtCheckCode = $dbh->prepare("SELECT COUNT(*) as cnt FROM equipments WHERE asset_code = :asset_code AND equipment_id != :equipment_id");
+            $stmtCheckCode->execute([':asset_code' => $newAsset, ':equipment_id' => $equipment_id]);
+            $row = $stmtCheckCode->fetch(PDO::FETCH_ASSOC);
+            if ($row && $row['cnt'] > 0) {
+                throw new Exception("รหัสทรัพย์สินมีอยู่แล้ว "  . $newAsset . " กรุณาเปลี่ยน");
+            }
+        }
+    }
+
     if(!empty($setParts)){
         $setParts[] = "updated_by=:updated_by";
         $setParts[] = "updated_at=NOW()";

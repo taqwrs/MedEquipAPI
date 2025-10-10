@@ -56,6 +56,16 @@ try {
             throw new Exception("Missing field: $f");
     }
 
+    // --- ตรวจ asset_code unique ---
+    if (!empty($_POST['asset_code'])) {
+        $stmtCheckCode = $dbh->prepare("SELECT COUNT(*) as cnt FROM equipments WHERE asset_code = :asset_code");
+        $stmtCheckCode->execute([':asset_code' => $_POST['asset_code']]);
+        $row = $stmtCheckCode->fetch(PDO::FETCH_ASSOC);
+        if ($row && $row['cnt'] > 0) {
+            throw new Exception("Duplicate asset_code: " . $_POST['asset_code']);
+        }
+    }
+
     // --- คำนวณ warranty ---
     if (!empty($_POST['start_date']) && !empty($_POST['end_date'])) {
         $start = new DateTime($_POST['start_date']);
