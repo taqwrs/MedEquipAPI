@@ -29,10 +29,7 @@ try {
         ru.u_id = :u_id 
         AND gu.type = 'ผู้ดูแลหลัก'
         AND e.active = 1
-        AND (
-            et.equipment_id IS NULL 
-            OR et.status != 0
-        )";
+    ";
 
     $searchWhere = '';
     if (!empty($input['keyword'])) {
@@ -41,6 +38,7 @@ try {
         $params[':keyword'] = "%{$keyword}%";
     }
 
+    // ✅ แก้ JOIN ของ equipment_transfers ให้เลือกเฉพาะ record ล่าสุดของแต่ละเครื่อง
     $joinTables = "
         FROM equipments e
         INNER JOIN equipment_subcategories es ON e.subcategory_id = es.subcategory_id
@@ -50,17 +48,19 @@ try {
         LEFT JOIN departments d ON e.location_department_id = d.department_id
         LEFT JOIN (
             SELECT 
-                equipment_id, 
-                status,
-                ROW_NUMBER() OVER (PARTITION BY equipment_id ORDER BY transfer_id DESC) as rn
-            FROM equipment_transfers
-        ) et ON e.equipment_id = et.equipment_id AND et.rn = 1
+                t1.equipment_id,
+                t1.status
+            FROM equipment_transfers t1
+            INNER JOIN (
+                SELECT equipment_id, MAX(transfer_id) AS latest_transfer_id
+                FROM equipment_transfers
+                GROUP BY equipment_id
+            ) t2 ON t1.equipment_id = t2.equipment_id AND t1.transfer_id = t2.latest_transfer_id
+        ) et ON e.equipment_id = et.equipment_id
         WHERE $baseWhere $searchWhere
     ";
 
     $countSQL = "SELECT COUNT(DISTINCT e.equipment_id) as total $joinTables";
-    error_log("DEBUG: COUNT SQL => $countSQL");
-
     $countStmt = $dbh->prepare($countSQL);
     $countStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
     if (!empty($input['keyword'])) {
@@ -90,8 +90,6 @@ try {
         $joinTables
         ORDER BY e.updated_at DESC
     ";
-    error_log("DEBUG: DATA SQL => $dataSQL");
-
     $dataStmt = $dbh->prepare($dataSQL);
     $dataStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
     if (!empty($input['keyword'])) {
@@ -123,26 +121,25 @@ try {
         $placeholders = str_repeat('?,', count($subcategory_ids) - 1) . '?';
 
         $adminSQL = "
-        SELECT DISTINCT
-            es.subcategory_id,
-            gu.group_user_id as group_id,
-            gu.group_name,
-            gu.type as group_type,
-            u.ID,
-            u.user_id,
-            u.full_name,
-            ud.department_name
-        FROM equipment_subcategories es
-        INNER JOIN relation_group rg ON es.subcategory_id = rg.subcategory_id
-        INNER JOIN group_user gu ON rg.group_user_id = gu.group_user_id
-        INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
-        INNER JOIN users u ON ru.u_id = u.ID
-        LEFT JOIN departments ud ON u.department_id = ud.department_id
-        WHERE es.subcategory_id IN ($placeholders)
-            AND gu.type = 'ผู้ดูแลหลัก'
-        ORDER BY es.subcategory_id, gu.group_user_id, u.ID
-    ";
-        error_log("DEBUG: ADMIN SQL => $adminSQL");
+            SELECT DISTINCT
+                es.subcategory_id,
+                gu.group_user_id as group_id,
+                gu.group_name,
+                gu.type as group_type,
+                u.ID,
+                u.user_id,
+                u.full_name,
+                ud.department_name
+            FROM equipment_subcategories es
+            INNER JOIN relation_group rg ON es.subcategory_id = rg.subcategory_id
+            INNER JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+            INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
+            INNER JOIN users u ON ru.u_id = u.ID
+            LEFT JOIN departments ud ON u.department_id = ud.department_id
+            WHERE es.subcategory_id IN ($placeholders)
+                AND gu.type = 'ผู้ดูแลหลัก'
+            ORDER BY es.subcategory_id, gu.group_user_id, u.ID
+        ";
 
         $adminStmt = $dbh->prepare($adminSQL);
         $adminStmt->execute(array_values($subcategory_ids));
