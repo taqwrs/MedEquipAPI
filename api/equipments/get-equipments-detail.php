@@ -1,21 +1,45 @@
 <?php
 
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Methods: POST, OPTIONS, GET");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-// ตรวจสอบให้แน่ใจว่าไฟล์นี้ถูก include อย่างถูกต้อง
-include "../config/jwt.php"; 
+// Ensure DB connection is available for all requests
+include_once __DIR__ . "/../config/config.php";
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(["status" => "error", "message" => "POST method only"]);
+$authHeader = null;
+if (function_exists('apache_request_headers')) {
+    $reqHeaders = apache_request_headers();
+    $authHeader = isset($reqHeaders['Authorization']) ? $reqHeaders['Authorization'] : (isset($reqHeaders['authorization']) ? $reqHeaders['authorization'] : null);
+}
+if (!$authHeader) {
+    // Fallback to common $_SERVER keys
+    if (!empty($_SERVER['HTTP_AUTHORIZATION'])) $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
+    elseif (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) $authHeader = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+}
+
+if ($authHeader) {
+    include "../config/jwt.php"; 
+}
+// Handle CORS preflight OPTIONS request early so browser can proceed with POST/GET
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
     exit;
 }
 
-$input = json_decode(file_get_contents('php://input'), true);
-// ดึง equipment_id เท่านั้น
-$equipmentId = (int)($input['equipment_id'] ?? 0); 
+// Accept GET or POST. For GET, read equipment_id from query string (equipment_id or id).
+$method = $_SERVER['REQUEST_METHOD'];
+$equipmentId = 0;
+if ($method === 'GET') {
+    $equipmentId = (int)($_GET['equipment_id'] ?? $_GET['id'] ?? 0);
+} elseif ($method === 'POST') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    $equipmentId = (int)($input['equipment_id'] ?? 0);
+} else {
+    http_response_code(405);
+    echo json_encode(["status" => "error", "message" => "Method not allowed"]);
+    exit;
+}
 
 if (!$equipmentId) {
     http_response_code(400); // Bad Request
