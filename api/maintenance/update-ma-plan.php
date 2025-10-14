@@ -82,7 +82,7 @@ try {
 
     // ------------------ ส่วนที่แก้ไขและเพิ่ม Flag ------------------
     $restrictedFieldsRetained = false; // สถานะสำหรับส่งกลับ Frontend
-    
+
     // ถ้ามีผลลัพธ์แล้ว บางฟิลด์ที่กระทบรอบต้องไม่แก้ไข
     if ($hasResult) {
         $restrictedFields = ['frequency_number', 'frequency_unit', 'frequency_type', 'start_date', 'end_date'];
@@ -100,7 +100,7 @@ try {
         $stmt = $dbh->prepare("UPDATE maintenance_plans SET is_active=:is_active WHERE plan_id=:plan_id");
         $stmt->execute([
             ':is_active' => $input['is_active'],
-            ':plan_id'   => $input['plan_id']
+            ':plan_id' => $input['plan_id']
         ]);
         $dbh->commit();
         echo json_encode(["status" => "success", "message" => "Soft delete success"]);
@@ -120,7 +120,7 @@ try {
         echo json_encode(["status" => "error", "message" => "Invalid cost_type"]);
         exit;
     }
-    if (!in_array((int)$updateData['frequency_unit'], $allowed_frequency_unit)) {
+    if (!in_array((int) $updateData['frequency_unit'], $allowed_frequency_unit)) {
         echo json_encode(["status" => "error", "message" => "Invalid frequency_unit"]);
         exit;
     }
@@ -134,10 +134,13 @@ try {
             $roundDates[] = $updateData['start_date'];
         } else {
             $startDate = new DateTime($updateData['start_date']);
-            $endDate   = new DateTime($updateData['end_date']);
-            $intervalNumber = (int)$updateData['frequency_number'];
-            $intervalUnit = (int)$updateData['frequency_unit'];
-
+            $endDate = new DateTime($updateData['end_date']);
+            $intervalNumber = (int) $updateData['frequency_number'];
+            $intervalUnit = (int) $updateData['frequency_unit'];
+            if ($endDate < $startDate) {
+                echo json_encode(["status" => "error", "message" => "วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น"]);
+                exit;
+            }
             $tempDate = clone $startDate;
             while ($tempDate <= $endDate) {
                 $intervalCount++;
@@ -162,7 +165,7 @@ try {
         // Plan เริ่มใช้งานแล้ว → ใช้ intervalCount เดิม
         $intervalCount = $current['interval_count'];
     }
-    
+
     // ------ตรวจสอบชื่อ plan ซ้ำ (ไม่รวม plan ตัวเอง) ------ //
     $stmtCheckName = $dbh->prepare("
     SELECT COUNT(*) 
@@ -172,7 +175,7 @@ try {
     ");
     $stmtCheckName->execute([
         ':plan_name' => $updateData['plan_name'],
-        ':plan_id'   => $input['plan_id']
+        ':plan_id' => $input['plan_id']
     ]);
     if ($stmtCheckName->fetchColumn() > 0) {
         echo json_encode(["status" => "error", "message" => "ชื่อแผนซ้ำ"]);
@@ -224,12 +227,13 @@ try {
 
     // ------------------ JSON Response ที่รวม Flag ------------------
     $response = [
-        "status" => "success", 
+        "status" => "success",
         "message" => "Plan updated",
-        "restricted_fields" => $restrictedFieldsRetained 
+        "restricted_fields" => $restrictedFieldsRetained
     ];
     echo json_encode($response);
 } catch (Exception $e) {
-    if ($dbh->inTransaction()) $dbh->rollBack();
+    if ($dbh->inTransaction())
+        $dbh->rollBack();
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }

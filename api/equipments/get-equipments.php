@@ -22,10 +22,14 @@ try {
     $params = [];
     $searchSql = "WHERE e.active = 1";
     if ($search) {
-        $searchSql .= " AND (e.name LIKE :search OR e.asset_code LIKE :search OR e.end_date LIKE :search OR e.status LIKE :search OR e.serial_number LIKE :search)";
+        $searchSql .= " AND (e.name LIKE :search OR e.asset_code LIKE :search OR e.end_date LIKE :search OR e.status LIKE :search OR e.record_status LIKE :search)";
         $params[':search'] = "%$search%";
     }
-
+    $record_status = trim($input['record_status'] ?? '');
+    if ($record_status !== '') {
+        $searchSql .= " AND e.record_status = :record_status";
+        $params[':record_status'] = $record_status;
+    }
 
     $sql = "
     SELECT

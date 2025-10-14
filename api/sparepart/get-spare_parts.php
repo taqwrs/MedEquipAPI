@@ -19,10 +19,14 @@ try {
     $params = [];
     $searchSql = "WHERE sp.active = 1";
     if ($search) {
-        $searchSql .= " AND (sp.name LIKE :search OR sp.asset_code LIKE :search OR sp.end_date LIKE :search OR sp.status LIKE :search OR sp.serial_number LIKE :search)";
+        $searchSql .= " AND (sp.name LIKE :search OR sp.asset_code LIKE :search OR sp.end_date LIKE :search OR sp.status LIKE :search OR sp.record_status LIKE :search)";
         $params[':search'] = "%$search%";
     }
-
+    $record_status = trim($input['record_status'] ?? '');
+    if ($record_status !== '') {
+        $searchSql .= " AND sp.record_status = :record_status";
+        $params[':record_status'] = $record_status;
+    }
 
     // นับจำนวนทั้งหมด
     $countSql = "SELECT COUNT(DISTINCT sp.spare_part_id) FROM spare_parts sp LEFT JOIN file_spare fs ON fs.spare_part_id = sp.spare_part_id $searchSql";
