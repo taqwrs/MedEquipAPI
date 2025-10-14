@@ -3,25 +3,26 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 include "../config/jwt.php";
-include "../config/LogModel.php"; 
+include "../config/LogModel.php";
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit(0);
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS')
+    exit(0);
 
 $spare_part_id = $_POST['spare_part_id'] ?? null;
 $updated_by = $_POST['updated_by'] ?? null;
 
 if (empty($spare_part_id)) {
-    echo json_encode(["status"=>"error","message"=>"spare_part_id required"]);
+    echo json_encode(["status" => "error", "message" => "spare_part_id required"]);
     exit;
 }
 if (empty($updated_by)) {
-    echo json_encode(["status"=>"error","message"=>"updated_by required"]);
+    echo json_encode(["status" => "error", "message" => "updated_by required"]);
     exit;
 }
 
 try {
     $dbh->beginTransaction();
-    $log = new LogModel($dbh); 
+    $log = new LogModel($dbh);
 
     // --- ดึงข้อมูลเก่าสำหรับ log ---
     $stmtOld = $dbh->prepare("SELECT * FROM spare_parts WHERE spare_part_id = :id");
@@ -30,10 +31,28 @@ try {
 
     // Fields for partial update
     $fields = [
-        'name','asset_code','import_type_id','spare_subcategory_id','location_department_id',
-        'location_details','production_year','price','contract','start_date','end_date',
-        'warranty_condition','maintainer_company_id','supplier_company_id','manufacturer_company_id',
-        'status','record_status','spec','model','brand','serial_number','details'
+        'name',
+        'asset_code',
+        'import_type_id',
+        'spare_subcategory_id',
+        'location_department_id',
+        'location_details',
+        'production_year',
+        'price',
+        'contract',
+        'start_date',
+        'end_date',
+        'warranty_condition',
+        'maintainer_company_id',
+        'supplier_company_id',
+        'manufacturer_company_id',
+        'status',
+        'record_status',
+        'spec',
+        'model',
+        'brand',
+        'serial_number',
+        'details'
     ];
 
     $setParts = [];
@@ -70,16 +89,30 @@ try {
         $stmt = $dbh->prepare($sql);
         $stmt->execute($params);
     }
-
+    // --- ตรวจ asset_code unique ---
+    if (isset($_POST['asset_code']) && $_POST['asset_code'] !== '') {
+        $newAsset = $_POST['asset_code'];
+        $currentAsset = $oldData['asset_code'] ?? null;
+        // only check if asset_code is changed
+        if ($newAsset !== $currentAsset) {
+            $stmtCheckCode = $dbh->prepare("SELECT COUNT(*) as cnt FROM spare_parts WHERE asset_code = :asset_code AND spare_part_id != :spare_part_id");
+            $stmtCheckCode->execute([':asset_code' => $newAsset, ':spare_part_id' => $spare_part_id]);
+            $row = $stmtCheckCode->fetch(PDO::FETCH_ASSOC);
+            if ($row && $row['cnt'] > 0) {
+                throw new Exception("รหัสทรัพย์สินมีอยู่แล้ว " . $newAsset . " กรุณาเปลี่ยน");
+            }
+        }
+    }
     // --- Log update spare part (เฉพาะ PK และ field ที่เปลี่ยน) ---
     if (count($old_log) > 1 || count($new_log) > 1) { // มี field ที่เปลี่ยนมากกว่าแค่ PK
         $log->insertLog($updated_by, 'spare_parts', 'UPDATE', $old_log, $new_log, 'register_logs');
     }
 
     $dbh->commit();
-    echo json_encode(["status"=>"success","message"=>"Spare part updated successfully."]);
+    echo json_encode(["status" => "success", "message" => "Spare part updated successfully."]);
 
-} catch(Exception $e) {
-    if ($dbh->inTransaction()) $dbh->rollBack();
-    echo json_encode(["status"=>"error","message"=>$e->getMessage()]);
+} catch (Exception $e) {
+    if ($dbh->inTransaction())
+        $dbh->rollBack();
+    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
