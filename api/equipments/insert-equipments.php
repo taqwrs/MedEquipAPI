@@ -62,7 +62,7 @@ try {
         $stmtCheckCode->execute([':asset_code' => $_POST['asset_code']]);
         $row = $stmtCheckCode->fetch(PDO::FETCH_ASSOC);
         if ($row && $row['cnt'] > 0) {
-            throw new Exception("Duplicate asset_code: " . $_POST['asset_code']);
+            throw new Exception("รหัสทรัพย์สินมีอยู่แล้ว: " . $_POST['asset_code']);
         }
     }
 
