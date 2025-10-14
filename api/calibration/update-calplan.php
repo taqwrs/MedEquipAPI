@@ -1,5 +1,5 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -77,10 +77,20 @@ try {
     }
 
     $fields = [
-        'plan_name','user_id','group_user_id','company_id',
-        'frequency_number','frequency_unit','frequency_type',
-        'start_waranty','start_date','end_date','cost_type',
-        'price','type_cal','is_active'
+        'plan_name',
+        'user_id',
+        'group_user_id',
+        'company_id',
+        'frequency_number',
+        'frequency_unit',
+        'frequency_type',
+        'start_waranty',
+        'start_date',
+        'end_date',
+        'cost_type',
+        'price',
+        'type_cal',
+        'is_active'
     ];
 
     $updateData = [];
@@ -92,28 +102,35 @@ try {
     if (isset($input['action']) && $input['action'] === 'deactivate') {
         $stmt = $dbh->prepare("UPDATE calibration_plans SET is_active=0 WHERE plan_id=:plan_id");
         $stmt->execute([':plan_id' => $input['plan_id']]);
-        echo json_encode(["status"=>"success","message"=>"Soft delete success"]);
+        echo json_encode(["status" => "success", "message" => "Soft delete success"]);
         exit;
     }
 
 
-    $allowed_type_cal = ['ภายใน','ภายนอก'];
-    $allowed_cost_type = ['แยกรายรอบ','รวมตลอดทั้งสัญญา'];
-    $allowed_frequency_unit = [1,2,3,4];
+    $allowed_type_cal = ['ภายใน', 'ภายนอก'];
+    $allowed_cost_type = ['แยกรายรอบ', 'รวมตลอดทั้งสัญญา'];
+    $allowed_frequency_unit = [1, 2, 3, 4];
 
     if (!in_array($updateData['type_cal'], $allowed_type_cal)) {
-        echo json_encode(["status" => "error", "message" => "Invalid type_cal"]); exit;
+        echo json_encode(["status" => "error", "message" => "Invalid type_cal"]);
+        exit;
     }
     if (!in_array($updateData['cost_type'], $allowed_cost_type)) {
-        echo json_encode(["status" => "error", "message" => "Invalid cost_type"]); exit;
+        echo json_encode(["status" => "error", "message" => "Invalid cost_type"]);
+        exit;
     }
     if (!in_array((int)$updateData['frequency_unit'], $allowed_frequency_unit)) {
-        echo json_encode(["status" => "error", "message" => "Invalid frequency_unit"]); exit;
+        echo json_encode(["status" => "error", "message" => "Invalid frequency_unit"]);
+        exit;
     }
 
     if (!$hasResult) {
         $startDate = new DateTime($updateData['start_date']);
         $endDate   = new DateTime($updateData['end_date']);
+        if ($endDate < $startDate) {
+            echo json_encode(["status" => "error", "message" => "วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น"]);
+            exit;
+        }
         $intervalNumber = (int)$updateData['frequency_number'];
         $intervalUnit = (int)$updateData['frequency_unit'];
 
@@ -124,10 +141,18 @@ try {
             $intervalCount++;
             $roundDates[] = $tempDate->format('Y-m-d');
             switch ($intervalUnit) {
-                case 1: $tempDate->add(new DateInterval('P'.$intervalNumber.'D')); break;
-                case 2: $tempDate->add(new DateInterval('P'.($intervalNumber*7).'D')); break;
-                case 3: $tempDate->add(new DateInterval('P'.$intervalNumber.'M')); break;
-                case 4: $tempDate->add(new DateInterval('P'.$intervalNumber.'Y')); break;
+                case 1:
+                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'D'));
+                    break;
+                case 2:
+                    $tempDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D'));
+                    break;
+                case 3:
+                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'M'));
+                    break;
+                case 4:
+                    $tempDate->add(new DateInterval('P' . $intervalNumber . 'Y'));
+                    break;
             }
         }
     } else {
@@ -174,9 +199,8 @@ try {
     }
 
     $dbh->commit();
-    echo json_encode(["status"=>"success","message"=>"Plan updated successfully"]);
-
-} catch(Exception $e) {
-    if($dbh->inTransaction()) $dbh->rollBack();
-    echo json_encode(["status"=>"error","message"=>$e->getMessage()]);
+    echo json_encode(["status" => "success", "message" => "Plan updated successfully"]);
+} catch (Exception $e) {
+    if ($dbh->inTransaction()) $dbh->rollBack();
+    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
