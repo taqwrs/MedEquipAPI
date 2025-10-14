@@ -23,7 +23,16 @@ try {
     }
 
     $now = date('Y-m-d H:i:s');
-    
+
+    // จัดการวันที่โอนย้าย: ใช้วันที่ที่เลือก + เวลาปัจจุบัน
+    if (isset($input['transfer_date']) && !empty($input['transfer_date'])) {
+        $selected_date = date('Y-m-d', strtotime($input['transfer_date']));
+        $current_time = date('H:i:s');
+        $transfer_date = $selected_date . ' ' . $current_time;
+    } else {
+        $transfer_date = $now;
+    }
+        
     $required = ['transfer_type', 'equipment_id'];
     foreach ($required as $field) {
         if (!isset($input[$field]) || empty($input[$field])) {
@@ -266,7 +275,7 @@ try {
     $stmt->bindParam(':equipment_id', $input['equipment_id'], PDO::PARAM_INT);
     $stmt->bindParam(':from_department_id', $from_dept_id, PDO::PARAM_INT);
     $stmt->bindParam(':to_department_id', $to_dept_id, PDO::PARAM_INT);
-    $stmt->bindParam(':transfer_date', $now);
+    $stmt->bindParam(':transfer_date', $transfer_date);
     $stmt->bindParam(':reason', $reason);
     $stmt->bindParam(':transfer_user_id', $transfer_user_id, PDO::PARAM_INT);
     $stmt->bindParam(':recipient_user_id', $recipient_user_id, PDO::PARAM_INT);
@@ -311,7 +320,7 @@ try {
     $historyStmt->bindParam(':equipment_id', $input['equipment_id'], PDO::PARAM_INT);
     $historyStmt->bindParam(':from_department_id', $from_dept_id, PDO::PARAM_INT);
     $historyStmt->bindParam(':to_department_id', $to_dept_id, PDO::PARAM_INT);
-    $historyStmt->bindParam(':transfer_date', $now);
+    $historyStmt->bindParam(':transfer_date', $transfer_date);
     $historyStmt->bindParam(':reason', $reason);
     $historyStmt->bindParam(':transfer_user_id', $transfer_user_id, PDO::PARAM_INT);
     $historyStmt->bindParam(':recipient_user_id', $recipient_user_id, PDO::PARAM_INT);
@@ -337,7 +346,7 @@ try {
     echo json_encode([
         "status" => "success", 
         "message" => "Equipment transfer created successfully",
-         "transfer_date" => $now, 
+         "transfer_date" => $transfer_date, 
         "transfer_id" => (int)$transfer_id,
         "transfer_type" => $input['transfer_type'],
         "status_transfer" => $transfer_status, // เพิ่มข้อมูลใน response

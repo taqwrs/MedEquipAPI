@@ -49,11 +49,15 @@ try {
 
     $startDate = new DateTime($input['start_date']);
     $endDate = new DateTime($input['end_date']);
+    if ($endDate < $startDate) {
+        echo json_encode(["status" => "error", "message" => "end_date ต้องไม่น้อยกว่า start_date"]);
+        exit;
+    }
     $intervalNumber = (int) $input['frequency_number'];
     $intervalUnit = (int) $input['frequency_unit'];
 
     if ($input['frequency_type'] === 'รอบเดียว') {
-        $intervalCount = 1; 
+        $intervalCount = 1;
     } else {
         $intervalCount = 0;
         $tempDate = clone $startDate;
@@ -136,10 +140,8 @@ try {
 
     $dbh->commit();
     echo json_encode(["status" => "success", "plan_id" => $plan_id]);
-
 } catch (Exception $e) {
     if ($dbh->inTransaction())
         $dbh->rollBack();
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>

@@ -37,7 +37,6 @@ try {
         if ($roleId == 6) {
             $isAdmin = true;
         } else {
-            // ดึง group_user_id ของผู้ใช้ (สำหรับผู้ใช้ทั่วไป)
             $stmtGroup = $dbh->prepare("
                 SELECT ru.group_user_id
                 FROM relation_user ru
@@ -50,7 +49,6 @@ try {
         }
     }
 
-    // ✅ พารามิเตอร์การค้นหา
     $search = trim($input['search'] ?? '');
     $page = (int)($input['page'] ?? 1);
     $limit = (int)($input['limit'] ?? 10);
@@ -65,7 +63,6 @@ try {
         $params[':search'] = "%$search%";
     }
 
-    // ✅ ระบบสิทธิ์การเข้าถึง
     if ($isAdmin) {
         $where = ["cp.is_active IN (1)"];
         $params = [];
@@ -102,14 +99,14 @@ try {
                 }
                 $where[] = "cp.group_user_id IN (" . implode(',', $placeholders) . ")";
             } else {
-                $where[] = "1 = 0"; // ไม่มีสิทธิ์เห็นข้อมูล
+                $where[] = "1 = 0"; 
             }
         }
     }
 
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
-    // ✅ Query หลัก
+
     $query = "
         SELECT cp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,
                COUNT(DISTINCT dcp.details_cal_id) AS total_schedules
