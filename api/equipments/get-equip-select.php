@@ -30,7 +30,11 @@ try {
     $searchFields = ['name', 'asset_code', 'brand', 'model', 'status'];
     $whereClause = "WHERE active = 1"; // มีฟิลด์ active จริง
     $orderBy = "ORDER BY equipment_id DESC";
-    
+    // ถ้ามี exclude_id ให้กรองออก
+    if (!empty($input['exclude_id'])) {
+        $excludeId = intval($input['exclude_id']);
+        $whereClause .= " AND equipment_id != $excludeId";
+    }
     // เรียกเฉพาะ search ฝั่ง backend
     $response = handleSearchOnly(
         $dbh, 

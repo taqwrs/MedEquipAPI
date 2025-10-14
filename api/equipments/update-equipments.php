@@ -75,6 +75,9 @@ try {
     if(!empty($_POST['start_date']) && !empty($_POST['end_date'])){
         $start = new DateTime($_POST['start_date']);
         $end = new DateTime($_POST['end_date']);
+        if ($end < $start) {
+            throw new Exception("วันที่สิ้นสุดสัญญาต้องไม่น้อยกว่าวันที่เริ่มต้น");
+        }
         $warranty_days = $start->diff($end)->days;
     } else {
         $warranty_days = null;

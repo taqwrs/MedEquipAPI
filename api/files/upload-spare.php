@@ -18,6 +18,9 @@ try {
 
     $uploadedFiles = [];
     $uploadDir = __DIR__ . "/../file-upload/file_spare/";
+    if (!is_dir($uploadDir)) {
+        throw new Exception("ไม่พบโฟลเดอร์สำหรับอัปโหลดไฟล์: $uploadDir");
+    }
 
     $files = $_FILES['file_spare'] ?? null;
     // ตรวจสอบว่ามีไฟล์อัปโหลดหรือไม่

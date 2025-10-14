@@ -20,8 +20,10 @@ try {
 
     $uploadedFiles = [];
     $uploadDir = __DIR__ . "/../file-upload/file_equip/";
-    if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-
+    // if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+    if (!is_dir($uploadDir)) {
+        throw new Exception("ไม่พบโฟลเดอร์สำหรับอัปโหลดไฟล์: $uploadDir");
+    }
     $files = $_FILES['file_equip'] ?? null;
 
     // ไม่มีไฟล์ → ส่งกลับสำเร็จ
@@ -43,15 +45,18 @@ try {
 
     foreach ($files['name'] as $key => $name) {
         try {
-            if ($files['error'][$key] !== UPLOAD_ERR_OK) continue;
+            if ($files['error'][$key] !== UPLOAD_ERR_OK)
+                continue;
 
             $tmp = $files['tmp_name'][$key];
             $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
             $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'docx'];
-            if (!in_array($ext, $allowed)) continue;
+            if (!in_array($ext, $allowed))
+                continue;
 
             $newName = uniqid('equip_', true) . '.' . $ext;
-            if (!move_uploaded_file($tmp, $uploadDir . $newName)) continue;
+            if (!move_uploaded_file($tmp, $uploadDir . $newName))
+                continue;
 
             $url = "/file-upload/file_equip/$newName";
             $typeName = $_POST['equip_type_name'][$key] ?? "";
@@ -87,6 +92,7 @@ try {
     echo json_encode(["status" => "success", "files" => $uploadedFiles], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
-    if ($dbh->inTransaction()) $dbh->rollBack();
+    if ($dbh->inTransaction())
+        $dbh->rollBack();
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
