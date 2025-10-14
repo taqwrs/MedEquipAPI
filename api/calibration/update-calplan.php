@@ -47,7 +47,7 @@ try {
     $stmtCheckResult->execute([':plan_id' => $input['plan_id']]);
     $hasResult = $stmtCheckResult->fetchColumn() > 0;
 
-    // ตรวจสอบว่ามีการพยายามแก้ไขฟิลด์ที่ถูกจำกัดหรือไม่
+
     if ($hasResult) {
         $restrictedFields = [
             'frequency_number' => 'ความถี่ (จำนวน)',
@@ -97,7 +97,6 @@ try {
     }
 
 
-    // Validate
     $allowed_type_cal = ['ภายใน','ภายนอก'];
     $allowed_cost_type = ['แยกรายรอบ','รวมตลอดทั้งสัญญา'];
     $allowed_frequency_unit = [1,2,3,4];
@@ -112,7 +111,6 @@ try {
         echo json_encode(["status" => "error", "message" => "Invalid frequency_unit"]); exit;
     }
 
-    // Plan มีผลลัพธ์แล้ว → ไม่ต้องคำนวณรอบใหม่
     if (!$hasResult) {
         $startDate = new DateTime($updateData['start_date']);
         $endDate   = new DateTime($updateData['end_date']);
