@@ -33,6 +33,7 @@ try {
                cp.end_date,
                cp.price AS total_cost,
                e.name AS equipment_name,
+               e.asset_code,
                u.full_name AS user_name,
                c.name AS company_name
         FROM calibration_result cr
@@ -87,6 +88,7 @@ try {
         "plan_id" => $data['plan_id'],
         "details_cal_id" => $data['details_cal_id'],
         "equipment_id" => $data['equipment_id'],
+        "asset_code" => $data['asset_code'] ?? "ไม่พบข้อมูล",
         "equipment_name" => $data['equipment_name'] ?? "ไม่พบข้อมูล",
         "unitLabel" => $data['cost_type'] === "รวมตลอดทั้งสัญญา" ? "ภายนอก" : "ภายใน",
         "frequency" => "{$data['frequency_number']} " . ($data['frequency_unit'] == 2 ? "เดือน" : "วัน"),

@@ -6,14 +6,14 @@ header("Access-Control-Allow-Headers: Content-Type");
 include "../config/jwt.php"; 
 include "../config/pagination_helper.php";
 
-// Support both GET and POST methods
+
 $method = $_SERVER['REQUEST_METHOD'];
 if ($method === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
 
-// Get input data
+
 $input = [];
 if ($method === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -28,10 +28,10 @@ try {
     ";
     
     $searchFields = ['name', 'asset_code', 'brand', 'model', 'status'];
-    $whereClause = "WHERE active = 1 AND status != 'ซ่อม'"; // กรองสถานะซ่อมออก
+    $whereClause = "WHERE active = 1 AND status != 'ซ่อม'";
     $orderBy = "ORDER BY equipment_id DESC";
     
-    // เรียกเฉพาะ search ฝั่ง backend
+  
     $response = handleSearchOnly(
         $dbh, 
         $input, 
