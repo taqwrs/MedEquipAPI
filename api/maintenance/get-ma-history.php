@@ -15,47 +15,41 @@ $viewType = isset($_GET['viewType']) ? $_GET['viewType'] : null;
 try {
     $result = [];
 
-    if ($viewType === "allRoundsOfEquipment" && $equipmentId && $planId) {
-        // ดึงชื่ออุปกรณ์
-        $stmtEq = $dbh->prepare("SELECT asset_code, name FROM equipments WHERE equipment_id = :equipment_id");
-        $stmtEq->execute([':equipment_id' => $equipmentId]);
-        $eqData = $stmtEq->fetch(PDO::FETCH_ASSOC);
-        $equipmentName = ($eqData['asset_code'] ?? "-") . " - " . ($eqData['name'] ?? $equipmentId);
+    if ($viewType === "allRoundsOfEquipment" && $planId) {
+        $stmt = $dbh->prepare("
+        SELECT e.equipment_id, e.asset_code, e.name, dmp.details_ma_id, mr.ma_result_id, mp.plan_name, dmp.start_date, mr.performed_date, mr.result, mr.details, mr.reason
+        FROM maintenance_result mr
+        INNER JOIN details_maintenance_plans dmp ON mr.details_ma_id = dmp.details_ma_id
+        INNER JOIN equipments e ON e.equipment_id = mr.equipment_id
+        INNER JOIN maintenance_plans mp ON mp.plan_id = dmp.plan_id
+        WHERE dmp.plan_id = :plan_id
+        ORDER BY dmp.details_ma_id ASC
+    ");
+        $stmt->execute([':plan_id' => $planId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // ใช้ handleSearchOnly ดึงรายละเอียดรอบทั้งหมด
-        $baseSql = "
-            SELECT dmp.details_ma_id, mr.ma_result_id, mr.result, mr.details, mr.reason, dmp.start_date, mr.performed_date, mp.plan_name
-            FROM details_maintenance_plans dmp
-            INNER JOIN maintenance_result mr ON mr.details_ma_id = dmp.details_ma_id
-            INNER JOIN maintenance_plans mp ON mp.plan_id = dmp.plan_id
-            WHERE dmp.plan_id = :plan_id AND mr.equipment_id = :equipment_id
-        ";
-
-        $searchFields = ['mp.plan_name', 'mr.result', 'mr.details', 'mr.reason']; 
-        $additionalParams = [
-            ':plan_id' => $planId,
-            ':equipment_id' => $equipmentId
-        ];
-
-        $response = handleSearchOnly($dbh, $_GET, $baseSql, $searchFields, 'ORDER BY dmp.details_ma_id ASC', '', $additionalParams);
-
-        if (!empty($response['data'])) {
-            $rounds = [];
-            foreach ($response['data'] as $idx => $row) {
-                $rounds[] = [
-                    'round' => $idx + 1,
-                    'details_ma_id' => $row['details_ma_id'],
-                    'ma_result_id' => $row['ma_result_id'],
-                    'plan_name' => $row['plan_name'] ?? "-",
-                    'status' => $row['result'],
-                    'details' => $row['details'] ?: '-',
-                    'reason' => $row['reason'] ?: '-',
-                    'start_date' => $row['start_date'] ?: '-',
-                    'performed_date' => $row['performed_date'] ?: '-'
+        $grouped = [];
+        foreach ($rows as $r) {
+            $eqId = $r['equipment_id'];
+            if (!isset($grouped[$eqId])) {
+                $grouped[$eqId] = [
+                    'name' => $r['asset_code'] . " - " . $r['name'],
+                    'rounds' => []
                 ];
             }
-            $result[] = ['name' => $equipmentName, 'rounds' => $rounds];
+            $grouped[$eqId]['rounds'][] = [
+                'round' => count($grouped[$eqId]['rounds']) + 1,
+                'details_ma_id' => $r['details_ma_id'],
+                'ma_result_id' => $r['ma_result_id'],
+                'plan_name' => $r['plan_name'],
+                'status' => $r['result'],
+                'details' => $r['details'] ?: '-',
+                'reason' => $r['reason'] ?: '-',
+                'start_date' => $r['start_date'],
+                'performed_date' => $r['performed_date'],
+            ];
         }
+        $result = array_values($grouped);
 
     } elseif ($viewType === "allEquipments" && $roundId) {
         // ตรวจสอบ plan_id จาก round
