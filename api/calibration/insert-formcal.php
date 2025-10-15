@@ -82,8 +82,13 @@ try {
 
     $stmt = $dbh->prepare("INSERT INTO calibration_plans 
     (plan_name, user_id, group_user_id, company_id, frequency_number, frequency_unit, frequency_type, interval_count, contract, start_waranty, start_date, end_date, cost_type, price, type_cal, is_active)
-    VALUES (:plan_name, :user_id, :group_user_id, :company_id, :frequency_number, :frequency_unit, :frequency_type, :interval_count, :contract, :start_waranty, :start_date, :end_date, :cost_type, :price, :type_cal, :is_active)
-");
+    VALUES (:plan_name, :user_id, :group_user_id, :company_id, :frequency_number, :frequency_unit, :frequency_type, :interval_count, :contract, :start_waranty, :start_date, :end_date, :cost_type, :price, :type_cal, :is_active)");
+    $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM calibration_plans WHERE plan_name = :plan_name");
+    $stmtCheck->execute([':plan_name' => $input['plan_name']]);
+    if ($stmtCheck->fetchColumn() > 0) {
+        echo json_encode(["status" => "error", "message" => "ชื่อแผนซ้ำ"]);
+        exit;
+    }
 
     $stmt->execute([
         ':plan_name' => $input['plan_name'],
