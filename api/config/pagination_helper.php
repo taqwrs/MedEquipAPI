@@ -75,15 +75,24 @@ function getTotalCount($dbh, $countSql, $params = [])
 {
     try {
         $stmt = $dbh->prepare($countSql);
+
         foreach ($params as $key => $value) {
-            $stmt->bindValue($key, $value);
+            if (is_int($key)) {
+                // positional parameter ? → ต้องเริ่มจาก 1
+                $stmt->bindValue($key + 1, $value);
+            } else {
+                // named parameter :name
+                $stmt->bindValue($key, $value);
+            }
         }
+
         $stmt->execute();
         return (int) $stmt->fetchColumn();
     } catch (Exception $e) {
         return 0;
     }
 }
+
 
 /**
  * Build pagination response
@@ -130,10 +139,16 @@ function bindPaginationParams($stmt, $paginationParams, $additionalParams = [])
 {
     // Bind additional parameters first
     foreach ($additionalParams as $key => $value) {
-        if (is_int($value)) {
-            $stmt->bindValue($key, $value, PDO::PARAM_INT);
+        if (is_int($key)) {
+            // positional parameter ? → ต้องเริ่มจาก 1
+            $stmt->bindValue($key + 1, $value, PDO::PARAM_INT);
         } else {
-            $stmt->bindValue($key, $value);
+            // named parameter :name
+            if (is_int($value)) {
+                $stmt->bindValue($key, $value, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue($key, $value);
+            }
         }
     }
 
@@ -258,9 +273,14 @@ function handleSearchOnly($dbh, $input, $baseSql, $searchFields = [], $orderBy =
 
         $stmt = $dbh->prepare($sql);
         foreach ($allParams as $key => $val) {
-            $stmt->bindValue($key, $val);
+            if (is_int($key)) {
+                $stmt->bindValue($key + 1, $val);
+            } else {
+                $stmt->bindValue($key, $val);
+            }
         }
         $stmt->execute();
+
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         return buildApiResponse('success', $results);
