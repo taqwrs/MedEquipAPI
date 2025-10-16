@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
@@ -11,6 +12,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $dbh->beginTransaction();
+    $user_id = null;
+    if (isset($decoded->data->ID)) {
+        $user_id = $decoded->data->ID;
+    } else {
+        throw new Exception("ไม่พบข้อมูล user_id ใน token");
+    }
+
+    $logModel = new LogModel($dbh);
 
     $cal_result_id = $_POST['cal_result_id'] ?? null;
     if (!$cal_result_id) {
@@ -27,7 +36,7 @@ try {
     $uploadDir = __DIR__ . "/../file-upload/file_cal_result/";
     if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
 
-    $fileCount = 0; // เพิ่มตัวนับไฟล์
+    $fileCount = 0;
     $files = $_FILES['file_cal_result'] ?? null;
     if ($files && isset($files['name']) && !empty($files['name'])) {
         if (!is_array($files['name'])) {
@@ -65,15 +74,32 @@ try {
                     VALUES (?, ?, ?, ?)
                 ");
                 $stmt->execute([$cal_result_id, $name, $url, $calTypeName]);
+                
+                $insertedId = $dbh->lastInsertId();
+                
+                // บันทึก log สำหรับไฟล์ที่อัปโหลด
+                $logModel->insertLog(
+                    $user_id,
+                    'file_cal_result',
+                    'INSERT',
+                    null,
+                    [
+                        'file_cal_result_id' => $insertedId,
+                        'cal_result_id' => $cal_result_id,
+                        'file_cal_name' => $name,
+                        'file_cal_url' => $url,
+                        'cal_type_name' => $calTypeName
+                    ]
+                );
 
                 $uploadedFiles[] = [
-                    'file_cal_result_id' => $dbh->lastInsertId(),
+                    'file_cal_result_id' => $insertedId,
                     'file_cal_name' => $name,
                     'file_cal_url' => $url,
                     'cal_type_name' => $calTypeName
                 ];
                 
-                $fileCount++; // นับไฟล์ที่อัปโหลดสำเร็จ
+                $fileCount++;
             }
         }
     }
@@ -98,7 +124,6 @@ try {
                     $customName = $baseName . '-' . sprintf('%02d', $counter);
                 }
 
-                // แก้ไขตรงนี้: ใช้ $fileCount + $index แทน $index
                 $typeIndex = $fileCount + $index;
                 $calTypeName = isset($calTypeNames[$typeIndex]) ? $calTypeNames[$typeIndex] : "ลิงก์";
 
@@ -107,9 +132,26 @@ try {
                     VALUES (?, ?, ?, ?)
                 ");
                 $stmt->execute([$cal_result_id, $customName, $url, $calTypeName]);
+                
+                $insertedId = $dbh->lastInsertId();
+                
+                // บันทึก log สำหรับ URL ที่เพิ่ม
+                $logModel->insertLog(
+                    $user_id,
+                    'file_cal_result',
+                    'INSERT',
+                    null,
+                    [
+                        'file_cal_result_id' => $insertedId,
+                        'cal_result_id' => $cal_result_id,
+                        'file_cal_name' => $customName,
+                        'file_cal_url' => $url,
+                        'cal_type_name' => $calTypeName
+                    ]
+                );
 
                 $uploadedFiles[] = [
-                    'file_cal_result_id' => $dbh->lastInsertId(),
+                    'file_cal_result_id' => $insertedId,
                     'file_cal_name' => $customName,
                     'file_cal_url' => $url,
                     'cal_type_name' => $calTypeName

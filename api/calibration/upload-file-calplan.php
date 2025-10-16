@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(["status" => "error", "message" => "POST method only"]);
@@ -8,6 +9,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $dbh->beginTransaction();
+    $user_id = null;
+    if (isset($decoded->data->ID)) {
+        $user_id = $decoded->data->ID;
+    } else {
+        throw new Exception("ไม่พบข้อมูล user_id ใน token");
+    }
+
+
+    $logModel = new LogModel($dbh);
 
     $plan_id = $_POST['plan_id'] ?? null;
     if (!$plan_id) throw new Exception("plan_id ไม่พบ");
@@ -17,7 +27,7 @@ try {
     if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
 
     $files = $_FILES['file_cal'] ?? null;
-    $fileCount = 0; // เพิ่มตัวนับไฟล์
+    $fileCount = 0;
 
     if ($files && $files['name'][0] !== "") {
         if (!is_array($files['name'])) {
@@ -49,6 +59,23 @@ try {
                     VALUES (?, ?, ?, ?)
                 ");
                 $stmt->execute([$plan_id, $name, $url, $typeName]);
+                
+                $insertedId = $dbh->lastInsertId();
+                
+ 
+                $logModel->insertLog(
+                    $user_id,
+                    'file_cal',
+                    'INSERT',
+                    null,
+                    [
+                        'file_cal_id' => $insertedId,
+                        'plan_id' => $plan_id,
+                        'file_cal_name' => $name,
+                        'file_cal_url' => $url,
+                        'cal_type_name' => $typeName
+                    ]
+                );
 
                 $uploadedFiles[] = [
                     "name" => $name,
@@ -57,11 +84,10 @@ try {
                     "type" => $typeName
                 ];
                 
-                $fileCount++; // นับไฟล์ที่อัปโหลดสำเร็จ
+                $fileCount++;
             }
         }
     }
-
 
     if (!empty($_POST['file_cal_url'])) {
         $urls = is_array($_POST['file_cal_url']) ? $_POST['file_cal_url'] : [$_POST['file_cal_url']];
@@ -81,7 +107,6 @@ try {
                     $customName = $baseName . '-' . sprintf('%02d', $counter);
                 }
 
-                // แก้ไขตรงนี้: ใช้ $fileCount + $key แทน $key
                 $typeIndex = $fileCount + $key;
                 $typeName = $_POST['cal_type_name'][$typeIndex] ?? "ลิงก์";
 
@@ -90,6 +115,23 @@ try {
                     VALUES (?, ?, ?, ?)
                 ");
                 $stmt->execute([$plan_id, $customName, $url, $typeName]);
+                
+                $insertedId = $dbh->lastInsertId();
+                
+                // บันทึก log การเพิ่ม URL
+                $logModel->insertLog(
+                    $user_id,
+                    'file_cal',
+                    'INSERT',
+                    null,
+                    [
+                        'file_cal_id' => $insertedId,
+                        'plan_id' => $plan_id,
+                        'file_cal_name' => $customName,
+                        'file_cal_url' => $url,
+                        'cal_type_name' => $typeName
+                    ]
+                );
 
                 $uploadedFiles[] = [
                     "name" => $customName,
