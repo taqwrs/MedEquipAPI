@@ -1,5 +1,7 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
+include "../config/LogModel.php";
+
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
@@ -10,10 +12,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Decode JSON data
 $data = json_decode(file_get_contents("php://input"), true);
 
-// Validate required fields
 $required = ['equipment_id', 'asset_number', 'WriteoffTypes', 'user_id'];
 foreach ($required as $field) {
     if (empty($data[$field])) {
@@ -26,7 +26,7 @@ foreach ($required as $field) {
 }
 
 try {
-    $dbh->beginTransaction(); // เริ่ม Transaction
+    $dbh->beginTransaction();
 
     $equipment_id = $data['equipment_id'];
     $asset_number = $data['asset_number'];
@@ -36,7 +36,12 @@ try {
     $writeoff_date = date('Y-m-d');
     $status = 'รออนุมัติ';
 
-    // Insert write-off
+    // Get old data before insert
+    $oldStmt = $dbh->prepare("SELECT * FROM write_offs WHERE equipment_id = :equipment_id");
+    $oldStmt->bindParam(':equipment_id', $equipment_id);
+    $oldStmt->execute();
+    $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+
     $stmt = $dbh->prepare("
         INSERT INTO write_offs 
         (equipment_id, user_id, cause, writeoff_types_id, asset_number, writeoff_date, status) 
@@ -57,12 +62,30 @@ try {
 
     $writeoff_id = $dbh->lastInsertId();
 
-    // หากต้องการบันทึก table อื่น สามารถเพิ่มตรงนี้ได้
-    // ตัวอย่าง:
-    // $stmt2 = $dbh->prepare("INSERT INTO table2 (writeoff_id, ...) VALUES (?, ...)");
-    // $stmt2->execute([$writeoff_id, ...]);
+    // Prepare new data for logging
+    $newData = [
+        "writeoff_id" => $writeoff_id,
+        "equipment_id" => $equipment_id,
+        "user_id" => $user_id,
+        "asset_number" => $asset_number,
+        "writeoff_types_id" => $writeoff_types_id,
+        "cause" => $cause,
+        "status" => $status,
+        "writeoff_date" => $writeoff_date,
+    ];
 
-    $dbh->commit(); // Commit Transaction
+    // Insert log
+    $logModel = new LogModel($dbh);
+    $logModel->insertLog(
+        $user_id,
+        'write_offs',
+        'INSERT',
+        $oldData ?: null,
+        $newData,
+        'transaction_logs'
+    );
+
+    $dbh->commit();
 
     echo json_encode([
         "status" => "success",
@@ -80,7 +103,7 @@ try {
     ]);
 
 } catch (Exception $e) {
-    $dbh->rollBack(); // Rollback กรณีเกิดข้อผิดพลาด
+    $dbh->rollBack(); 
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
 ?>

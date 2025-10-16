@@ -53,11 +53,9 @@ try {
         }
     }
 
-    // ---------------- ลบ URL (ใช้ ID แทน URL string) ----------------
     if (!empty($_POST['url_ids_to_delete'])) {
         $urlIds = is_array($_POST['url_ids_to_delete']) ? $_POST['url_ids_to_delete'] : [$_POST['url_ids_to_delete']];
         foreach ($urlIds as $urlId) {
-            // ดึงข้อมูลเดิมก่อนลบเพื่อบันทึก log
             $stmt = $dbh->prepare("SELECT * FROM file_cal WHERE file_cal_id = ? AND plan_id = ?");
             $stmt->execute([$urlId, $plan_id]);
             $urlData = $stmt->fetch(PDO::FETCH_ASSOC);

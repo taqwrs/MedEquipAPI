@@ -1,5 +1,7 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
+include "../config/LogModel.php";
+
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
@@ -19,6 +21,9 @@ $status = $data['status'];
 try {
 
     $dbh->beginTransaction();
+    $oldStmt = $dbh->prepare("SELECT * FROM write_offs WHERE writeoff_id = ?");
+    $oldStmt->execute([$writeoff_id]);
+    $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
 
     if ($status === "approved") {
         $stmt = $dbh->prepare("
@@ -30,7 +35,6 @@ try {
         ");
         $stmt->execute([$user_id, $writeoff_id]);
 
-
         $stmt = $dbh->prepare("SELECT equipment_id FROM write_offs WHERE writeoff_id = ?");
         $stmt->execute([$writeoff_id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -40,6 +44,29 @@ try {
         $stmt->execute([$equipment_id]);
 
         $message = "อนุมัติสำเร็จ";
+
+        $newStmt = $dbh->prepare("SELECT * FROM write_offs WHERE writeoff_id = ?");
+        $newStmt->execute([$writeoff_id]);
+        $newData = $newStmt->fetch(PDO::FETCH_ASSOC);
+        $logModel = new LogModel($dbh);
+        $logModel->insertLog(
+            $user_id,
+            'write_offs',
+            'UPDATE',
+            $oldData,
+            $newData,
+            'transaction_logs'
+        );
+
+        // Log equipment status change
+        $logModel->insertLog(
+            $user_id,
+            'equipments',
+            'UPDATE',
+            ['equipment_id' => $equipment_id, 'active' => 1],
+            ['equipment_id' => $equipment_id, 'active' => 0],
+            'transaction_logs'
+        );
 
     } else if ($status === "rejected") {
         $stmt = $dbh->prepare("
@@ -52,10 +79,22 @@ try {
         $stmt->execute([$user_id, $writeoff_id]);
 
         $message = "ไม่อนุมัติสำเร็จ";
+        $newStmt = $dbh->prepare("SELECT * FROM write_offs WHERE writeoff_id = ?");
+        $newStmt->execute([$writeoff_id]);
+        $newData = $newStmt->fetch(PDO::FETCH_ASSOC);
+        $logModel = new LogModel($dbh);
+        $logModel->insertLog(
+            $user_id,
+            'write_offs',
+            'UPDATE',
+            $oldData,
+            $newData,
+            'transaction_logs'
+        );
+
     } else {
         throw new Exception("สถานะไม่ถูกต้อง");
     }
-
 
     $dbh->commit();
 
@@ -65,3 +104,4 @@ try {
     $dbh->rollBack();
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }
+?>
