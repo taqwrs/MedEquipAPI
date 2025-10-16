@@ -80,13 +80,11 @@ try {
                         ];
                     }
                 }
-
                 // เพิ่มเฉพาะรอบที่มีอุปกรณ์ที่ยังไม่บันทึกผล
                 if (!empty($roundData['equipments'])) {
                     $pendingRounds[] = $roundData;
                 }
             }
-
             $result = [
                 'plan' => $plan,
                 'pending_rounds' => $pendingRounds
@@ -94,13 +92,7 @@ try {
         }
     }
 
-    echo json_encode([
-        'status' => 'success',
-        'data' => $result
-    ]);
+    echo json_encode(['status' => 'success', 'data' => $result]);
 } catch (Exception $e) {
-    echo json_encode([
-        'status' => 'error',
-        'message' => $e->getMessage()
-    ]);
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }
