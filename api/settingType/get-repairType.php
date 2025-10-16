@@ -1,26 +1,35 @@
-<?php
-include "../config/jwt.php"; 
+<?php 
+include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
+$method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents("php://input"), true);
 
-$method = $_SERVER['REQUEST_METHOD'];
 if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
 }
+$stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
+$stmtUser->bindParam(":user_id", $user_id);
+$stmtUser->execute();
+$userData = $stmtUser->fetch(PDO::FETCH_ASSOC);
+$u_id = $userData['ID'] ?? null;
 
+if (!$u_id) {
+    echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลผู้ใช้"]);
+    exit;
+}
+
+$logModel = new LogModel($dbh);
 $repair_type_id = $input['repair_type_id'] ?? $_GET['repair_type_id'] ?? null;
 
 try {
+    $dbh->beginTransaction();
+
     if ($method === 'GET') {
         if ($repair_type_id) {
             $stmt = $dbh->prepare("
@@ -33,10 +42,11 @@ try {
             $stmt->bindParam(":repair_type_id", $repair_type_id);
             $stmt->execute();
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            
             if (!$row) {
-                echo json_encode(["status"=>"error","message"=>"ไม่พบข้อมูล repair_type_id นี้"], JSON_UNESCAPED_UNICODE);
-                exit;
+                throw new Exception("ไม่พบข้อมูล repair_type_id นี้");
             }
+            
             $data = [
                 'repair_type_id' => $row['repair_type_id'],
                 'name_type' => $row['name_type'],
@@ -46,7 +56,8 @@ try {
                     'group_type' => $row['group_type']
                 ]
             ];
-            echo json_encode(["status"=>"ok","data"=>$data], JSON_UNESCAPED_UNICODE);
+
+            echo json_encode(["status" => "ok", "data" => $data], JSON_UNESCAPED_UNICODE);
         } else {
             $stmt = $dbh->prepare("
                 SELECT rt.repair_type_id, rt.name_type,
@@ -57,6 +68,7 @@ try {
             ");
             $stmt->execute();
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
             $repair_types = [];
             foreach ($results as $row) {
                 $repair_types[] = [
@@ -69,58 +81,98 @@ try {
                     ]
                 ];
             }
-            echo json_encode(["status"=>"ok","data"=>$repair_types], JSON_UNESCAPED_UNICODE);
+
+            echo json_encode(["status" => "ok", "data" => $repair_types], JSON_UNESCAPED_UNICODE);
         }
+
     } elseif ($method === 'POST') {
         if (empty($input['name_type']) || empty($input['group_user_id'])) {
-            echo json_encode(["status"=>"error","message"=>"กรุณากรอก name_type และ group_user_id"], JSON_UNESCAPED_UNICODE);
-            exit;
+            throw new Exception("กรุณากรอก name_type และ group_user_id");
         }
-        $stmt = $dbh->prepare("INSERT INTO repair_type (name_type, group_user_id) VALUES (:name_type, :group_user_id)");
+
+        $stmt = $dbh->prepare("
+            INSERT INTO repair_type (name_type, group_user_id)
+            VALUES (:name_type, :group_user_id)
+        ");
         $stmt->bindParam(":name_type", $input['name_type']);
         $stmt->bindParam(":group_user_id", $input['group_user_id']);
         $stmt->execute();
-        $new_id = $dbh->lastInsertId();
-        echo json_encode(["status"=>"ok","message"=>"เพิ่มประเภทงานซ่อมเรียบร้อย","repair_type_id"=>$new_id], JSON_UNESCAPED_UNICODE);
+
+        $newId = $dbh->lastInsertId();
+
+        $logData = [
+            'repair_type_id' => $newId,
+            'name_type' => $input['name_type'],
+            'group_user_id' => $input['group_user_id']
+        ];
+        $logModel->insertLog($u_id, 'repair_type', 'INSERT', null, $logData);
+
+        echo json_encode(["status" => "ok", "message" => "เพิ่มประเภทงานซ่อมเรียบร้อย", "repair_type_id" => $newId], JSON_UNESCAPED_UNICODE);
 
     } elseif ($method === 'PUT') {
         if (!$repair_type_id || empty($input['name_type']) || empty($input['group_user_id'])) {
-            echo json_encode(["status"=>"error","message"=>"กรุณากรอก repair_type_id, name_type และ group_user_id"], JSON_UNESCAPED_UNICODE);
-            exit;
+            throw new Exception("กรุณากรอก repair_type_id, name_type และ group_user_id");
         }
-        $stmtCheck = $dbh->prepare("SELECT repair_type_id FROM repair_type WHERE repair_type_id = :repair_type_id");
-        $stmtCheck->bindParam(":repair_type_id", $repair_type_id);
-        $stmtCheck->execute();
-        if (!$stmtCheck->fetch()) {
-            echo json_encode(["status"=>"error","message"=>"ไม่พบข้อมูลที่จะแก้ไข"], JSON_UNESCAPED_UNICODE);
-            exit;
+
+        $stmtOld = $dbh->prepare("SELECT * FROM repair_type WHERE repair_type_id = :id");
+        $stmtOld->bindParam(":id", $repair_type_id);
+        $stmtOld->execute();
+        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+        if (!$oldData) {
+            throw new Exception("ไม่พบข้อมูลที่จะแก้ไข");
         }
-        $stmt = $dbh->prepare("UPDATE repair_type SET name_type=:name_type, group_user_id=:group_user_id WHERE repair_type_id=:repair_type_id");
+
+        $stmt = $dbh->prepare("
+            UPDATE repair_type
+            SET name_type = :name_type, group_user_id = :group_user_id
+            WHERE repair_type_id = :id
+        ");
         $stmt->bindParam(":name_type", $input['name_type']);
         $stmt->bindParam(":group_user_id", $input['group_user_id']);
-        $stmt->bindParam(":repair_type_id", $repair_type_id);
+        $stmt->bindParam(":id", $repair_type_id);
         $stmt->execute();
-        echo json_encode(["status"=>"ok","message"=>"แก้ไขประเภทงานซ่อมเรียบร้อย"], JSON_UNESCAPED_UNICODE);
+
+        $logData = [
+            'repair_type_id' => $repair_type_id,
+            'name_type' => $input['name_type'],
+            'group_user_id' => $input['group_user_id']
+        ];
+        $logModel->insertLog($u_id, 'repair_type', 'UPDATE', $oldData, $logData);
+
+        echo json_encode(["status" => "ok", "message" => "แก้ไขประเภทงานซ่อมเรียบร้อย"], JSON_UNESCAPED_UNICODE);
 
     } elseif ($method === 'DELETE') {
         if (!$repair_type_id) {
-            echo json_encode(["status"=>"error","message"=>"กรุณากรอก repair_type_id"], JSON_UNESCAPED_UNICODE);
-            exit;
+            throw new Exception("กรุณากรอก repair_type_id");
         }
-        $stmtCheck = $dbh->prepare("SELECT repair_type_id FROM repair_type WHERE repair_type_id=:repair_type_id");
-        $stmtCheck->bindParam(":repair_type_id", $repair_type_id);
-        $stmtCheck->execute();
-        if (!$stmtCheck->fetch()) {
-            echo json_encode(["status"=>"error","message"=>"ไม่พบข้อมูลที่จะลบ"], JSON_UNESCAPED_UNICODE);
-            exit;
+
+        $stmtOld = $dbh->prepare("SELECT * FROM repair_type WHERE repair_type_id = :id");
+        $stmtOld->bindParam(":id", $repair_type_id);
+        $stmtOld->execute();
+        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+        if (!$oldData) {
+            throw new Exception("ไม่พบข้อมูลที่จะลบ");
         }
-        $stmt = $dbh->prepare("DELETE FROM repair_type WHERE repair_type_id=:repair_type_id");
-        $stmt->bindParam(":repair_type_id", $repair_type_id);
+
+        $stmt = $dbh->prepare("DELETE FROM repair_type WHERE repair_type_id = :id");
+        $stmt->bindParam(":id", $repair_type_id);
         $stmt->execute();
-        echo json_encode(["status"=>"ok","message"=>"ลบประเภทงานซ่อมเรียบร้อย"], JSON_UNESCAPED_UNICODE);
+
+        $logModel->insertLog($u_id, 'repair_type', 'DELETE', $oldData, null);
+
+        echo json_encode(["status" => "ok", "message" => "ลบประเภทงานซ่อมเรียบร้อย"], JSON_UNESCAPED_UNICODE);
+
     } else {
-        echo json_encode(["status"=>"error","message"=>"Method not allowed"], JSON_UNESCAPED_UNICODE);
+        throw new Exception("Method not allowed");
     }
+    $dbh->commit();
+
 } catch (Exception $e) {
-    echo json_encode(["status"=>"error","message"=>$e->getMessage()], JSON_UNESCAPED_UNICODE);
+    if ($dbh->inTransaction()) {
+        $dbh->rollBack(); 
+    }
+    echo json_encode(["status" => "error", "message" => $e->getMessage()], JSON_UNESCAPED_UNICODE);
 }
+?>

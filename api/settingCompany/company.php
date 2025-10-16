@@ -4,7 +4,7 @@ include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -13,13 +13,14 @@ $input = json_decode(file_get_contents("php://input"), true);
 if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
 }
+
 //ดึง ID จากตาราง users โดยใช้ user_id จาก JWT
 $stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
 $stmtUser->bindParam(":user_id", $user_id);
 $stmtUser->execute();
 $userData = $stmtUser->fetch(PDO::FETCH_ASSOC);
 $u_id = $userData['ID'] ?? null;
-// ถ้าไม่เจอ ID ให้ส่ง error
+
 if (!$u_id) {
     echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลผู้ใช้"]);
     exit;
@@ -44,6 +45,7 @@ try {
         ");
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
         echo json_encode(["status" => "ok", "data" => $results], JSON_UNESCAPED_UNICODE);
 
     } elseif ($method === 'POST') {
@@ -52,6 +54,7 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก name"]);
             exit;
         }
+
         $stmt = $dbh->prepare("
             INSERT INTO companies (name, tax_number, address, phone, email, line_id, details) 
             VALUES (:name, :tax_number, :address, :phone, :email, :line_id, :details)
@@ -65,14 +68,20 @@ try {
         $stmt->bindParam(":details", $input['details']);
         $stmt->execute();
 
-        // บันทึก log การ INSERT
-        $logModel->insertLog(
-            $u_id,           // จาก jwt.php
-            'companies',        // ชื่อตาราง
-            'INSERT',           // action
-            null,               // oldData (ไม่มี)
-            $input              // newData
-        );
+        $newCompanyId = $dbh->lastInsertId();
+
+        $logData = [
+            'company_id' => $newCompanyId,
+            'name' => $input['name'],
+            'tax_number' => $input['tax_number'] ?? null,
+            'address' => $input['address'] ?? null,
+            'phone' => $input['phone'] ?? null,
+            'email' => $input['email'] ?? null,
+            'line_id' => $input['line_id'] ?? null,
+            'details' => $input['details'] ?? null
+        ];
+
+        $logModel->insertLog($u_id, 'companies', 'INSERT', null, $logData);
 
         echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
 
@@ -106,14 +115,18 @@ try {
         $stmt->bindParam(":id", $input['company_id']);
         $stmt->execute();
 
-        // บันทึก log การ UPDATE
-        $logModel->insertLog(
-            $u_id,           // จาก jwt.php
-            'companies',        // ชื่อตาราง
-            'UPDATE',           // action
-            $oldData,           // ข้อมูลเดิม
-            $input              // ข้อมูลใหม่
-        );
+        $logData = [
+            'company_id' => $input['company_id'],
+            'name' => $input['name'],
+            'tax_number' => $input['tax_number'] ?? null,
+            'address' => $input['address'] ?? null,
+            'phone' => $input['phone'] ?? null,
+            'email' => $input['email'] ?? null,
+            'line_id' => $input['line_id'] ?? null,
+            'details' => $input['details'] ?? null
+        ];
+
+        $logModel->insertLog($u_id, 'companies', 'UPDATE', $oldData, $logData);
 
         echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
 
@@ -135,14 +148,7 @@ try {
         $stmt->bindParam(":id", $input['company_id']);
         $stmt->execute();
 
-        // บันทึก log การ DELETE
-        $logModel->insertLog(
-            $u_id,           // จาก jwt.php
-            'companies',        // ชื่อตาราง
-            'DELETE',           // action
-            $oldData,           // ข้อมูลที่ถูกลบ
-            null                // newData (ไม่มี)
-        );
+        $logModel->insertLog($u_id, 'companies', 'DELETE', $oldData, null);
 
         echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
 

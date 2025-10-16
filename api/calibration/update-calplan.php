@@ -51,7 +51,8 @@ try {
     $stmtCheckResult->execute([':plan_id' => $input['plan_id']]);
     $hasResult = $stmtCheckResult->fetchColumn() > 0;
 
-
+    // ตรวจสอบว่ามีการเปลี่ยนแปลง restricted fields หรือไม่
+    $restrictedFieldsChanged = false;
     if ($hasResult) {
         $restrictedFields = [
             'frequency_number' => 'ความถี่ (จำนวน)',
@@ -65,10 +66,11 @@ try {
         foreach ($restrictedFields as $field => $fieldName) {
             if (array_key_exists($field, $input) && $input[$field] != $current[$field]) {
                 $changedFields[] = $fieldName;
+                $restrictedFieldsChanged = true;
             }
         }
 
-        if (!empty($changedFields)) {
+        if ($restrictedFieldsChanged) {
             $dbh->rollBack();
             echo json_encode([
                 "status" => "error",
@@ -123,7 +125,6 @@ try {
         exit;
     }
 
-
     $allowed_type_cal = ['ภายใน', 'ภายนอก'];
     $allowed_cost_type = ['แยกรายรอบ', 'รวมตลอดทั้งสัญญา'];
     $allowed_frequency_unit = [1, 2, 3, 4];
@@ -141,7 +142,8 @@ try {
         exit;
     }
 
-    if (!$hasResult) {
+    // คำนวณ interval_count เฉพาะเมื่อไม่มีผลลัพธ์ หรือมีการเปลี่ยน restricted fields
+    if (!$hasResult || $restrictedFieldsChanged) {
         $startDate = new DateTime($updateData['start_date']);
         $endDate   = new DateTime($updateData['end_date']);
         if ($endDate < $startDate) {
@@ -173,7 +175,7 @@ try {
             }
         }
     } else {
-        // Plan มีผลลัพธ์แล้ว → ใช้ค่า interval_count เดิม
+        // Plan มีผลลัพธ์แล้วและไม่มีการแก้ไข restricted fields → ใช้ค่าเดิม
         $intervalCount = $current['interval_count'];
     }
 
@@ -233,6 +235,9 @@ try {
         );
     }
 
+    // ลบและเพิ่ม details_calibration_plans ใหม่ เฉพาะเมื่อ:
+    // 1. ไม่มีผลลัพธ์ หรือ
+    // 2. มีการเปลี่ยน restricted fields (แต่กรณีนี้จะถูกบล็อกไว้แล้วด้านบน)
     if (!$hasResult) {
         $stmtOldDetails = $dbh->prepare("SELECT * FROM details_calibration_plans WHERE plan_id=:plan_id");
         $stmtOldDetails->execute([':plan_id' => $input['plan_id']]);
@@ -266,6 +271,7 @@ try {
                 'start_date' => $rd
             ];
         }
+        
         if (!empty($newDetails)) {
             $logModel->insertLog(
                 $acting_user_id,

@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -14,19 +15,24 @@ try {
     $writeoff_id = $_POST['writeoff_id'] ?? null;
     if (!$writeoff_id) throw new Exception("writeoff_id ไม่พบ");
 
+    $user_id = null;
+    if (isset($decoded->data->ID)) {
+        $user_id = $decoded->data->ID;
+    } else {
+        throw new Exception("ไม่พบข้อมูล user_id ใน token");
+    }
+
     $files = $_FILES['file_writeoffs'] ?? null;
     if (!$files) throw new Exception("No file uploaded");
 
     $uploadedFiles = [];
     $uploadDir = __DIR__ . "/../file-upload/writeoffs/";
 
-
     if (!is_dir($uploadDir)) {
         if (!mkdir($uploadDir, 0777, true)) {
             throw new Exception("ไม่สามารถสร้างโฟลเดอร์ upload ได้");
         }
     }
-
 
     if (!is_writable($uploadDir)) {
         if (!chmod($uploadDir, 0777)) {
@@ -43,6 +49,9 @@ try {
             'size' => [$files['size']],
         ];
     }
+
+    $logModel = new LogModel($dbh);
+    $fileCount = count($files['name']);
 
     foreach ($files['name'] as $key => $name) {
         if ($files['error'][$key] !== UPLOAD_ERR_OK) {
@@ -70,11 +79,37 @@ try {
         $stmt = $dbh->prepare("INSERT INTO file_writeoffs(writeoff_id, File_name, url, type_name) VALUES (?, ?, ?, ?)");
         $stmt->execute([$writeoff_id, $name, $url, $typeName]);
 
+        $fileId = $dbh->lastInsertId();
+
+        // Log file upload
+        $newData = [
+            "file_id" => $fileId,
+            "writeoff_id" => $writeoff_id,
+            "file_name" => $name,
+            "url" => $url,
+            "type_name" => $typeName,
+            "file_size" => $files['size'][$key],
+            "file_type" => $files['type'][$key]
+        ];
+
+        $logModel->insertLog(
+            $user_id,
+            'file_writeoffs',
+            'INSERT',
+            null,
+            $newData,
+            'transaction_logs'
+        );
+
         $uploadedFiles[] = $url;
     }
 
     $dbh->commit();
-    echo json_encode(["status" => "success", "files" => $uploadedFiles]);
+    echo json_encode([
+        "status" => "success",
+        "message" => "อัปโหลด $fileCount ไฟล์สำเร็จ",
+        "files" => $uploadedFiles
+    ]);
 
 } catch (Exception $e) {
     $dbh->rollBack();

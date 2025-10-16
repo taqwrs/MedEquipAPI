@@ -1,9 +1,10 @@
 <?php
 include "../config/jwt.php"; // DB + JWT
+include "../config/LogModel.php"; // LogModel
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -13,6 +14,20 @@ $input = json_decode(file_get_contents("php://input"), true);
 if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
 }
+
+// ดึง ID ของผู้ใช้จาก JWT
+$stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
+$stmtUser->bindParam(":user_id", $user_id);
+$stmtUser->execute();
+$userData = $stmtUser->fetch(PDO::FETCH_ASSOC);
+$u_id = $userData['ID'] ?? null;
+
+if (!$u_id) {
+    echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลผู้ใช้"]);
+    exit;
+}
+
+$logModel = new LogModel($dbh);
 
 try {
     if ($method === 'GET') {
@@ -28,9 +43,20 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก department_name"]);
             exit;
         }
+
         $stmt = $dbh->prepare("INSERT INTO departments (department_name) VALUES (:department_name)");
         $stmt->bindParam(":department_name", $input['department_name']);
         $stmt->execute();
+
+        $newId = $dbh->lastInsertId();
+
+        $logData = [
+            'department_id' => $newId,
+            'department_name' => $input['department_name']
+        ];
+
+        $logModel->insertLog($u_id, 'departments', 'INSERT', null, $logData);
+
         echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
 
     } elseif ($method === 'PUT') {
@@ -39,10 +65,26 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก department_id และ department_name"]);
             exit;
         }
+
+        // ดึงข้อมูลเดิม
+        $stmtOld = $dbh->prepare("SELECT * FROM departments WHERE department_id = :id");
+        $stmtOld->bindParam(":id", $input['department_id']);
+        $stmtOld->execute();
+        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+        // อัพเดทข้อมูล
         $stmt = $dbh->prepare("UPDATE departments SET department_name = :department_name WHERE department_id = :id");
         $stmt->bindParam(":department_name", $input['department_name']);
         $stmt->bindParam(":id", $input['department_id']);
         $stmt->execute();
+
+        $logData = [
+            'department_id' => $input['department_id'],
+            'department_name' => $input['department_name']
+        ];
+
+        $logModel->insertLog($u_id, 'departments', 'UPDATE', $oldData, $logData);
+
         echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
 
     } elseif ($method === 'DELETE') {
@@ -51,9 +93,20 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก department_id"]);
             exit;
         }
+
+        // ดึงข้อมูลก่อนลบ
+        $stmtOld = $dbh->prepare("SELECT * FROM departments WHERE department_id = :id");
+        $stmtOld->bindParam(":id", $input['department_id']);
+        $stmtOld->execute();
+        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+        // ลบข้อมูล
         $stmt = $dbh->prepare("DELETE FROM departments WHERE department_id = :id");
         $stmt->bindParam(":id", $input['department_id']);
         $stmt->execute();
+
+        $logModel->insertLog($u_id, 'departments', 'DELETE', $oldData, null);
+
         echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
 
     } else {
@@ -63,3 +116,4 @@ try {
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
+?>
