@@ -1,6 +1,6 @@
 <?php
 include "../config/jwt.php";
-//การโอนย้าย 
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -8,6 +8,7 @@ header("Access-Control-Allow-Methods: POST");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 $method = $_SERVER['REQUEST_METHOD'];
+$log = new LogModel($dbh);
 
 try {
     if ($method !== 'POST') {
@@ -294,6 +295,30 @@ try {
     }
     
     $transfer_id = $dbh->lastInsertId();
+
+    //  Log การ INSERT ลงตาราง equipment_transfers
+    $log->insertLog(
+        $transfer_user_id ?? 0,
+        'equipment_transfers',
+        'INSERT',
+        [   // oldData
+            'old_location_department_id' => $old_location_department_id,
+            'old_location_details' => $old_location_details,
+            'old_subcategory_id' => $old_subcategory_id
+        ],
+        [   // newData
+            'transfer_id' => $transfer_id,
+            'equipment_id' => $input['equipment_id'],
+            'transfer_type' => $input['transfer_type'],
+            'from_department_id' => $from_dept_id,
+            'to_department_id' => $to_dept_id,
+            'transfer_date' => $transfer_date,
+            'reason' => $reason,
+            'recipient_user_id' => $recipient_user_id,
+            'location_department_id' => $location_dept_id,
+            'location_details' => $location_details
+        ]
+    );
 
     // *** บันทึกลง history_transfer พร้อมกับ status_transfer ***
     $historySQL = "INSERT INTO history_transfer (
