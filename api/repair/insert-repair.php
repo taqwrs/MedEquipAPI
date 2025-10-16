@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -18,6 +19,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $dbh->beginTransaction();
+
+    $logModel = new LogModel($dbh);
 
     $data = json_decode(file_get_contents("php://input"), true);
 
@@ -38,7 +41,10 @@ try {
         exit;
     }
 
-    // เพิ่ม field active
+    $stmtOld = $dbh->prepare("SELECT equipment_id, status FROM equipments WHERE equipment_id = :equipment_id");
+    $stmtOld->execute([':equipment_id' => $equipment_id]);
+    $oldEquipmentData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
     $query = "INSERT INTO repair 
                 (equipment_id, user_id, remark, title, request_date, location, status, repair_type_id, active) 
               VALUES 
@@ -54,10 +60,32 @@ try {
     $stmt->bindParam(':status', $status);
     $stmt->bindParam(':repair_type_id', $repair_type_id);
 
-    $active = 1; // กำหนด active เป็น 1
+    $active = 1;
     $stmt->bindParam(':active', $active);
 
     $stmt->execute();
+    $repair_id = $dbh->lastInsertId();
+
+    $newRepairData = [
+        'repair_id' => $repair_id,
+        'equipment_id' => $equipment_id,
+        'user_id' => $user_id,
+        'remark' => $remark,
+        'title' => $title,
+        'request_date' => $request_date,
+        'location' => $location,
+        'status' => $status,
+        'repair_type_id' => $repair_type_id,
+        'active' => $active
+    ];
+
+    $logModel->insertLog(
+        $user_id,
+        'repair',
+        'INSERT',
+        null,
+        $newRepairData
+    );
 
     $update = "UPDATE equipments 
                SET status = 'ซ่อม' 
@@ -66,12 +94,27 @@ try {
     $stmt2->bindParam(':equipment_id', $equipment_id);
     $stmt2->execute();
 
+    $newEquipmentData = [
+        'equipment_id' => $equipment_id,
+        'status' => 'ซ่อม',
+        'reason' => 'เปลี่ยนสถานะเนื่องจากสร้างรายการซ่อม',
+        'repair_id' => $repair_id
+    ];
+
+    $logModel->insertLog(
+        $user_id,
+        'equipments',
+        'UPDATE',
+        $oldEquipmentData,
+        $newEquipmentData
+    );
+
     $dbh->commit();
 
     echo json_encode([
         "success" => true,
         "message" => "ok",
-        "repair_id" => $dbh->lastInsertId(),
+        "repair_id" => $repair_id,
         "repair_status" => $status  
     ], JSON_UNESCAPED_UNICODE);
 
