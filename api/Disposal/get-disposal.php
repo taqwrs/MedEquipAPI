@@ -27,10 +27,10 @@ try {
         'rejected' => 'ไม่อนุมัติ',
     ];
 
-    // ตรวจ role_id ของผู้ใช้
+    // ✅ แก้ไข: ตรวจ role_id ด้วย ID แทน user_id
     $roleId = 0;
     if ($user_id !== '') {
-        $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE user_id = :user_id");
+        $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE ID = :user_id");
         $stmtRole->bindValue(':user_id', $user_id, PDO::PARAM_STR);
         $stmtRole->execute();
         $roleId = (int)$stmtRole->fetchColumn();
@@ -44,7 +44,7 @@ try {
             FROM relation_user ru
             INNER JOIN users u ON ru.u_id = u.ID
             INNER JOIN group_user gu ON ru.group_user_id = gu.group_user_id
-            WHERE u.user_id = :user_id
+            WHERE u.ID = :user_id
         ");
         $stmtGroup->bindValue(':user_id', $user_id, PDO::PARAM_STR);
         $stmtGroup->execute();
@@ -71,7 +71,7 @@ try {
         $params[':statusFilter'] = $statusMap[$statusFilter];
     }
 
-    // เงื่อนไขกรองรายการ
+    // ✅ เงื่อนไขกรองรายการ (w.user_id เก็บค่า ID อยู่แล้ว ไม่ต้องแก้)
     if ($roleId !== 6) {
         if ($isAdminMain && !empty($groupUserIds)) {
             $inQuery = [];
@@ -97,15 +97,15 @@ try {
     }
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
-    // Query หลัก
+    // ✅ แก้ไข: JOIN users ด้วย w.user_id = u.ID และ w.approved_by = a.ID
     $query = "
         SELECT w.*, e.name AS equipment_name, e.subcategory_id,
                u.full_name AS requester_name, 
                a.full_name AS approver_name, wt.name AS writeoff_type_name
         FROM write_offs w
         LEFT JOIN equipments e ON w.equipment_id = e.equipment_id
-        LEFT JOIN users u ON w.user_id = u.user_id
-        LEFT JOIN users a ON w.approved_by = a.user_id
+        LEFT JOIN users u ON w.user_id = u.ID
+        LEFT JOIN users a ON w.approved_by = a.ID
         LEFT JOIN writeoff_types wt ON w.writeoff_types_id = wt.writeoff_types_id
         $whereSQL
         ORDER BY 
@@ -148,9 +148,8 @@ try {
         if ($roleId === 6) {
             $canApprove = true;
         } 
-        // กรณีเป็น admin หลักและอุปกรณ์อยู่ในกลุ่มที่ดูแล
         elseif ($isAdminMain && !empty($groupUserIds) && !empty($wo['subcategory_id'])) {
-            // ตรวจสอบว่าอุปกรณ์นี้อยู่ในกลุ่มที่ user ดูแลหรือไม่
+
             $checkGroupStmt = $dbh->prepare("
                 SELECT COUNT(*) 
                 FROM relation_group 

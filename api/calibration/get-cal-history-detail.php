@@ -44,7 +44,7 @@ try {
         LEFT JOIN equipments e 
             ON cr.equipment_id = e.equipment_id
         LEFT JOIN users u 
-            ON cr.user_id = u.user_id
+            ON cr.user_id = u.ID
         LEFT JOIN companies c 
             ON cp.company_id = c.company_id
         WHERE cr.cal_result_id = ?

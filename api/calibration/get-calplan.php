@@ -24,7 +24,7 @@ try {
             FROM users u
             LEFT JOIN relation_user ru ON ru.u_id = u.ID
             LEFT JOIN group_user gu ON gu.group_user_id = ru.group_user_id
-            WHERE u.user_id = :user_id
+            WHERE u.ID = :user_id
             LIMIT 1
         ");
         $stmtUserInfo->bindValue(':user_id', $user_id);
@@ -41,7 +41,7 @@ try {
                 SELECT ru.group_user_id
                 FROM relation_user ru
                 INNER JOIN users u ON ru.u_id = u.ID
-                WHERE u.user_id = :user_id
+                WHERE u.ID = :user_id
             ");
             $stmtGroup->bindValue(':user_id', $user_id);
             $stmtGroup->execute();
@@ -84,7 +84,7 @@ try {
             INNER JOIN users u2 ON u2.ID = ru.u_id
             WHERE pe.plan_id = cp.plan_id
             AND gu2.type = 'ผู้ดูแลหลัก'
-            AND u2.user_id = :user_id_main
+            AND u2.ID = :user_id_main
         )
     )";
             $params[':user_id_main'] = $user_id;
@@ -111,7 +111,7 @@ try {
         SELECT cp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,
                COUNT(DISTINCT dcp.details_cal_id) AS total_schedules
         FROM calibration_plans cp
-        LEFT JOIN users u ON cp.user_id = u.user_id
+        LEFT JOIN users u ON cp.user_id = u.ID
         LEFT JOIN group_user gu ON cp.group_user_id = gu.group_user_id
         LEFT JOIN companies c ON cp.company_id = c.company_id
         LEFT JOIN details_calibration_plans dcp ON cp.plan_id = dcp.plan_id
@@ -123,7 +123,7 @@ try {
     $countQuery = "
         SELECT COUNT(DISTINCT cp.plan_id)
         FROM calibration_plans cp
-        LEFT JOIN users u ON cp.user_id = u.user_id
+        LEFT JOIN users u ON cp.user_id = u.ID
         LEFT JOIN group_user gu ON cp.group_user_id = gu.group_user_id
         LEFT JOIN companies c ON cp.company_id = c.company_id
         $whereSQL
