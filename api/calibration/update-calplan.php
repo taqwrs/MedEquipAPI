@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -26,6 +27,9 @@ if (!isset($input['plan_id'])) {
 try {
     $dbh->beginTransaction();
 
+    // สร้าง instance ของ LogModel
+    $logModel = new LogModel($dbh);
+
     // ดึง plan ปัจจุบัน
     $stmt = $dbh->prepare("SELECT * FROM calibration_plans WHERE plan_id=:plan_id");
     $stmt->execute([':plan_id' => $input['plan_id']]);
@@ -47,7 +51,8 @@ try {
     $stmtCheckResult->execute([':plan_id' => $input['plan_id']]);
     $hasResult = $stmtCheckResult->fetchColumn() > 0;
 
-
+    // ตรวจสอบว่ามีการเปลี่ยนแปลง restricted fields หรือไม่
+    $restrictedFieldsChanged = false;
     if ($hasResult) {
         $restrictedFields = [
             'frequency_number' => 'ความถี่ (จำนวน)',
@@ -61,10 +66,11 @@ try {
         foreach ($restrictedFields as $field => $fieldName) {
             if (array_key_exists($field, $input) && $input[$field] != $current[$field]) {
                 $changedFields[] = $fieldName;
+                $restrictedFieldsChanged = true;
             }
         }
 
-        if (!empty($changedFields)) {
+        if ($restrictedFieldsChanged) {
             $dbh->rollBack();
             echo json_encode([
                 "status" => "error",
@@ -98,14 +104,26 @@ try {
         $updateData[$f] = array_key_exists($f, $input) ? $input[$f] : $current[$f];
     }
 
+    // รับ user_id จาก input หรือใช้จาก current
+    $acting_user_id = $input['acting_user_id'] ?? $updateData['user_id'];
 
     if (isset($input['action']) && $input['action'] === 'deactivate') {
+        // บันทึก log สำหรับการ deactivate
+        $logModel->insertLog(
+            $acting_user_id,
+            'calibration_plans',
+            'UPDATE',
+            ['plan_id' => $input['plan_id'], 'is_active' => $current['is_active']],
+            ['plan_id' => $input['plan_id'], 'is_active' => 0]
+        );
+
         $stmt = $dbh->prepare("UPDATE calibration_plans SET is_active=0 WHERE plan_id=:plan_id");
         $stmt->execute([':plan_id' => $input['plan_id']]);
+        
+        $dbh->commit();
         echo json_encode(["status" => "success", "message" => "Soft delete success"]);
         exit;
     }
-
 
     $allowed_type_cal = ['ภายใน', 'ภายนอก'];
     $allowed_cost_type = ['แยกรายรอบ', 'รวมตลอดทั้งสัญญา'];
@@ -124,7 +142,8 @@ try {
         exit;
     }
 
-    if (!$hasResult) {
+    // คำนวณ interval_count เฉพาะเมื่อไม่มีผลลัพธ์ หรือมีการเปลี่ยน restricted fields
+    if (!$hasResult || $restrictedFieldsChanged) {
         $startDate = new DateTime($updateData['start_date']);
         $endDate   = new DateTime($updateData['end_date']);
         if ($endDate < $startDate) {
@@ -156,8 +175,27 @@ try {
             }
         }
     } else {
-        // Plan มีผลลัพธ์แล้ว → ใช้ค่า interval_count เดิม
+        // Plan มีผลลัพธ์แล้วและไม่มีการแก้ไข restricted fields → ใช้ค่าเดิม
         $intervalCount = $current['interval_count'];
+    }
+
+    // เตรียมข้อมูลเก่าสำหรับ log (เฉพาะฟิลด์ที่เปลี่ยน)
+    $oldData = [];
+    $newData = [];
+    $hasChanges = false;
+
+    foreach ($fields as $f) {
+        if ($updateData[$f] != $current[$f]) {
+            $oldData[$f] = $current[$f];
+            $newData[$f] = $updateData[$f];
+            $hasChanges = true;
+        }
+    }
+
+    if ($intervalCount != $current['interval_count']) {
+        $oldData['interval_count'] = $current['interval_count'];
+        $newData['interval_count'] = $intervalCount;
+        $hasChanges = true;
     }
 
     // Update plan
@@ -184,17 +222,64 @@ try {
         ':plan_id' => $input['plan_id']
     ]));
 
-    // ลบรอบเก่าและ insert รอบใหม่ เฉพาะ plan ยังไม่มีผลลัพธ์
+    if ($hasChanges) {
+        $oldData['plan_id'] = $input['plan_id'];
+        $newData['plan_id'] = $input['plan_id'];
+        
+        $logModel->insertLog(
+            $acting_user_id,
+            'calibration_plans',
+            'UPDATE',
+            $oldData,
+            $newData
+        );
+    }
+
+    // ลบและเพิ่ม details_calibration_plans ใหม่ เฉพาะเมื่อ:
+    // 1. ไม่มีผลลัพธ์ หรือ
+    // 2. มีการเปลี่ยน restricted fields (แต่กรณีนี้จะถูกบล็อกไว้แล้วด้านบน)
     if (!$hasResult) {
+        $stmtOldDetails = $dbh->prepare("SELECT * FROM details_calibration_plans WHERE plan_id=:plan_id");
+        $stmtOldDetails->execute([':plan_id' => $input['plan_id']]);
+        $oldDetails = $stmtOldDetails->fetchAll(PDO::FETCH_ASSOC);
+
         $stmtDel = $dbh->prepare("DELETE FROM details_calibration_plans WHERE plan_id=:plan_id");
         $stmtDel->execute([':plan_id' => $input['plan_id']]);
 
+        if (!empty($oldDetails)) {
+            $logModel->insertLog(
+                $acting_user_id,
+                'details_calibration_plans',
+                'DELETE',
+                ['plan_id' => $input['plan_id'], 'deleted_count' => count($oldDetails), 'details' => $oldDetails],
+                null
+            );
+        }
+
         $stmtIns = $dbh->prepare("INSERT INTO details_calibration_plans (plan_id, start_date) VALUES (:plan_id, :start_date)");
+        $newDetails = [];
+        
         foreach ($roundDates as $rd) {
             $stmtIns->execute([
                 ':plan_id' => $input['plan_id'],
                 ':start_date' => $rd
             ]);
+            
+            $newDetails[] = [
+                'details_cal_id' => $dbh->lastInsertId(),
+                'plan_id' => $input['plan_id'],
+                'start_date' => $rd
+            ];
+        }
+        
+        if (!empty($newDetails)) {
+            $logModel->insertLog(
+                $acting_user_id,
+                'details_calibration_plans',
+                'INSERT',
+                null,
+                ['plan_id' => $input['plan_id'], 'inserted_count' => count($newDetails), 'details' => $newDetails]
+            );
         }
     }
 

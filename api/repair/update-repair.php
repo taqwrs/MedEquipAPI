@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -13,6 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $dbh->beginTransaction();
+    $logModel = new LogModel($dbh);
+    
     $data = json_decode(file_get_contents("php://input"), true);
     $repair_id = $data['repair_id'] ?? null;
 
@@ -21,27 +24,50 @@ try {
         exit;
     }
 
+    $stmtOld = $dbh->prepare("SELECT * FROM repair WHERE repair_id = :repair_id");
+    $stmtOld->execute([':repair_id' => $repair_id]);
+    $oldRepairData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+    if (!$oldRepairData) {
+        echo json_encode(["success" => false, "message" => "Repair not found"]);
+        exit;
+    }
+
     $updatableFields = ['equipment_id', 'remark', 'title', 'location', 'status', 'repair_type_id'];
     $fields = [];
     $params = [':repair_id' => $repair_id];
+    $changedData = []; 
 
     foreach ($updatableFields as $field) {
         if (array_key_exists($field, $data)) {
             $fields[] = "$field = :$field";
             $params[":$field"] = $data[$field];
+            $changedData[$field] = $data[$field];
         }
     }
 
-
     if (array_key_exists('active', $data)) {
         $fields[] = "active = :active";
-        $params[':active'] = $data['active'] ? 1 : 0; 
+        $params[':active'] = $data['active'] ? 1 : 0;
+        $changedData['active'] = $data['active'] ? 1 : 0;
     }
+
 
     if (!empty($fields)) {
         $query = "UPDATE repair SET " . implode(", ", $fields) . " WHERE repair_id = :repair_id";
         $stmt = $dbh->prepare($query);
         $stmt->execute($params);
+        $changedData['repair_id'] = $repair_id;
+        $user_id = $decoded->data->ID ;
+
+
+        $logModel->insertLog(
+            $user_id,
+            'repair',
+            'UPDATE',
+            $oldRepairData,
+            $changedData
+        );
     }
 
 

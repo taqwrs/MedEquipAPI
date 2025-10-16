@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php"; 
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -26,6 +27,8 @@ if (!$equipment_id || !$performed_date || !$user_id || !$details_cal_id) {
 }
 
 try {
+    // สร้าง instance ของ LogModel
+    $logModel = new LogModel($dbh);
 
     $checkStmt = $dbh->prepare("
         SELECT COUNT(*) 
@@ -41,7 +44,6 @@ try {
         echo json_encode(["status" => "error", "message" => "ผลการสอบเทียบนี้ของเครื่องมือนี้ถูกบันทึกแล้ว ไม่สามารถบันทึกซ้ำได้"]);
         exit;
     }
-
 
     $stmt = $dbh->prepare("
         INSERT INTO calibration_result 
@@ -61,6 +63,27 @@ try {
     ]);
 
     $cal_result_id = $dbh->lastInsertId();
+
+    // บันทึก log การเพิ่มข้อมูล
+    $newData = [
+        'cal_result_id' => $cal_result_id,
+        'details_cal_id' => $details_cal_id,
+        'equipment_id' => $equipment_id,
+        'user_id' => $user_id,
+        'performed_date' => $performed_date,
+        'result' => $result,
+        'remarks' => ($remarks === "null" || !$remarks) ? null : $remarks,
+        'reason' => ($reason === "null" || !$reason) ? null : $reason,
+        'send_repair' => $send_repair
+    ];
+    
+    $logModel->insertLog(
+        $user_id,
+        'calibration_result',
+        'INSERT',
+        null,
+        $newData
+    );
 
     echo json_encode([
         "status" => "success", 
