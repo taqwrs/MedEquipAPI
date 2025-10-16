@@ -64,7 +64,7 @@ try {
                 'spare_part_id' => $spare_part_id,
                 'spare_url' => $url,
                 'spare_type_name' => $typeName
-            ], 'register_logs'); 
+            ]); 
 
             $uploadedFiles[] = $url;
         }

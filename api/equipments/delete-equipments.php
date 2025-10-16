@@ -76,7 +76,6 @@ try {
             'files' => $oldFiles
         ],
         null
-        , 'register_logs'
     );
 
     $dbh->commit();

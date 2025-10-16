@@ -105,7 +105,7 @@ try {
     }
     // --- Log update spare part (เฉพาะ PK และ field ที่เปลี่ยน) ---
     if (count($old_log) > 1 || count($new_log) > 1) { // มี field ที่เปลี่ยนมากกว่าแค่ PK
-        $log->insertLog($updated_by, 'spare_parts', 'UPDATE', $old_log, $new_log, 'register_logs');
+        $log->insertLog($updated_by, 'spare_parts', 'UPDATE', $old_log, $new_log);
     }
 
     $dbh->commit();

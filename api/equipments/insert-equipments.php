@@ -112,7 +112,7 @@ try {
     $equipId = $dbh->lastInsertId();
 
     // --- Log insert main equipment ---
-    $log->insertLog($user_id, 'equipments', 'INSERT', null, $values + ['equipment_id' => $equipId], 'register_logs');
+    $log->insertLog($user_id, 'equipments', 'INSERT', null, $values + ['equipment_id' => $equipId]);
 
     // --- Relations ---
     foreach ($relations as $relKey => $relConfig) {
@@ -134,7 +134,7 @@ try {
                                          SET {$relConfig['fk']}=:main, updated_by=:updated_by, updated_at=NOW() 
                                          WHERE {$relConfig['idField']}=:id");
                     $stmt->execute([':main' => $equipId, ':id' => $item[$relConfig['idField']], ':updated_by' => $user_id]);
-                    $log->insertLog($user_id, $relConfig['table'], 'UPDATE', $oldData, ['equipment_id' => $equipId, 'updated_id' => $item[$relConfig['idField']]], 'register_logs');
+                    $log->insertLog($user_id, $relConfig['table'], 'UPDATE', $oldData, ['equipment_id' => $equipId, 'updated_id' => $item[$relConfig['idField']]]);
                 }
             }
         }

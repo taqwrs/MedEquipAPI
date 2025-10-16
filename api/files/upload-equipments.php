@@ -74,7 +74,7 @@ try {
                 'file_name' => $name,
                 'file_url' => $url,
                 'type' => $typeName
-            ], 'register_logs');
+            ]);
 
             $uploadedFiles[] = [
                 "name" => $name,

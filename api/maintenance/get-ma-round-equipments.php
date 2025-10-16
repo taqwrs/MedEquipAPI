@@ -15,7 +15,7 @@ try {
         exit;
     }
 
-    // 1) หา plan_id ของ round
+    // หา plan_id ของ round
     $stmt = $dbh->prepare("SELECT plan_id, start_date FROM details_maintenance_plans WHERE details_ma_id = :round_id");
     $stmt->execute([':round_id' => $roundId]);
     $roundRow = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -28,70 +28,63 @@ try {
     $planId = intval($roundRow['plan_id']);
     $roundStart = $roundRow['start_date'] ?? null;
 
+    // ดึงอุปกรณ์พร้อมสถานะบันทึก
     $baseSql = "
         SELECT e.equipment_id, e.asset_code, e.name AS equipment_name,
-               pe.plan_id, dmp.details_ma_id AS round_id, dmp.start_date
+               CASE WHEN mr.ma_result_id IS NULL THEN 'รอ' ELSE 'บันทึกแล้ว' END AS status,
+               mr.performed_date,
+               dmp.details_ma_id AS round_id, dmp.start_date
         FROM plan_ma_equipments pe
         JOIN equipments e ON pe.equipment_id = e.equipment_id
         JOIN details_maintenance_plans dmp ON dmp.plan_id = pe.plan_id
+        LEFT JOIN maintenance_result mr 
+            ON mr.details_ma_id = dmp.details_ma_id 
+            AND mr.equipment_id = e.equipment_id
+        WHERE pe.plan_id = :plan_id
+          AND dmp.details_ma_id = :round_id
     ";
 
-    // count SQL should mirror FROM/join parts (without SELECT cols)
     $countSql = "
         SELECT COUNT(*) FROM plan_ma_equipments pe
         JOIN equipments e ON pe.equipment_id = e.equipment_id
         JOIN details_maintenance_plans dmp ON dmp.plan_id = pe.plan_id
+        LEFT JOIN maintenance_result mr 
+            ON mr.details_ma_id = dmp.details_ma_id 
+            AND mr.equipment_id = e.equipment_id
+        WHERE pe.plan_id = :plan_id
+          AND dmp.details_ma_id = :round_id
     ";
 
-    $searchFields = ['e.name', 'e.asset_code']; // fields searchable
+    $searchFields = ['e.name', 'e.asset_code'];
     $orderBy = 'ORDER BY e.name ASC';
-    $whereClause = "WHERE pe.plan_id = :plan_id
-        AND dmp.details_ma_id = :round_id
-        AND NOT EXISTS (
-          SELECT 1 FROM maintenance_result mr
-          WHERE mr.details_ma_id = :round_id
-            AND mr.equipment_id = e.equipment_id
-        )"; // base conditions; helper will append search conditions
+    $additionalParams = [':plan_id' => $planId, ':round_id' => $roundId];
 
-    $additionalParams = [
-        ':plan_id' => $planId,
-        ':round_id' => $roundId
-    ];
-
-    // Delegate pagination+search to helper
-    $response = handlePaginatedSearch($dbh, $_GET, $baseSql, $countSql, $searchFields, $orderBy, $whereClause, $additionalParams);
+    $response = handlePaginatedSearch($dbh, $_GET, $baseSql, $countSql, $searchFields, $orderBy, '', $additionalParams);
 
     if ($response['status'] !== 'success') {
         echo json_encode($response);
         exit;
     }
 
-    // Transform flat results (rows) into equipments each with rounds[]
     $flat = $response['data'] ?? [];
     $result = [];
     foreach ($flat as $row) {
         $result[] = [
-            'equipment_id' => (int) $row['equipment_id'],
+            'equipment_id' => (int)$row['equipment_id'],
             'asset_code' => $row['asset_code'] ?? '-',
             'name' => $row['equipment_name'] ?? '-',
-            'rounds' => [
-                [
-                    'roundId' => (int) $row['round_id'],
-                    'start_date' => $row['start_date'] ?? $roundStart,
-                    'status' => 'รอ', // default placeholder; client may override display text
-                    'performed_date' => ''
-                ]
-            ],
-            'plan_name' => '', // optional
+            'rounds' => [[
+                'roundId' => (int)$row['round_id'],
+                'start_date' => $row['start_date'] ?? $roundStart,
+                'status' => $row['status'],
+                'performed_date' => $row['performed_date'] ?? ''
+            ]],
+            'plan_name' => '',
             'file_equip' => []
         ];
     }
 
-    // Return with pagination metadata from helper
-    $pagination = $response['pagination'] ?? null;
-    echo json_encode(buildApiResponse('success', $result, $pagination));
-    exit;
-
+    echo json_encode(buildApiResponse('success', $result, $response['pagination'] ?? null));
 } catch (Exception $e) {
     echo json_encode(buildApiResponse('error', null, null, $e->getMessage()));
 }

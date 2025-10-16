@@ -129,7 +129,7 @@ try {
     $spareId = $dbh->lastInsertId();
 
     // --- Log insert spare part ---
-    $log->insertLog($user_id, 'spare_parts', 'INSERT', null, $values + ['spare_part_id' => $spareId], 'register_logs');
+    $log->insertLog($user_id, 'spare_parts', 'INSERT', null, $values + ['spare_part_id' => $spareId]);
 
     $dbh->commit();
     echo json_encode(["status" => "success", "message" => "Spare part inserted", "id" => $spareId, "record_status" => $input['record_status']]);

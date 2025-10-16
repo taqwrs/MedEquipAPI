@@ -59,7 +59,7 @@ try {
         ->execute([':id' => $spare_part_id]);
 
     // --- Log delete spare part ---
-    $log->insertLog($user_id, 'spare_parts', 'DELETE', $oldData, [], 'register_logs');
+    $log->insertLog($user_id, 'spare_parts', 'DELETE', $oldData, []);
 
     $dbh->commit();
     echo json_encode(["status" => "success", "message" => "Spare part deleted", "id" => $spare_part_id]);

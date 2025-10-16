@@ -170,7 +170,7 @@ try {
 
     // ------------------- Insert Log -------------------
     if(!empty($old_data) || !empty($new_data)){
-        $log->insertLog($user_id,'equipments','UPDATE',$old_data,$new_data, 'register_logs');
+        $log->insertLog($user_id,'equipments','UPDATE',$old_data,$new_data);
     }
 
     $dbh->commit();
