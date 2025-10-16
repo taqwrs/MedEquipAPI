@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php"; 
+include "../config/LogModel.php"; 
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -9,9 +10,24 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization");
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents("php://input"), true);
 
+// ถ้าเป็น POST และมี _method ให้ใช้ method นั้น
 if ($method === "POST" && isset($input["_method"])) {
     $method = strtoupper($input["_method"]);
 }
+
+// ดึง ID ของผู้ใช้จาก JWT
+$stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
+$stmtUser->bindParam(":user_id", $user_id);
+$stmtUser->execute();
+$userData = $stmtUser->fetch(PDO::FETCH_ASSOC);
+$u_id = $userData['ID'] ?? null;
+
+if (!$u_id) {
+    echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลผู้ใช้"]);
+    exit;
+}
+
+$logModel = new LogModel($dbh);
 
 try {
     // GET ENUM types
@@ -93,6 +109,16 @@ try {
             }
         }
 
+        $logData = [
+            'subcategory_id' => $newId,
+            'category_id' => $input["category_id"],
+            'name' => $input["name"],
+            'type' => $input["type"],
+            'group_user_ids' => $group_user_ids
+        ];
+
+        $logModel->insertLog($u_id, 'equipment_subcategories', 'INSERT', null, $logData);
+
         echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
         exit;
     }
@@ -103,6 +129,12 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก subcategory_id, name, type"]);
             exit;
         }
+
+        // ดึงข้อมูลเดิม
+        $stmtOld = $dbh->prepare("SELECT * FROM equipment_subcategories WHERE subcategory_id = :id");
+        $stmtOld->bindParam(":id", $input["subcategory_id"]);
+        $stmtOld->execute();
+        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
         // อัปเดต subcategory
         $stmt = $dbh->prepare("
@@ -136,6 +168,16 @@ try {
             }
         }
 
+        $logData = [
+            'subcategory_id' => $input["subcategory_id"],
+            'category_id' => $input["category_id"],
+            'name' => $input["name"],
+            'type' => $input["type"],
+            'group_user_ids' => $group_user_ids
+        ];
+
+        $logModel->insertLog($u_id, 'equipment_subcategories', 'UPDATE', $oldData, $logData);
+
         echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
         exit;
     }
@@ -147,6 +189,12 @@ try {
             exit;
         }
 
+        // ดึงข้อมูลก่อนลบ
+        $stmtOld = $dbh->prepare("SELECT * FROM equipment_subcategories WHERE subcategory_id = :id");
+        $stmtOld->bindParam(":id", $input["subcategory_id"]);
+        $stmtOld->execute();
+        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
         // ลบ relation_group ก่อน
         $stmt1 = $dbh->prepare("DELETE FROM relation_group WHERE subcategory_id = :id");
         $stmt1->bindParam(":id", $input["subcategory_id"]);
@@ -157,11 +205,12 @@ try {
         $stmt2->bindParam(":id", $input["subcategory_id"]);
         $stmt2->execute();
 
+        $logModel->insertLog($u_id, 'equipment_subcategories', 'DELETE', $oldData, null);
+
         echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
         exit;
     }
 
-    //  Method ไม่ถูกต้อง
     echo json_encode(["status" => "error", "message" => "Method not allowed"]);
     exit;
 
