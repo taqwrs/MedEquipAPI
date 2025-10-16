@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -46,6 +47,9 @@ if (!in_array((int) $input['frequency_unit'], $allowed_frequency_unit)) {
 
 try {
     $dbh->beginTransaction();
+
+    // สร้าง instance ของ LogModel
+    $logModel = new LogModel($dbh);
 
     $startDate = new DateTime($input['start_date']);
     $endDate = new DateTime($input['end_date']);
@@ -111,13 +115,50 @@ try {
 
     $plan_id = $dbh->lastInsertId();
 
+    // บันทึก log สำหรับ calibration_plans
+    $planData = [
+        'plan_id' => $plan_id,
+        'plan_name' => $input['plan_name'],
+        'user_id' => $input['user_id'],
+        'group_user_id' => $input['group_user_id'],
+        'company_id' => $input['company_id'],
+        'frequency_number' => $intervalNumber,
+        'frequency_unit' => $intervalUnit,
+        'frequency_type' => $input['frequency_type'],
+        'interval_count' => $intervalCount,
+        'contract' => !empty($input['contract']) ? $input['contract'] : null,
+        'start_waranty' => !empty($input['start_waranty']) ? $input['start_waranty'] : null,
+        'start_date' => $input['start_date'],
+        'end_date' => $input['end_date'],
+        'cost_type' => $input['cost_type'],
+        'price' => $input['price'],
+        'type_cal' => $input['type_cal'],
+        'is_active' => $input['is_active'] ?? 1
+    ];
+    
+    $logModel->insertLog(
+        $input['user_id'],
+        'calibration_plans',
+        'INSERT',
+        null,
+        $planData
+    );
+
     $detailsStmt = $dbh->prepare("INSERT INTO details_calibration_plans (plan_id,start_date) VALUES (:plan_id,:start_date)");
+
+    $detailsData = []; // เก็บข้อมูล details เพื่อ log
 
     if ($input['frequency_type'] === 'รอบเดียว') {
         $detailsStmt->execute([
             ':plan_id' => $plan_id,
             ':start_date' => $startDate->format('Y-m-d')
         ]);
+        
+        $detailsData[] = [
+            'details_cal_id' => $dbh->lastInsertId(),
+            'plan_id' => $plan_id,
+            'start_date' => $startDate->format('Y-m-d')
+        ];
     } else {
         $scheduledDate = clone $startDate;
         for ($i = 1; $i <= $intervalCount; $i++) {
@@ -125,6 +166,13 @@ try {
                 ':plan_id' => $plan_id,
                 ':start_date' => $scheduledDate->format('Y-m-d')
             ]);
+            
+            $detailsData[] = [
+                'details_cal_id' => $dbh->lastInsertId(),
+                'plan_id' => $plan_id,
+                'start_date' => $scheduledDate->format('Y-m-d')
+            ];
+            
             switch ($intervalUnit) {
                 case 1:
                     $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'D'));
@@ -142,6 +190,14 @@ try {
         }
     }
 
+    // บันทึก log สำหรับ details_calibration_plans
+    $logModel->insertLog(
+        $input['user_id'],
+        'details_calibration_plans',
+        'INSERT',
+        null,
+        ['details_count' => count($detailsData), 'details' => $detailsData]
+    );
 
     $dbh->commit();
     echo json_encode(["status" => "success", "plan_id" => $plan_id]);

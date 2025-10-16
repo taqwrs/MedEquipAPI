@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 header('Content-Type: application/json; charset=utf-8');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -9,25 +10,45 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $dbh->beginTransaction();
+    $user_id = null;
+    if (isset($decoded->data->ID)) {
+        $user_id = $decoded->data->ID;
+    } else {
+        throw new Exception("ไม่พบข้อมูล user_id ใน token");
+    }
+    $logModel = new LogModel($dbh);
 
     $plan_id = $_POST['plan_id'] ?? null;
     if (!$plan_id) throw new Exception("plan_id ไม่พบ");
 
     $uploadDir = __DIR__ . "/../file-upload/file_cal/";
     if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-
-    // ---------------- ลบไฟล์ ----------------
     if (!empty($_POST['file_ids_to_delete'])) {
         $ids = is_array($_POST['file_ids_to_delete']) ? $_POST['file_ids_to_delete'] : [$_POST['file_ids_to_delete']];
         foreach ($ids as $fid) {
-            $stmt = $dbh->prepare("SELECT file_cal_url FROM file_cal WHERE file_cal_id = ? AND plan_id = ?");
+            $stmt = $dbh->prepare("SELECT * FROM file_cal WHERE file_cal_id = ? AND plan_id = ?");
             $stmt->execute([$fid, $plan_id]);
             $file = $stmt->fetch(PDO::FETCH_ASSOC);
+            
             if ($file) {
                 $realPath = $uploadDir . basename($file['file_cal_url']);
                 if (file_exists($realPath)) unlink($realPath);
+                
                 $del = $dbh->prepare("DELETE FROM file_cal WHERE file_cal_id = ? AND plan_id = ?");
                 $del->execute([$fid, $plan_id]);
+                $logModel->insertLog(
+                    $user_id,
+                    'file_cal',
+                    'DELETE',
+                    [
+                        'file_cal_id' => $file['file_cal_id'],
+                        'plan_id' => $file['plan_id'],
+                        'file_cal_name' => $file['file_cal_name'],
+                        'file_cal_url' => $file['file_cal_url'],
+                        'cal_type_name' => $file['cal_type_name']
+                    ],
+                    null
+                );
             }
         }
     }
@@ -36,9 +57,30 @@ try {
     if (!empty($_POST['url_ids_to_delete'])) {
         $urlIds = is_array($_POST['url_ids_to_delete']) ? $_POST['url_ids_to_delete'] : [$_POST['url_ids_to_delete']];
         foreach ($urlIds as $urlId) {
-            // ลบโดยใช้ ID เหมือนกับการลบไฟล์
-            $stmt = $dbh->prepare("DELETE FROM file_cal WHERE file_cal_id = ? AND plan_id = ?");
+            // ดึงข้อมูลเดิมก่อนลบเพื่อบันทึก log
+            $stmt = $dbh->prepare("SELECT * FROM file_cal WHERE file_cal_id = ? AND plan_id = ?");
             $stmt->execute([$urlId, $plan_id]);
+            $urlData = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($urlData) {
+                $stmt = $dbh->prepare("DELETE FROM file_cal WHERE file_cal_id = ? AND plan_id = ?");
+                $stmt->execute([$urlId, $plan_id]);
+                
+                // บันทึก log การลบ URL
+                $logModel->insertLog(
+                    $user_id,
+                    'file_cal',
+                    'DELETE',
+                    [
+                        'file_cal_id' => $urlData['file_cal_id'],
+                        'plan_id' => $urlData['plan_id'],
+                        'file_cal_name' => $urlData['file_cal_name'],
+                        'file_cal_url' => $urlData['file_cal_url'],
+                        'cal_type_name' => $urlData['cal_type_name']
+                    ],
+                    null
+                );
+            }
         }
     }
 
@@ -59,6 +101,23 @@ try {
 
                 $stmt = $dbh->prepare("INSERT INTO file_cal(plan_id, file_cal_name, file_cal_url, cal_type_name) VALUES (?, ?, ?, ?)");
                 $stmt->execute([$plan_id, $name, $url, $typeName]);
+                
+                $insertedId = $dbh->lastInsertId();
+                
+                // บันทึก log การอัปโหลดไฟล์
+                $logModel->insertLog(
+                    $user_id,
+                    'file_cal',
+                    'INSERT',
+                    null,
+                    [
+                        'file_cal_id' => $insertedId,
+                        'plan_id' => $plan_id,
+                        'file_cal_name' => $name,
+                        'file_cal_url' => $url,
+                        'cal_type_name' => $typeName
+                    ]
+                );
             }
         }
     }
@@ -92,6 +151,23 @@ try {
 
             $stmt = $dbh->prepare("INSERT INTO file_cal(plan_id, file_cal_name, file_cal_url, cal_type_name) VALUES (?, ?, ?, ?)");
             $stmt->execute([$plan_id, $customName, $url, $typeName]);
+            
+            $insertedId = $dbh->lastInsertId();
+            
+            // บันทึก log การเพิ่ม URL
+            $logModel->insertLog(
+                $user_id,
+                'file_cal',
+                'INSERT',
+                null,
+                [
+                    'file_cal_id' => $insertedId,
+                    'plan_id' => $plan_id,
+                    'file_cal_name' => $customName,
+                    'file_cal_url' => $url,
+                    'cal_type_name' => $typeName
+                ]
+            );
         }
     }
 

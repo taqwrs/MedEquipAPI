@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -7,6 +8,9 @@ header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 $method = $_SERVER['REQUEST_METHOD'];
+
+
+$logModel = new LogModel($dbh);
 
 try {
     if ($method === 'GET') {
@@ -55,10 +59,14 @@ try {
         try {
             $dbh->beginTransaction();
 
-
             $stmt = $dbh->prepare("SELECT equipment_id FROM plan_equipments WHERE plan_id = :plan_id");
             $stmt->execute([':plan_id' => $plan_id]);
             $existing = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+            $oldData = [
+                'plan_id' => $plan_id,
+                'equipment_ids' => $existing
+            ];
 
 
             $toAdd = array_diff($newEquipmentIds, $existing);
@@ -72,13 +80,28 @@ try {
                 }
             }
 
-
             $toDelete = array_diff($existing, $newEquipmentIds);
             if (!empty($toDelete)) {
                 $inQuery = implode(',', array_fill(0, count($toDelete), '?'));
                 $stmtDelete = $dbh->prepare("DELETE FROM plan_equipments WHERE plan_id = ? AND equipment_id IN ($inQuery)");
                 $stmtDelete->execute(array_merge([$plan_id], $toDelete));
             }
+
+            $newData = [
+                'plan_id' => $plan_id,
+                'equipment_ids' => $newEquipmentIds,
+                'added' => array_values($toAdd),
+                'deleted' => array_values($toDelete)
+            ];
+
+            $user_id = $decoded->data->ID ;
+            $logModel->insertLog(
+                $user_id,
+                'plan_equipments',
+                'UPDATE',
+                $oldData,
+                $newData
+            );
 
             $dbh->commit();
 

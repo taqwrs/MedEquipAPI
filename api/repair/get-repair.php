@@ -25,29 +25,26 @@ try {
     }
 
     $useLimit = $limit > 0;
-
-  
-    $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE user_id = :user_id");
+    $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE ID = :user_id");
     $stmtRole->execute([':user_id' => $user_id]);
     $role_id = (int)$stmtRole->fetchColumn();
 
     if ($role_id === 6) {
-
         $where = "1=1";
         $params = [];
+        $userGroups = []; 
     } else {
-
         $sqlUserGroups = "
             SELECT ru.group_user_id
             FROM relation_user ru
             INNER JOIN users u ON ru.u_id = u.ID
-            WHERE u.user_id = :user_id
+            WHERE u.ID = :user_id
         ";
         $stmtUserGroups = $dbh->prepare($sqlUserGroups);
         $stmtUserGroups->execute([':user_id' => $user_id]);
         $userGroups = $stmtUserGroups->fetchAll(PDO::FETCH_COLUMN);
 
-        // เงื่อนไขปกติ
+
         $where = "(r.user_id = :user_id"; 
         $params = [':user_id' => $user_id];
 
@@ -69,7 +66,6 @@ try {
         $params[':search'] = "%$search%";
     }
 
-    // ดึงข้อมูลหลัก
     $sql = "SELECT 
                 r.repair_id,
                 r.equipment_id,
@@ -88,7 +84,7 @@ try {
                 gu.group_name AS responsible_group
             FROM repair r
             LEFT JOIN equipments e ON r.equipment_id = e.equipment_id
-            LEFT JOIN users u_reporter ON r.user_id = u_reporter.user_id
+            LEFT JOIN users u_reporter ON r.user_id = u_reporter.ID
             LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
             LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
             WHERE $where AND r.active = 1
@@ -109,7 +105,6 @@ try {
     $stmt->execute();
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // นับจำนวน repair ต่อ equipment
     $repairCount = [];
     foreach ($repairs as $row) {
         $equipId = $row['equipment_id'];
@@ -119,7 +114,6 @@ try {
         $repairCount[$equipId]++;
     }
 
-    // ดึง repair_results + files + spare parts
     foreach ($repairs as &$repair) {
         $stmt2 = $dbh->prepare("
             SELECT 
@@ -132,7 +126,7 @@ try {
                 rr.status,
                 rr.remark
             FROM repair_result rr
-            LEFT JOIN users u_responsible ON rr.user_id = u_responsible.user_id
+            LEFT JOIN users u_responsible ON rr.user_id = u_responsible.ID
             WHERE rr.repair_id = ?
         ");
         $stmt2->execute([$repair['repair_id']]);
@@ -140,7 +134,7 @@ try {
 
         $results = [];
         foreach ($repairResults as $row) {
-            // ดึงไฟล์
+
             $stmtFiles = $dbh->prepare("
                 SELECT file_repair_result_id, repair_file_name, repair_file_url, repair_type_name
                 FROM file_repair_result
