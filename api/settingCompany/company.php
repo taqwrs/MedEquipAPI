@@ -1,5 +1,6 @@
 <?php
-include "../config/jwt.php"; // DB + JWT
+include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -9,14 +10,25 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization");
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents("php://input"), true);
 
-// ถ้าเป็น POST และมี _method ให้ใช้ method นั้น
 if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
 }
+//ดึง ID จากตาราง users โดยใช้ user_id จาก JWT
+$stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
+$stmtUser->bindParam(":user_id", $user_id);
+$stmtUser->execute();
+$userData = $stmtUser->fetch(PDO::FETCH_ASSOC);
+$u_id = $userData['ID'] ?? null;
+// ถ้าไม่เจอ ID ให้ส่ง error
+if (!$u_id) {
+    echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลผู้ใช้"]);
+    exit;
+}
+
+$logModel = new LogModel($dbh);
 
 try {
     if ($method === 'GET') {
-        // READ
         $stmt = $dbh->prepare("
             SELECT 
                 company_id,
@@ -52,6 +64,16 @@ try {
         $stmt->bindParam(":line_id", $input['line_id']);
         $stmt->bindParam(":details", $input['details']);
         $stmt->execute();
+
+        // บันทึก log การ INSERT
+        $logModel->insertLog(
+            $u_id,           // จาก jwt.php
+            'companies',        // ชื่อตาราง
+            'INSERT',           // action
+            null,               // oldData (ไม่มี)
+            $input              // newData
+        );
+
         echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
 
     } elseif ($method === 'PUT') {
@@ -60,6 +82,14 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก company_id และ name"]);
             exit;
         }
+
+        // ดึงข้อมูลเดิมก่อน update
+        $stmtOld = $dbh->prepare("SELECT * FROM companies WHERE company_id = :id");
+        $stmtOld->bindParam(":id", $input['company_id']);
+        $stmtOld->execute();
+        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+        // อัพเดทข้อมูล
         $stmt = $dbh->prepare("
             UPDATE companies 
             SET name = :name, tax_number = :tax_number, address = :address, 
@@ -75,6 +105,16 @@ try {
         $stmt->bindParam(":details", $input['details']);
         $stmt->bindParam(":id", $input['company_id']);
         $stmt->execute();
+
+        // บันทึก log การ UPDATE
+        $logModel->insertLog(
+            $u_id,           // จาก jwt.php
+            'companies',        // ชื่อตาราง
+            'UPDATE',           // action
+            $oldData,           // ข้อมูลเดิม
+            $input              // ข้อมูลใหม่
+        );
+
         echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
 
     } elseif ($method === 'DELETE') {
@@ -83,9 +123,27 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก company_id"]);
             exit;
         }
+
+        // ดึงข้อมูลก่อนลบ
+        $stmtOld = $dbh->prepare("SELECT * FROM companies WHERE company_id = :id");
+        $stmtOld->bindParam(":id", $input['company_id']);
+        $stmtOld->execute();
+        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+        // ลบข้อมูล
         $stmt = $dbh->prepare("DELETE FROM companies WHERE company_id = :id");
         $stmt->bindParam(":id", $input['company_id']);
         $stmt->execute();
+
+        // บันทึก log การ DELETE
+        $logModel->insertLog(
+            $u_id,           // จาก jwt.php
+            'companies',        // ชื่อตาราง
+            'DELETE',           // action
+            $oldData,           // ข้อมูลที่ถูกลบ
+            null                // newData (ไม่มี)
+        );
+
         echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
 
     } else {
