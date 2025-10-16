@@ -1,5 +1,6 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -76,11 +77,39 @@ try {
             echo json_encode(["status"=>"error","message"=>"กรุณากรอก name_type และ group_user_id"], JSON_UNESCAPED_UNICODE);
             exit;
         }
+
+        $user_id = null;
+        if (isset($decoded->data->ID)) {
+            $user_id = $decoded->data->ID;
+        } else {
+            throw new Exception("ไม่พบข้อมูล user_id ใน token");
+        }
+
+        $dbh->beginTransaction();
+
         $stmt = $dbh->prepare("INSERT INTO repair_type (name_type, group_user_id) VALUES (:name_type, :group_user_id)");
         $stmt->bindParam(":name_type", $input['name_type']);
         $stmt->bindParam(":group_user_id", $input['group_user_id']);
         $stmt->execute();
         $new_id = $dbh->lastInsertId();
+
+        // Log INSERT
+        $logModel = new LogModel($dbh);
+        $newData = [
+            "repair_type_id" => $new_id,
+            "name_type" => $input['name_type'],
+            "group_user_id" => $input['group_user_id']
+        ];
+        $logModel->insertLog(
+            $user_id,
+            'repair_type',
+            'INSERT',
+            null,
+            $newData,
+            'transaction_logs'
+        );
+
+        $dbh->commit();
         echo json_encode(["status"=>"ok","message"=>"เพิ่มประเภทงานซ่อมเรียบร้อย","repair_type_id"=>$new_id], JSON_UNESCAPED_UNICODE);
 
     } elseif ($method === 'PUT') {
@@ -88,18 +117,51 @@ try {
             echo json_encode(["status"=>"error","message"=>"กรุณากรอก repair_type_id, name_type และ group_user_id"], JSON_UNESCAPED_UNICODE);
             exit;
         }
-        $stmtCheck = $dbh->prepare("SELECT repair_type_id FROM repair_type WHERE repair_type_id = :repair_type_id");
-        $stmtCheck->bindParam(":repair_type_id", $repair_type_id);
-        $stmtCheck->execute();
-        if (!$stmtCheck->fetch()) {
+
+        $user_id = null;
+        if (isset($decoded->data->ID)) {
+            $user_id = $decoded->data->ID;
+        } else {
+            throw new Exception("ไม่พบข้อมูล user_id ใน token");
+        }
+
+        $dbh->beginTransaction();
+
+        // Get old data before update
+        $oldStmt = $dbh->prepare("SELECT * FROM repair_type WHERE repair_type_id = :repair_type_id");
+        $oldStmt->bindParam(":repair_type_id", $repair_type_id);
+        $oldStmt->execute();
+        $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$oldData) {
+            $dbh->rollBack();
             echo json_encode(["status"=>"error","message"=>"ไม่พบข้อมูลที่จะแก้ไข"], JSON_UNESCAPED_UNICODE);
             exit;
         }
+
         $stmt = $dbh->prepare("UPDATE repair_type SET name_type=:name_type, group_user_id=:group_user_id WHERE repair_type_id=:repair_type_id");
         $stmt->bindParam(":name_type", $input['name_type']);
         $stmt->bindParam(":group_user_id", $input['group_user_id']);
         $stmt->bindParam(":repair_type_id", $repair_type_id);
         $stmt->execute();
+
+        // Log UPDATE
+        $logModel = new LogModel($dbh);
+        $newData = [
+            "repair_type_id" => $repair_type_id,
+            "name_type" => $input['name_type'],
+            "group_user_id" => $input['group_user_id']
+        ];
+        $logModel->insertLog(
+            $user_id,
+            'repair_type',
+            'UPDATE',
+            $oldData,
+            $newData,
+            'transaction_logs'
+        );
+
+        $dbh->commit();
         echo json_encode(["status"=>"ok","message"=>"แก้ไขประเภทงานซ่อมเรียบร้อย"], JSON_UNESCAPED_UNICODE);
 
     } elseif ($method === 'DELETE') {
@@ -107,20 +169,52 @@ try {
             echo json_encode(["status"=>"error","message"=>"กรุณากรอก repair_type_id"], JSON_UNESCAPED_UNICODE);
             exit;
         }
-        $stmtCheck = $dbh->prepare("SELECT repair_type_id FROM repair_type WHERE repair_type_id=:repair_type_id");
+
+        $user_id = null;
+        if (isset($decoded->data->ID)) {
+            $user_id = $decoded->data->ID;
+        } else {
+            throw new Exception("ไม่พบข้อมูล user_id ใน token");
+        }
+
+        $dbh->beginTransaction();
+
+        // Get data before delete
+        $stmtCheck = $dbh->prepare("SELECT * FROM repair_type WHERE repair_type_id=:repair_type_id");
         $stmtCheck->bindParam(":repair_type_id", $repair_type_id);
         $stmtCheck->execute();
-        if (!$stmtCheck->fetch()) {
+        $oldData = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+        if (!$oldData) {
+            $dbh->rollBack();
             echo json_encode(["status"=>"error","message"=>"ไม่พบข้อมูลที่จะลบ"], JSON_UNESCAPED_UNICODE);
             exit;
         }
+
         $stmt = $dbh->prepare("DELETE FROM repair_type WHERE repair_type_id=:repair_type_id");
         $stmt->bindParam(":repair_type_id", $repair_type_id);
         $stmt->execute();
+
+        // Log DELETE
+        $logModel = new LogModel($dbh);
+        $logModel->insertLog(
+            $user_id,
+            'repair_type',
+            'DELETE',
+            $oldData,
+            null,
+            'transaction_logs'
+        );
+
+        $dbh->commit();
         echo json_encode(["status"=>"ok","message"=>"ลบประเภทงานซ่อมเรียบร้อย"], JSON_UNESCAPED_UNICODE);
+
     } else {
         echo json_encode(["status"=>"error","message"=>"Method not allowed"], JSON_UNESCAPED_UNICODE);
     }
+
 } catch (Exception $e) {
+    $dbh->rollBack();
     echo json_encode(["status"=>"error","message"=>$e->getMessage()], JSON_UNESCAPED_UNICODE);
 }
+?>
