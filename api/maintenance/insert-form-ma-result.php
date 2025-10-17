@@ -1,5 +1,5 @@
 <?php
-include "../config/jwt.php"; 
+include "../config/jwt.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -11,14 +11,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$equipment_id   = $_POST['equipment_id'] ?? null;
-$user_id        = $_POST['user_id'] ?? null;
+$equipment_id = $_POST['equipment_id'] ?? null;
+$user_id = $_POST['user_id'] ?? null;
 $performed_date = $_POST['performed_date'] ?? null;
-$result         = $_POST['result'] ?? "ผ่าน";
-$details        = $_POST['details'] ?? null;
-$reason         = $_POST['reason'] ?? "";
-$details_ma_id  = $_POST['details_ma_id'] ?? null;
-$send_repair    = $_POST['send_repair'] ?? "false";
+$result = $_POST['result'] ?? "ผ่าน";
+$details = $_POST['details'] ?? null;
+$reason = $_POST['reason'] ?? "";
+$details_ma_id = $_POST['details_ma_id'] ?? null;
+$send_repair = $_POST['send_repair'] ?? "false";
 
 if (!$equipment_id || !$performed_date || !$user_id || !$details_ma_id) {
     echo json_encode(["result" => "error", "message" => "Missing required fields"]);
@@ -26,6 +26,7 @@ if (!$equipment_id || !$performed_date || !$user_id || !$details_ma_id) {
 }
 
 try {
+    $dbh->beginTransaction();
 
     // ตรวจสอบว่าเคยบันทึกผลรอบนี้ของเครื่องมือนี้หรือยัง
     $checkStmt = $dbh->prepare("
@@ -38,7 +39,10 @@ try {
         ":details_ma_id" => $details_ma_id,
         ":equipment_id" => $equipment_id
     ]);
+
     if ($checkStmt->fetchColumn() > 0) {
+        // ถ้ามีข้อมูลอยู่แล้ว ยกเลิก Transaction ก่อนออก
+        $dbh->rollBack();
         echo json_encode(["status" => "error", "message" => "ผลการบำรุงรักษานี้ของเครื่องมือนี้ถูกบันทึกแล้ว ไม่สามารถบันทึกซ้ำได้"]);
         exit;
     }
@@ -56,17 +60,23 @@ try {
         ":equipment_id" => $equipment_id,
         ":performed_date" => $performed_date,
         ":result" => $result,
-        // ":details" => ($details === "null" || !$details) ? null : $details,
         ":details" => ($details === "null" || $details === "" ? null : $details),
         ":reason" => ($reason === "null" || !$reason) ? null : $reason,
         ":send_repair" => $send_repair
     ]);
 
     $ma_result_id = $dbh->lastInsertId();
+    $dbh->commit();
 
-    echo json_encode(["status" => "success", "message" => "Saved successfully", "ma_result_id" => $ma_result_id]);
+    echo json_encode([
+        "status" => "success",
+        "message" => "Saved successfully",
+        "ma_result_id" => $ma_result_id
+    ]);
 
 } catch (PDOException $e) {
+    if ($dbh->inTransaction()) {
+        $dbh->rollBack();
+    }
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>
