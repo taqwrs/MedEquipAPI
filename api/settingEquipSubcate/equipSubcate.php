@@ -10,12 +10,9 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization");
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents("php://input"), true);
 
-// ถ้าเป็น POST และมี _method ให้ใช้ method นั้น
 if ($method === "POST" && isset($input["_method"])) {
     $method = strtoupper($input["_method"]);
 }
-
-// ดึง ID ของผู้ใช้จาก JWT
 $stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
 $stmtUser->bindParam(":user_id", $user_id);
 $stmtUser->execute();
@@ -82,45 +79,53 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก category_id, name, type"]);
             exit;
         }
-
-        // เพิ่ม subcategory
-        $stmt = $dbh->prepare("
-            INSERT INTO equipment_subcategories (category_id, name, type)
-            VALUES (:category_id, :name, :type)
-        ");
-        $stmt->bindParam(":category_id", $input["category_id"]);
-        $stmt->bindParam(":name", $input["name"]);
-        $stmt->bindParam(":type", $input["type"]);
-        $stmt->execute();
-
-        $newId = $dbh->lastInsertId();
-
-        // ผูก relation_group หลายค่า (many-to-many)
-        $group_user_ids = $input["group_user_ids"] ?? [];
-        if (!empty($group_user_ids)) {
-            $stmtRG = $dbh->prepare("
-                INSERT INTO relation_group (group_user_id, subcategory_id)
-                VALUES (:group_user_id, :subcategory_id)
+        $dbh->beginTransaction();
+        try {
+            // เพิ่ม subcategory
+            $stmt = $dbh->prepare("
+                INSERT INTO equipment_subcategories (category_id, name, type)
+                VALUES (:category_id, :name, :type)
             ");
-            foreach ($group_user_ids as $gid) {
-                $stmtRG->bindParam(":group_user_id", $gid);
-                $stmtRG->bindParam(":subcategory_id", $newId);
-                $stmtRG->execute();
+            $stmt->bindParam(":category_id", $input["category_id"]);
+            $stmt->bindParam(":name", $input["name"]);
+            $stmt->bindParam(":type", $input["type"]);
+            $stmt->execute();
+
+            $newId = $dbh->lastInsertId();
+
+            // ผูก relation_group หลายค่า (many-to-many)
+            $group_user_ids = $input["group_user_ids"] ?? [];
+            if (!empty($group_user_ids)) {
+                $stmtRG = $dbh->prepare("
+                    INSERT INTO relation_group (group_user_id, subcategory_id)
+                    VALUES (:group_user_id, :subcategory_id)
+                ");
+                foreach ($group_user_ids as $gid) {
+                    $stmtRG->bindParam(":group_user_id", $gid);
+                    $stmtRG->bindParam(":subcategory_id", $newId);
+                    $stmtRG->execute();
+                }
             }
+
+            $logData = [
+                'subcategory_id' => $newId,
+                'category_id' => $input["category_id"],
+                'name' => $input["name"],
+                'type' => $input["type"],
+                'group_user_ids' => $group_user_ids
+            ];
+
+            $logModel->insertLog($u_id, 'equipment_subcategories', 'INSERT', null, $logData);
+
+            $dbh->commit();
+
+            echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย", "subcategory_id" => $newId]);
+            exit;
+
+        } catch (Exception $e) {
+            $dbh->rollBack();
+            throw $e;
         }
-
-        $logData = [
-            'subcategory_id' => $newId,
-            'category_id' => $input["category_id"],
-            'name' => $input["name"],
-            'type' => $input["type"],
-            'group_user_ids' => $group_user_ids
-        ];
-
-        $logModel->insertLog($u_id, 'equipment_subcategories', 'INSERT', null, $logData);
-
-        echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
-        exit;
     }
 
     // PUT (update)
@@ -129,57 +134,71 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก subcategory_id, name, type"]);
             exit;
         }
+        $dbh->beginTransaction();
+        try {
+            // ดึงข้อมูลเดิม
+            $stmtOld = $dbh->prepare("SELECT * FROM equipment_subcategories WHERE subcategory_id = :id");
+            $stmtOld->bindParam(":id", $input["subcategory_id"]);
+            $stmtOld->execute();
+            $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
-        // ดึงข้อมูลเดิม
-        $stmtOld = $dbh->prepare("SELECT * FROM equipment_subcategories WHERE subcategory_id = :id");
-        $stmtOld->bindParam(":id", $input["subcategory_id"]);
-        $stmtOld->execute();
-        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
-
-        // อัปเดต subcategory
-        $stmt = $dbh->prepare("
-            UPDATE equipment_subcategories
-            SET category_id = :category_id,
-                name = :name,
-                type = :type
-            WHERE subcategory_id = :id
-        ");
-        $stmt->bindParam(":category_id", $input["category_id"]);
-        $stmt->bindParam(":name", $input["name"]);
-        $stmt->bindParam(":type", $input["type"]);
-        $stmt->bindParam(":id", $input["subcategory_id"]);
-        $stmt->execute();
-
-        // อัปเดต relation_group (many-to-many)
-        $stmtDel = $dbh->prepare("DELETE FROM relation_group WHERE subcategory_id = :subcategory_id");
-        $stmtDel->bindParam(":subcategory_id", $input["subcategory_id"]);
-        $stmtDel->execute();
-
-        $group_user_ids = $input["group_user_ids"] ?? [];
-        if (!empty($group_user_ids)) {
-            $stmtRG = $dbh->prepare("
-                INSERT INTO relation_group (group_user_id, subcategory_id)
-                VALUES (:group_user_id, :subcategory_id)
-            ");
-            foreach ($group_user_ids as $gid) {
-                $stmtRG->bindParam(":group_user_id", $gid);
-                $stmtRG->bindParam(":subcategory_id", $input["subcategory_id"]);
-                $stmtRG->execute();
+            if (!$oldData) {
+                $dbh->rollBack();
+                echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูล subcategory"]);
+                exit;
             }
+
+            // อัปเดต subcategory
+            $stmt = $dbh->prepare("
+                UPDATE equipment_subcategories
+                SET category_id = :category_id,
+                    name = :name,
+                    type = :type
+                WHERE subcategory_id = :id
+            ");
+            $stmt->bindParam(":category_id", $input["category_id"]);
+            $stmt->bindParam(":name", $input["name"]);
+            $stmt->bindParam(":type", $input["type"]);
+            $stmt->bindParam(":id", $input["subcategory_id"]);
+            $stmt->execute();
+
+            // อัปเดต relation_group (many-to-many)
+            $stmtDel = $dbh->prepare("DELETE FROM relation_group WHERE subcategory_id = :subcategory_id");
+            $stmtDel->bindParam(":subcategory_id", $input["subcategory_id"]);
+            $stmtDel->execute();
+
+            $group_user_ids = $input["group_user_ids"] ?? [];
+            if (!empty($group_user_ids)) {
+                $stmtRG = $dbh->prepare("
+                    INSERT INTO relation_group (group_user_id, subcategory_id)
+                    VALUES (:group_user_id, :subcategory_id)
+                ");
+                foreach ($group_user_ids as $gid) {
+                    $stmtRG->bindParam(":group_user_id", $gid);
+                    $stmtRG->bindParam(":subcategory_id", $input["subcategory_id"]);
+                    $stmtRG->execute();
+                }
+            }
+
+            $logData = [
+                'subcategory_id' => $input["subcategory_id"],
+                'category_id' => $input["category_id"],
+                'name' => $input["name"],
+                'type' => $input["type"],
+                'group_user_ids' => $group_user_ids
+            ];
+
+            $logModel->insertLog($u_id, 'equipment_subcategories', 'UPDATE', $oldData, $logData);
+
+            $dbh->commit();
+
+            echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
+            exit;
+
+        } catch (Exception $e) {
+            $dbh->rollBack();
+            throw $e;
         }
-
-        $logData = [
-            'subcategory_id' => $input["subcategory_id"],
-            'category_id' => $input["category_id"],
-            'name' => $input["name"],
-            'type' => $input["type"],
-            'group_user_ids' => $group_user_ids
-        ];
-
-        $logModel->insertLog($u_id, 'equipment_subcategories', 'UPDATE', $oldData, $logData);
-
-        echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
-        exit;
     }
 
     // DELETE
@@ -188,27 +207,56 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก subcategory_id"]);
             exit;
         }
+        $dbh->beginTransaction();
 
-        // ดึงข้อมูลก่อนลบ
-        $stmtOld = $dbh->prepare("SELECT * FROM equipment_subcategories WHERE subcategory_id = :id");
-        $stmtOld->bindParam(":id", $input["subcategory_id"]);
-        $stmtOld->execute();
-        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+        try {
+            // ดึงข้อมูล subcategory ก่อนลบ
+            $stmtOld = $dbh->prepare("SELECT * FROM equipment_subcategories WHERE subcategory_id = :id");
+            $stmtOld->bindParam(":id", $input["subcategory_id"]);
+            $stmtOld->execute();
+            $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
-        // ลบ relation_group ก่อน
-        $stmt1 = $dbh->prepare("DELETE FROM relation_group WHERE subcategory_id = :id");
-        $stmt1->bindParam(":id", $input["subcategory_id"]);
-        $stmt1->execute();
+            if (!$oldData) {
+                $dbh->rollBack();
+                echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูล subcategory"]);
+                exit;
+            }
 
-        // ลบ subcategory
-        $stmt2 = $dbh->prepare("DELETE FROM equipment_subcategories WHERE subcategory_id = :id");
-        $stmt2->bindParam(":id", $input["subcategory_id"]);
-        $stmt2->execute();
+            // ดึงข้อมูล relation_group ที่เกี่ยวข้อง
+            $stmtRelations = $dbh->prepare("
+                SELECT rg.*, gu.group_name, gu.type AS group_type
+                FROM relation_group rg
+                LEFT JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+                WHERE rg.subcategory_id = :id
+            ");
+            $stmtRelations->bindParam(":id", $input["subcategory_id"]);
+            $stmtRelations->execute();
+            $relationData = $stmtRelations->fetchAll(PDO::FETCH_ASSOC);
 
-        $logModel->insertLog($u_id, 'equipment_subcategories', 'DELETE', $oldData, null);
+            // รวมข้อมูล relation_group เข้าไปใน oldData
+            $oldData['relations'] = $relationData;
 
-        echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
-        exit;
+            // ลบ relation_group ก่อน
+            $stmt1 = $dbh->prepare("DELETE FROM relation_group WHERE subcategory_id = :id");
+            $stmt1->bindParam(":id", $input["subcategory_id"]);
+            $stmt1->execute();
+
+            // ลบ subcategory
+            $stmt2 = $dbh->prepare("DELETE FROM equipment_subcategories WHERE subcategory_id = :id");
+            $stmt2->bindParam(":id", $input["subcategory_id"]);
+            $stmt2->execute();
+
+            $logModel->insertLog($u_id, 'equipment_subcategories', 'DELETE', $oldData, null);
+
+            $dbh->commit();
+
+            echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
+            exit;
+
+        } catch (Exception $e) {
+            $dbh->rollBack();
+            throw $e;
+        }
     }
 
     echo json_encode(["status" => "error", "message" => "Method not allowed"]);

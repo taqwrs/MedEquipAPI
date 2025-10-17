@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -11,22 +12,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$equipment_id = $_POST['equipment_id'] ?? null;
-$user_id = $_POST['user_id'] ?? null;
-$performed_date = $_POST['performed_date'] ?? null;
-$result = $_POST['result'] ?? "ผ่าน";
-$details = $_POST['details'] ?? null;
-$reason = $_POST['reason'] ?? "";
-$details_ma_id = $_POST['details_ma_id'] ?? null;
-$send_repair = $_POST['send_repair'] ?? "false";
-
-if (!$equipment_id || !$performed_date || !$user_id || !$details_ma_id) {
-    echo json_encode(["result" => "error", "message" => "Missing required fields"]);
-    exit;
+$input = $_POST; // ใช้ $_POST เป็น array
+$required_fields = ['equipment_id','user_id','performed_date','details_ma_id'];
+foreach ($required_fields as $field) {
+    if (empty($input[$field])) {
+        echo json_encode(["status"=>"error","message"=>"Missing required field: $field"]);
+        exit;
+    }
 }
 
 try {
     $dbh->beginTransaction();
+    $log = new LogModel($dbh);
+    $user_id = $decoded->data->ID ?? null;
+    if (!$user_id) throw new Exception("User ID not found");
 
     // ตรวจสอบว่าเคยบันทึกผลรอบนี้ของเครื่องมือนี้หรือยัง
     $checkStmt = $dbh->prepare("
@@ -36,47 +35,59 @@ try {
           AND equipment_id = :equipment_id
     ");
     $checkStmt->execute([
-        ":details_ma_id" => $details_ma_id,
-        ":equipment_id" => $equipment_id
+        ":details_ma_id"=>$input['details_ma_id'],
+        ":equipment_id"=>$input['equipment_id']
     ]);
-
     if ($checkStmt->fetchColumn() > 0) {
-        // ถ้ามีข้อมูลอยู่แล้ว ยกเลิก Transaction ก่อนออก
         $dbh->rollBack();
-        echo json_encode(["status" => "error", "message" => "ผลการบำรุงรักษานี้ของเครื่องมือนี้ถูกบันทึกแล้ว ไม่สามารถบันทึกซ้ำได้"]);
+        echo json_encode(["status"=>"error","message"=>"ผลการบำรุงรักษานี้ของเครื่องมือนี้ถูกบันทึกแล้ว"]);
         exit;
     }
 
-    // บันทึกผล MA ลง DB
-    $stmt = $dbh->prepare("
-        INSERT INTO maintenance_result 
-        (details_ma_id, user_id, equipment_id, performed_date, result, details, reason, send_repair)
-        VALUES 
-        (:details_ma_id, :user_id, :equipment_id, :performed_date, :result, :details, :reason, :send_repair)
-    ");
-    $stmt->execute([
-        ":details_ma_id" => $details_ma_id,
-        ":user_id" => $user_id,
-        ":equipment_id" => $equipment_id,
-        ":performed_date" => $performed_date,
-        ":result" => $result,
-        ":details" => ($details === "null" || $details === "" ? null : $details),
-        ":reason" => ($reason === "null" || !$reason) ? null : $reason,
-        ":send_repair" => $send_repair
-    ]);
+    // --- auto-generate insert ---
+    $insertFields = [
+        'details_ma_id', 'user_id', 'equipment_id', 'performed_date',
+        'result', 'details', 'reason', 'send_repair'
+    ];
+
+    $insertData = [];
+    foreach ($insertFields as $f) {
+        $value = $input[$f] ?? null;
+
+        // แปลง empty string หรือ "null" เป็น null
+        if (in_array($f,['details','reason']) && ($value === '' || $value === 'null')) {
+            $value = null;
+        }
+
+        // ค่า default
+        if ($f === 'result' && !$value) $value = 'ผ่าน';
+        if ($f === 'send_repair' && !$value) $value = 'false';
+
+        $insertData[$f] = $value;
+    }
+
+    $cols = implode(',', $insertFields);
+    $placeholders = ':' . implode(',:', $insertFields);
+
+    $stmt = $dbh->prepare("INSERT INTO maintenance_result ($cols) VALUES ($placeholders)");
+    $stmt->execute($insertData);
 
     $ma_result_id = $dbh->lastInsertId();
-    $dbh->commit();
 
+    // --- log auto-generate ---
+    $logData = $insertData;
+    $logData['ma_result_id'] = $ma_result_id;
+
+    $log->insertLog($user_id,'maintenance_result','INSERT',null,$logData);
+
+    $dbh->commit();
     echo json_encode([
-        "status" => "success",
-        "message" => "Saved successfully",
-        "ma_result_id" => $ma_result_id
+        "status"=>"success",
+        "message"=>"Saved successfully",
+        "ma_result_id"=>$ma_result_id
     ]);
 
-} catch (PDOException $e) {
-    if ($dbh->inTransaction()) {
-        $dbh->rollBack();
-    }
-    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+} catch (Exception $e) {
+    if ($dbh->inTransaction()) $dbh->rollBack();
+    echo json_encode(["status"=>"error","message"=>$e->getMessage()]);
 }

@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php"; // LogModel
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -19,7 +20,22 @@ if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
 }
 
+// ดึง ID ของผู้ใช้จาก JWT
+$stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
+$stmtUser->bindParam(":user_id", $user_id);
+$stmtUser->execute();
+$userData = $stmtUser->fetch(PDO::FETCH_ASSOC);
+$u_id = $userData['ID'] ?? null;
+
+if (!$u_id) {
+    echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลผู้ใช้"]);
+    exit;
+}
+
+$logModel = new LogModel($dbh);
+
 try {
+    // ================== GET ==================
     if ($method === 'GET') {
         $search = trim($input['search'] ?? '');
         $page   = (int) ($input['page'] ?? 1);
@@ -102,7 +118,7 @@ try {
         ], JSON_UNESCAPED_UNICODE);
 
     } elseif ($method === 'POST') {
-        // CREATE
+        // ================== CREATE ==================
         $required = ['user_id', 'full_name', 'department_id', 'role_id', 'first_login', 'last_login'];
         foreach ($required as $field) {
             if (empty($input[$field])) {
@@ -110,6 +126,9 @@ try {
                 exit;
             }
         }
+
+        // เริ่ม Transaction
+        $dbh->beginTransaction();
 
         $stmt = $dbh->prepare("
             INSERT INTO users 
@@ -125,15 +144,47 @@ try {
         $stmt->bindParam(":last_login", $input['last_login']);
         $stmt->execute();
 
-        echo json_encode(["status" => "ok", "message" => "เพิ่มผู้ใช้เรียบร้อย"]);
+        $inserted_id = $dbh->lastInsertId();
+
+        // บันทึก log
+        $newData = [
+            'ID' => $inserted_id,
+            'user_id' => $input['user_id'],
+            'full_name' => $input['full_name'],
+            'department_id' => $input['department_id'],
+            'role_id' => $input['role_id'],
+            'first_login' => $input['first_login'],
+            'last_login' => $input['last_login']
+        ];
+        $logModel->insertLog($u_id, 'users', 'INSERT', null, $newData);
+
+        // Commit Transaction
+        $dbh->commit();
+
+        echo json_encode(["status" => "ok", "message" => "เพิ่มผู้ใช้เรียบร้อย", "ID" => $inserted_id]);
 
     } elseif ($method === 'PUT') {
-        // UPDATE
+        // ================== UPDATE ==================
         if (empty($input['ID'])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก ID"]);
             exit;
         }
 
+        // ดึงข้อมูลเดิมก่อน update
+        $stmtOld = $dbh->prepare("SELECT * FROM users WHERE ID = :ID");
+        $stmtOld->bindParam(":ID", $input['ID']);
+        $stmtOld->execute();
+        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+        if (!$oldData) {
+            echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลผู้ใช้"]);
+            exit;
+        }
+
+        // เริ่ม Transaction
+        $dbh->beginTransaction();
+
+        // Update
         $stmt = $dbh->prepare("
             UPDATE users SET 
                 user_id = :user_id, 
@@ -153,18 +204,54 @@ try {
         $stmt->bindParam(":ID", $input['ID']);
         $stmt->execute();
 
+        // บันทึก log
+        $newData = [
+            'ID' => $input['ID'],
+            'user_id' => $input['user_id'],
+            'full_name' => $input['full_name'],
+            'department_id' => $input['department_id'],
+            'role_id' => $input['role_id'],
+            'first_login' => $input['first_login'],
+            'last_login' => $input['last_login']
+        ];
+        $logModel->insertLog($u_id, 'users', 'UPDATE', $oldData, $newData);
+
+        // Commit Transaction
+        $dbh->commit();
+
         echo json_encode(["status" => "ok", "message" => "แก้ไขผู้ใช้เรียบร้อย"]);
 
     } elseif ($method === 'DELETE') {
-        // DELETE
+        // ================== DELETE ==================
         if (empty($input['ID'])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก ID"]);
             exit;
         }
 
+        // ดึงข้อมูลก่อนลบ
+        $stmtOld = $dbh->prepare("SELECT * FROM users WHERE ID = :ID");
+        $stmtOld->bindParam(":ID", $input['ID']);
+        $stmtOld->execute();
+        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+        if (!$oldData) {
+            echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลผู้ใช้"]);
+            exit;
+        }
+
+        // เริ่ม Transaction
+        $dbh->beginTransaction();
+
+        // Delete
         $stmt = $dbh->prepare("DELETE FROM users WHERE ID = :ID");
         $stmt->bindParam(":ID", $input['ID']);
         $stmt->execute();
+
+        // บันทึก log
+        $logModel->insertLog($u_id, 'users', 'DELETE', $oldData, null);
+
+        // Commit Transaction
+        $dbh->commit();
 
         echo json_encode(["status" => "ok", "message" => "ลบผู้ใช้เรียบร้อย"]);
 
@@ -173,6 +260,10 @@ try {
     }
 
 } catch (Exception $e) {
+    // Rollback ถ้ามี Transaction ที่ยังไม่ commit
+    if ($dbh->inTransaction()) {
+        $dbh->rollBack();
+    }
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
 ?>

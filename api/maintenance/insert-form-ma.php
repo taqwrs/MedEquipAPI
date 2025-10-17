@@ -1,13 +1,13 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-$method = $_SERVER['REQUEST_METHOD'];
-if ($method !== 'POST') {
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(["status" => "error", "message" => "POST method !!!"]);
     exit;
 }
@@ -19,7 +19,6 @@ if (!$input) {
 }
 
 $required_fields = ['plan_name', 'user_id', 'group_user_id', 'company_id', 'frequency_number', 'frequency_unit', 'frequency_type', 'start_date', 'end_date', 'type_ma'];
-
 foreach ($required_fields as $field) {
     if (!array_key_exists($field, $input)) {
         echo json_encode(["status" => "error", "message" => "Missing field: $field"]);
@@ -46,7 +45,12 @@ if (!in_array((int) $input['frequency_unit'], $allowed_frequency_unit)) {
 
 try {
     $dbh->beginTransaction();
+    $log = new LogModel($dbh);
+    $user_id = $decoded->data->ID ?? null;
+    if (!$user_id)
+        throw new Exception("User ID not found");
 
+    // คำนวณ interval_count
     $startDate = new DateTime($input['start_date']);
     $endDate = new DateTime($input['end_date']);
     $intervalNumber = (int) $input['frequency_number'];
@@ -55,9 +59,9 @@ try {
         echo json_encode(["status" => "error", "message" => "วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น"]);
         exit;
     }
-    if ($input['frequency_type'] === 'รอบเดียว') {
-        $intervalCount = 1;
-    } else {
+
+    $intervalCount = 1;
+    if ($input['frequency_type'] !== 'รอบเดียว') {
         $intervalCount = 0;
         $tempDate = clone $startDate;
         while ($tempDate <= $endDate) {
@@ -79,42 +83,58 @@ try {
         }
     }
 
-    // Insert แผน MA
-    $stmt = $dbh->prepare("INSERT INTO maintenance_plans 
-        (plan_name, user_id, group_user_id, company_id, frequency_number, frequency_unit, frequency_type, interval_count, contract, start_waranty, start_date, end_date, cost_type, price, type_ma, is_active)
-        VALUES (:plan_name, :user_id, :group_user_id, :company_id, :frequency_number, :frequency_unit, :frequency_type, :interval_count, :contract, :start_waranty, :start_date, :end_date, :cost_type, :price, :type_ma, :is_active)
-    ");
-    // ตรวจสอบชื่อซ้ำ
+    // เตรียมค่า insert
+    $insertFields = [
+        'plan_name',
+        'user_id',
+        'group_user_id',
+        'company_id',
+        'frequency_number',
+        'frequency_unit',
+        'frequency_type',
+        'interval_count',
+        'contract',
+        'start_waranty',
+        'start_date',
+        'end_date',
+        'cost_type',
+        'price',
+        'type_ma',
+        'is_active'
+    ];
+
+    $insertData = [];
+    foreach ($insertFields as $f) {
+        if ($f === 'interval_count') {
+            $insertData[$f] = $intervalCount;
+        } else {
+            $value = $input[$f] ?? null;
+            if (in_array($f, ['start_waranty', 'start_date', 'end_date', 'contract']) && $value === '') {
+                $value = null;
+            }
+            $insertData[$f] = $value;
+        }
+    }
+    if (!isset($insertData['is_active']))
+        $insertData['is_active'] = 1;
+
+    // ตรวจชื่อซ้ำ
     $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM maintenance_plans WHERE plan_name = :plan_name");
-    $stmtCheck->execute([':plan_name' => $input['plan_name']]);
+    $stmtCheck->execute([':plan_name' => $insertData['plan_name']]);
     if ($stmtCheck->fetchColumn() > 0) {
         echo json_encode(["status" => "error", "message" => "ชื่อแผนซ้ำ"]);
         exit;
     }
-    $stmt->execute([
-        ':plan_name' => $input['plan_name'],
-        ':user_id' => $input['user_id'],
-        ':group_user_id' => $input['group_user_id'],
-        ':company_id' => $input['company_id'],
-        ':frequency_number' => $intervalNumber,
-        ':frequency_unit' => $intervalUnit,
-        ':frequency_type' => $input['frequency_type'],
-        ':interval_count' => $intervalCount,
-        ':contract' => !empty($input['contract']) ? $input['contract'] : null,
-        ':start_waranty' => !empty($input['start_waranty']) ? $input['start_waranty'] : null,
-        ':start_date' => $input['start_date'],
-        ':end_date' => $input['end_date'],
-        ':cost_type' => $input['cost_type'],
-        ':price' => $input['price'],
-        ':type_ma' => $input['type_ma'],
-        ':is_active' => $input['is_active'] ?? 1
-    ]);
 
+    // Insert แผน MA
+    $cols = implode(',', $insertFields);
+    $placeholders = ':' . implode(',:', $insertFields);
+    $stmt = $dbh->prepare("INSERT INTO maintenance_plans($cols) VALUES($placeholders)");
+    $stmt->execute($insertData);
     $plan_id = $dbh->lastInsertId();
 
     // Insert details MA
     $detailsStmt = $dbh->prepare("INSERT INTO details_maintenance_plans (plan_id,start_date) VALUES (:plan_id,:start_date)");
-
     if ($input['frequency_type'] === 'รอบเดียว') {
         $detailsStmt->execute([':plan_id' => $plan_id, ':start_date' => $startDate->format('Y-m-d')]);
     } else {
@@ -137,6 +157,11 @@ try {
             }
         }
     }
+
+    // Log auto-generate จาก array
+    $logData = $insertData;
+    $logData['plan_id'] = $plan_id;
+    $log->insertLog($user_id, 'maintenance_plans', 'INSERT', null, $logData);
 
     $dbh->commit();
     echo json_encode(["status" => "success", "plan_id" => $plan_id]);
