@@ -13,8 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $input = json_decode(file_get_contents("php://input"), true);
-    $page = isset($input['page']) ? (int)$input['page'] : 1;
-    $limit = isset($input['limit']) ? (int)$input['limit'] : 10;
+    $page = (int)($input['page'] ?? 1);
+    $limit = (int)($input['limit'] ?? 0);
     $offset = ($page - 1) * $limit;
     $search = trim($input['search'] ?? '');
     $user_id = isset($input['user_id']) ? (int)$input['user_id'] : 0;

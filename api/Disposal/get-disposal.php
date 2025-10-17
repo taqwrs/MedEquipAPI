@@ -27,7 +27,7 @@ try {
         'rejected' => 'ไม่อนุมัติ',
     ];
 
-    // ✅ แก้ไข: ตรวจ role_id ด้วย ID แทน user_id
+
     $roleId = 0;
     if ($user_id !== '') {
         $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE ID = :user_id");
