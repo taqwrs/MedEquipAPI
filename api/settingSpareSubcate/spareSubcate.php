@@ -51,26 +51,34 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก spare_category_id และ name"]);
             exit;
         }
+        $dbh->beginTransaction();
+        try {
+            $stmt = $dbh->prepare("
+                INSERT INTO spare_subcategories (spare_category_id, name) 
+                VALUES (:spare_category_id, :name)
+            ");
+            $stmt->bindParam(":spare_category_id", $input['spare_category_id']);
+            $stmt->bindParam(":name", $input['name']);
+            $stmt->execute();
 
-        $stmt = $dbh->prepare("
-            INSERT INTO spare_subcategories (spare_category_id, name) 
-            VALUES (:spare_category_id, :name)
-        ");
-        $stmt->bindParam(":spare_category_id", $input['spare_category_id']);
-        $stmt->bindParam(":name", $input['name']);
-        $stmt->execute();
+            $newId = $dbh->lastInsertId();
 
-        $newId = $dbh->lastInsertId();
+            $logData = [
+                'spare_subcategory_id' => $newId,
+                'spare_category_id' => $input['spare_category_id'],
+                'name' => $input['name']
+            ];
 
-        $logData = [
-            'spare_subcategory_id' => $newId,
-            'spare_category_id' => $input['spare_category_id'],
-            'name' => $input['name']
-        ];
+            $logModel->insertLog($u_id, 'spare_subcategories', 'INSERT', null, $logData);
 
-        $logModel->insertLog($u_id, 'spare_subcategories', 'INSERT', null, $logData);
+            $dbh->commit();
 
-        echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
+            echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย", "spare_subcategory_id" => $newId]);
+
+        } catch (Exception $e) {
+            $dbh->rollBack();
+            throw $e;
+        }
 
     } elseif ($method === 'PUT') {
         // UPDATE
@@ -78,33 +86,47 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก spare_subcategory_id และ name"]);
             exit;
         }
+        $dbh->beginTransaction();
+        try {
+            // ดึงข้อมูลเดิม
+            $stmtOld = $dbh->prepare("SELECT * FROM spare_subcategories WHERE spare_subcategory_id = :id");
+            $stmtOld->bindParam(":id", $input['spare_subcategory_id']);
+            $stmtOld->execute();
+            $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
-        // ดึงข้อมูลเดิม
-        $stmtOld = $dbh->prepare("SELECT * FROM spare_subcategories WHERE spare_subcategory_id = :id");
-        $stmtOld->bindParam(":id", $input['spare_subcategory_id']);
-        $stmtOld->execute();
-        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+            if (!$oldData) {
+                $dbh->rollBack();
+                echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูล spare subcategory"]);
+                exit;
+            }
 
-        // อัพเดทข้อมูล
-        $stmt = $dbh->prepare("
-            UPDATE spare_subcategories 
-            SET spare_category_id = :spare_category_id, name = :name
-            WHERE spare_subcategory_id = :id
-        ");
-        $stmt->bindParam(":spare_category_id", $input['spare_category_id']);
-        $stmt->bindParam(":name", $input['name']);
-        $stmt->bindParam(":id", $input['spare_subcategory_id']);
-        $stmt->execute();
+            // อัพเดทข้อมูล
+            $stmt = $dbh->prepare("
+                UPDATE spare_subcategories 
+                SET spare_category_id = :spare_category_id, name = :name
+                WHERE spare_subcategory_id = :id
+            ");
+            $stmt->bindParam(":spare_category_id", $input['spare_category_id']);
+            $stmt->bindParam(":name", $input['name']);
+            $stmt->bindParam(":id", $input['spare_subcategory_id']);
+            $stmt->execute();
 
-        $logData = [
-            'spare_subcategory_id' => $input['spare_subcategory_id'],
-            'spare_category_id' => $input['spare_category_id'],
-            'name' => $input['name']
-        ];
+            $logData = [
+                'spare_subcategory_id' => $input['spare_subcategory_id'],
+                'spare_category_id' => $input['spare_category_id'],
+                'name' => $input['name']
+            ];
 
-        $logModel->insertLog($u_id, 'spare_subcategories', 'UPDATE', $oldData, $logData);
+            $logModel->insertLog($u_id, 'spare_subcategories', 'UPDATE', $oldData, $logData);
 
-        echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
+            $dbh->commit();
+
+            echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
+
+        } catch (Exception $e) {
+            $dbh->rollBack();
+            throw $e;
+        }
 
     } elseif ($method === 'DELETE') {
         // DELETE
@@ -113,20 +135,36 @@ try {
             exit;
         }
 
-        // ดึงข้อมูลก่อนลบ
-        $stmtOld = $dbh->prepare("SELECT * FROM spare_subcategories WHERE spare_subcategory_id = :id");
-        $stmtOld->bindParam(":id", $input['spare_subcategory_id']);
-        $stmtOld->execute();
-        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+        $dbh->beginTransaction();
 
-        // ลบข้อมูล
-        $stmt = $dbh->prepare("DELETE FROM spare_subcategories WHERE spare_subcategory_id = :id");
-        $stmt->bindParam(":id", $input['spare_subcategory_id']);
-        $stmt->execute();
+        try {
+            // ดึงข้อมูลก่อนลบ
+            $stmtOld = $dbh->prepare("SELECT * FROM spare_subcategories WHERE spare_subcategory_id = :id");
+            $stmtOld->bindParam(":id", $input['spare_subcategory_id']);
+            $stmtOld->execute();
+            $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
-        $logModel->insertLog($u_id, 'spare_subcategories', 'DELETE', $oldData, null);
+            if (!$oldData) {
+                $dbh->rollBack();
+                echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูล spare subcategory"]);
+                exit;
+            }
 
-        echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
+            // ลบข้อมูล
+            $stmt = $dbh->prepare("DELETE FROM spare_subcategories WHERE spare_subcategory_id = :id");
+            $stmt->bindParam(":id", $input['spare_subcategory_id']);
+            $stmt->execute();
+
+            $logModel->insertLog($u_id, 'spare_subcategories', 'DELETE', $oldData, null);
+
+            $dbh->commit();
+
+            echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
+
+        } catch (Exception $e) {
+            $dbh->rollBack();
+            throw $e;
+        }
 
     } else {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
