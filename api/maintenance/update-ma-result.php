@@ -13,13 +13,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // รับค่า
-$ma_result_id = $_POST['ma_result_id'] ?? null;
-$user_id = $_POST['user_id'] ?? null;
+$ma_result_id   = $_POST['ma_result_id'] ?? null;
+$user_id        = $_POST['user_id'] ?? null;
 $performed_date = $_POST['performed_date'] ?? null;
-$result = $_POST['result'] ?? null;
-$details = $_POST['details'] ?? null;
-$reason = $_POST['reason'] ?? null;
-$send_repair = $_POST['send_repair'] ?? null;
+$result         = $_POST['result'] ?? null;
+$details        = $_POST['details'] ?? null;
+$reason         = $_POST['reason'] ?? null;
+$send_repair    = $_POST['send_repair'] ?? null;
 
 if (!$ma_result_id) {
     echo json_encode(["status" => "error", "message" => "Missing ma_result_id"]);
@@ -27,12 +27,20 @@ if (!$ma_result_id) {
 }
 
 try {
+    $dbh->beginTransaction();
+
     // ตรวจสอบว่ามีผล MA นี้อยู่หรือไม่
-    $checkStmt = $dbh->prepare("SELECT * FROM maintenance_result WHERE ma_result_id = :ma_result_id");
+    $checkStmt = $dbh->prepare("
+        SELECT * 
+        FROM maintenance_result 
+        WHERE ma_result_id = :ma_result_id
+    ");
     $checkStmt->execute([":ma_result_id" => $ma_result_id]);
     $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$existing) {
+        // ถ้าไม่พบข้อมูล ให้ rollback และออกจากระบบ
+        $dbh->rollBack();
         echo json_encode(["status" => "error", "message" => "ไม่พบผล MA นี้"]);
         exit;
     }
@@ -50,19 +58,26 @@ try {
     ");
 
     $stmt->execute([
-        ":user_id" => $user_id ?? $existing['user_id'],
+        ":user_id"        => $user_id        ?? $existing['user_id'],
         ":performed_date" => $performed_date ?? $existing['performed_date'],
-        ":result" => $result ?? $existing['result'],
-        ":details" => $details ?? $existing['details'],
-        ":reason" => $reason ?? $existing['reason'],
-        ":send_repair" => $send_repair ?? $existing['send_repair'],
-        ":ma_result_id" => $ma_result_id
+        ":result"         => $result         ?? $existing['result'],
+        ":details"        => $details        ?? $existing['details'],
+        ":reason"         => $reason         ?? $existing['reason'],
+        ":send_repair"    => $send_repair    ?? $existing['send_repair'],
+        ":ma_result_id"   => $ma_result_id
     ]);
 
+    // ยืนยันการเปลี่ยนแปลง
+    $dbh->commit();
 
-    echo json_encode(["status" => "success", "message" => "Update MA result successfully"]);
+    echo json_encode([
+        "status" => "success", 
+        "message" => "Update MA result successfully"
+    ]);
 
 } catch (PDOException $e) {
+    if ($dbh->inTransaction()) {
+        $dbh->rollBack();
+    }
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>
