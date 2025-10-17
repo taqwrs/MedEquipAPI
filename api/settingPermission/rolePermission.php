@@ -123,40 +123,14 @@ try {
             exit;
         }
 
-        // ====== เพิ่ม permission เดี่ยว ======
-        if (!empty($input["role_id"]) && !empty($input["menu_id"]) && isset($input["status"])) {
-            $stmt = $dbh->prepare("
-                INSERT INTO permission (role_id, menu_id, status)
-                VALUES (:role_id, :menu_id, :status)
-            ");
-            $stmt->bindParam(":role_id", $input["role_id"]);
-            $stmt->bindParam(":menu_id", $input["menu_id"]);
-            $stmt->bindParam(":status", $input["status"]);
-            $stmt->execute();
-
-            $permission_id = $dbh->lastInsertId();
-
-            // บันทึก log
-            $logData = [
-                'permission_id' => $permission_id,
-                'role_id' => $input["role_id"],
-                'menu_id' => $input["menu_id"],
-                'status' => $input["status"]
-            ];
-            $logModel->insertLog($u_id, 'permission', 'INSERT', null, $logData);
-
-            echo json_encode(["status" => "ok", "message" => "เพิ่ม permission เรียบร้อย"]);
-            exit;
-        }
-
         echo json_encode(["status" => "error", "message" => "กรอกข้อมูลไม่ครบ"]);
         exit;
     }
 
     // ================== PUT ==================
     if ($method === "PUT") {
-        // ====== แก้ไข role ======
-        if (!empty($input["role_id"]) && !empty($input["role_name"])) {
+        // ====== แก้ไขชื่อ role ======
+        if (!empty($input["role_id"]) && !empty($input["role_name"]) && empty($input["permissions"])) {
             // ดึงข้อมูลเดิม
             $stmtOld = $dbh->prepare("SELECT * FROM roles WHERE role_id = :role_id");
             $stmtOld->bindParam(":role_id", $input["role_id"]);
@@ -180,28 +154,73 @@ try {
             exit;
         }
 
-        // ====== แก้ไข permission ======
-        if (!empty($input["permission_id"]) && isset($input["status"])) {
-            // ดึงข้อมูลเดิม
-            $stmtOld = $dbh->prepare("SELECT * FROM permission WHERE permission_id = :permission_id");
-            $stmtOld->bindParam(":permission_id", $input["permission_id"]);
-            $stmtOld->execute();
-            $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+        // ====== แก้ไข permission หลายตัวพร้อมกัน (จาก Frontend) ======
+        if (!empty($input["role_id"]) && isset($input["permissions"]) && is_array($input["permissions"])) {
+            $dbh->beginTransaction();
 
-            // อัพเดท
+            // ดึงข้อมูล role
+            $stmtRole = $dbh->prepare("SELECT role_name FROM roles WHERE role_id = :role_id");
+            $stmtRole->bindParam(":role_id", $input["role_id"]);
+            $stmtRole->execute();
+            $roleData = $stmtRole->fetch(PDO::FETCH_ASSOC);
+
+            if (!$roleData) {
+                echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูล role"]);
+                exit;
+            }
+
+            // ดึงข้อมูล permission เดิมก่อน update
+            $stmtOldPerms = $dbh->prepare("SELECT * FROM permission WHERE role_id = :role_id");
+            $stmtOldPerms->bindParam(":role_id", $input["role_id"]);
+            $stmtOldPerms->execute();
+            $oldPermissions = $stmtOldPerms->fetchAll(PDO::FETCH_ASSOC);
+
+            // Update แต่ละ permission
             $stmt = $dbh->prepare("UPDATE permission SET status = :status WHERE permission_id = :permission_id");
-            $stmt->bindParam(":status", $input["status"]);
-            $stmt->bindParam(":permission_id", $input["permission_id"]);
-            $stmt->execute();
+            $updatedPermissions = [];
 
-            // บันทึก log
-            $newData = [
-                'permission_id' => $input["permission_id"],
-                'status' => $input["status"]
+            foreach ($input["permissions"] as $perm) {
+                if (isset($perm["permission_id"]) && isset($perm["status"])) {
+                    $stmt->bindParam(":status", $perm["status"]);
+                    $stmt->bindParam(":permission_id", $perm["permission_id"]);
+                    $stmt->execute();
+
+                    $updatedPermissions[] = [
+                        'permission_id' => $perm["permission_id"],
+                        'status' => $perm["status"]
+                    ];
+                }
+            }
+
+            // ดึงข้อมูล permission ใหม่หลัง update
+            $stmtNewPerms = $dbh->prepare("SELECT * FROM permission WHERE role_id = :role_id");
+            $stmtNewPerms->bindParam(":role_id", $input["role_id"]);
+            $stmtNewPerms->execute();
+            $newPermissions = $stmtNewPerms->fetchAll(PDO::FETCH_ASSOC);
+
+            // บันทึก log แค่ครั้งเดียว พร้อมข้อมูลรวม
+            $oldLogData = [
+                'role_id' => $input["role_id"],
+                'role_name' => $roleData['role_name'],
+                'permissions_updated' => count($updatedPermissions),
+                'permissions_data' => $oldPermissions
             ];
-            $logModel->insertLog($u_id, 'permission', 'UPDATE', $oldData, $newData);
 
-            echo json_encode(["status" => "ok", "message" => "แก้ไข permission เรียบร้อย"]);
+            $newLogData = [
+                'role_id' => $input["role_id"],
+                'role_name' => $roleData['role_name'],
+                'permissions_updated' => count($updatedPermissions),
+                'permissions_data' => $newPermissions
+            ];
+
+            $logModel->insertLog($u_id, 'permission', 'UPDATE', $oldLogData, $newLogData);
+
+            $dbh->commit();
+            echo json_encode([
+                "status" => "ok", 
+                "message" => "แก้ไข permissions เรียบร้อย",
+                "updated_count" => count($updatedPermissions)
+            ]);
             exit;
         }
 
@@ -252,26 +271,6 @@ try {
 
             $dbh->commit();
             echo json_encode(["status" => "ok", "message" => "ลบ role และ permission เรียบร้อย"]);
-            exit;
-        }
-
-        // ====== ลบ permission เดี่ยว ======
-        if (!empty($input["permission_id"])) {
-            // ดึงข้อมูลก่อนลบ
-            $stmtOld = $dbh->prepare("SELECT * FROM permission WHERE permission_id = :permission_id");
-            $stmtOld->bindParam(":permission_id", $input["permission_id"]);
-            $stmtOld->execute();
-            $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
-
-            // ลบ
-            $stmt = $dbh->prepare("DELETE FROM permission WHERE permission_id = :permission_id");
-            $stmt->bindParam(":permission_id", $input["permission_id"]);
-            $stmt->execute();
-
-            // บันทึก log
-            $logModel->insertLog($u_id, 'permission', 'DELETE', $oldData, null);
-
-            echo json_encode(["status" => "ok", "message" => "ลบ permission เรียบร้อย"]);
             exit;
         }
 
