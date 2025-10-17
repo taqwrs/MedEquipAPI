@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -55,6 +56,10 @@ try {
 
         try {
             $dbh->beginTransaction();
+            $log = new LogModel($dbh);
+            $user_id = $decoded->data->ID ?? null;
+            if (!$user_id)
+                throw new Exception("User ID not found");
 
             // ดึงอุปกรณ์ที่ผูกกับ MA Plan อยู่แล้ว
             $stmt = $dbh->prepare("SELECT equipment_id FROM plan_ma_equipments WHERE plan_id = :plan_id");
@@ -71,6 +76,11 @@ try {
                         ':equipment_id' => $equipment_id
                     ]);
                 }
+                // Log auto-generate สำหรับอุปกรณ์ที่เพิ่ม
+                $logData = array_map(fn($eid) => ['plan_id' => $plan_id, 'equipment_id' => $eid], $toAdd);
+                foreach ($logData as $item) {
+                    $log->insertLog($user_id, 'plan_ma_equipments', 'ADD', null, $item);
+                }
             }
 
             // ลบอุปกรณ์ที่ไม่ได้เลือก
@@ -79,6 +89,12 @@ try {
                 $inQuery = implode(',', array_fill(0, count($toDelete), '?'));
                 $stmtDelete = $dbh->prepare("DELETE FROM plan_ma_equipments WHERE plan_id = ? AND equipment_id IN ($inQuery)");
                 $stmtDelete->execute(array_merge([$plan_id], $toDelete));
+
+                // Log auto-generate สำหรับอุปกรณ์ที่ลบ
+                $logData = array_map(fn($eid) => ['plan_id' => $plan_id, 'equipment_id' => $eid], $toDelete);
+                foreach ($logData as $item) {
+                    $log->insertLog($user_id, 'plan_ma_equipments', 'DELETE', null, $item);
+                }
             }
 
             $dbh->commit();
@@ -88,8 +104,10 @@ try {
                 "message" => "อุปกรณ์ MA Plan ถูกอัปเดตเรียบร้อยแล้ว"
             ]);
             exit;
+
         } catch (Exception $e) {
-            if ($dbh->inTransaction()) $dbh->rollBack();
+            if ($dbh->inTransaction())
+                $dbh->rollBack();
             echo json_encode([
                 "status" => "error",
                 "message" => $e->getMessage()
@@ -102,8 +120,10 @@ try {
         "status" => "error",
         "message" => "Invalid request method"
     ]);
+
 } catch (Exception $e) {
-    if ($dbh->inTransaction()) $dbh->rollBack();
+    if ($dbh->inTransaction())
+        $dbh->rollBack();
     echo json_encode([
         "status" => "error",
         "message" => $e->getMessage()
