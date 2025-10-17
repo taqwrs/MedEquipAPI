@@ -7,6 +7,7 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
+// รับค่าจาก query string
 $equipmentId = isset($_GET['equipment_id']) ? intval($_GET['equipment_id']) : null;
 $roundId = isset($_GET['round_id']) ? intval($_GET['round_id']) : null;
 $planId = isset($_GET['plan_id']) ? intval($_GET['plan_id']) : null;
@@ -14,9 +15,10 @@ $viewType = isset($_GET['viewType']) ? $_GET['viewType'] : null;
 
 try {
     $result = [];
-
-    // กรณีดู "ทุกรอบของอุปกรณ์"
+    // --- กรณีดู "ทุกรอบของอุปกรณ์" ---
     if ($viewType === "allRoundsOfEquipment" && $planId) {
+
+        // SQL หลัก
         $baseSql = "
             SELECT e.equipment_id, e.asset_code, e.name, dmp.details_ma_id, mr.ma_result_id, 
                    mp.plan_name, dmp.start_date, mr.performed_date, mr.result, mr.details, mr.reason
@@ -25,8 +27,11 @@ try {
             INNER JOIN equipments e ON e.equipment_id = mr.equipment_id
             INNER JOIN maintenance_plans mp ON mp.plan_id = dmp.plan_id
             WHERE dmp.plan_id = :plan_id
+            " . ($equipmentId ? " AND e.equipment_id = :equipment_id" : "") . "
+            ORDER BY dmp.details_ma_id ASC
         ";
 
+        // SQL นับจำนวนทั้งหมด สำหรับ pagination
         $countSql = "
             SELECT COUNT(*) 
             FROM maintenance_result mr
@@ -34,19 +39,26 @@ try {
             INNER JOIN equipments e ON e.equipment_id = mr.equipment_id
             INNER JOIN maintenance_plans mp ON mp.plan_id = dmp.plan_id
             WHERE dmp.plan_id = :plan_id
+            " . ($equipmentId ? " AND e.equipment_id = :equipment_id" : "") . "
         ";
 
+        // fields ที่ใช้ค้นหา
         $searchFields = ['e.name', 'e.asset_code', 'mp.plan_name'];
-        $additionalParams = [':plan_id' => $planId];
 
-        // ใช้ handlePaginatedSearch
+        // bind parameter
+        $additionalParams = [':plan_id' => $planId];
+        if ($equipmentId) {
+            $additionalParams[':equipment_id'] = $equipmentId;
+        }
+
+        // ใช้ฟังก์ชัน handlePaginatedSearch สำหรับ pagination + search
         $response = handlePaginatedSearch(
             $dbh,
             $_GET,
             $baseSql,
             $countSql,
             $searchFields,
-            "ORDER BY dmp.details_ma_id ASC",
+            "",
             "",
             $additionalParams
         );
@@ -55,6 +67,7 @@ try {
             $rows = $response['data'];
             $grouped = [];
 
+            // จัดกลุ่มตาม equipment_id
             foreach ($rows as $r) {
                 $eqId = $r['equipment_id'];
                 if (!isset($grouped[$eqId])) {
@@ -63,6 +76,7 @@ try {
                         'rounds' => []
                     ];
                 }
+
                 $grouped[$eqId]['rounds'][] = [
                     'round' => count($grouped[$eqId]['rounds']) + 1,
                     'details_ma_id' => $r['details_ma_id'],
@@ -88,7 +102,7 @@ try {
         }
     }
 
-    // กรณีดู "ทุกอุปกรณ์ในรอบ"
+    // --- กรณีดู "ทุกอุปกรณ์ในรอบ" ---
     elseif ($viewType === "allEquipments" && $roundId) {
         $stmtCheck = $dbh->prepare("SELECT dmp.plan_id FROM details_maintenance_plans dmp WHERE dmp.details_ma_id = :round_id");
         $stmtCheck->execute([':round_id' => $roundId]);
