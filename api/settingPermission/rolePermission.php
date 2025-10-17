@@ -156,7 +156,7 @@ try {
     // ================== PUT ==================
     if ($method === "PUT") {
         // ====== แก้ไข role ======
-        if (!empty($input["role_id"]) && !empty($input["role_name"])) {
+        if (!empty($input["role_id"]) && !empty($input["role_name"]) && empty($input["permissions"])) {
             // ดึงข้อมูลเดิม
             $stmtOld = $dbh->prepare("SELECT * FROM roles WHERE role_id = :role_id");
             $stmtOld->bindParam(":role_id", $input["role_id"]);
@@ -180,8 +180,78 @@ try {
             exit;
         }
 
-        // ====== แก้ไข permission ======
-        if (!empty($input["permission_id"]) && isset($input["status"])) {
+        // ====== แก้ไข permission หลายตัวพร้อมกัน (จาก Frontend) ======
+        if (!empty($input["role_id"]) && isset($input["permissions"]) && is_array($input["permissions"])) {
+            $dbh->beginTransaction();
+
+            // ดึงข้อมูล role
+            $stmtRole = $dbh->prepare("SELECT role_name FROM roles WHERE role_id = :role_id");
+            $stmtRole->bindParam(":role_id", $input["role_id"]);
+            $stmtRole->execute();
+            $roleData = $stmtRole->fetch(PDO::FETCH_ASSOC);
+
+            if (!$roleData) {
+                echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูล role"]);
+                exit;
+            }
+
+            // ดึงข้อมูล permission เดิมก่อน update
+            $stmtOldPerms = $dbh->prepare("SELECT * FROM permission WHERE role_id = :role_id");
+            $stmtOldPerms->bindParam(":role_id", $input["role_id"]);
+            $stmtOldPerms->execute();
+            $oldPermissions = $stmtOldPerms->fetchAll(PDO::FETCH_ASSOC);
+
+            // Update แต่ละ permission
+            $stmt = $dbh->prepare("UPDATE permission SET status = :status WHERE permission_id = :permission_id");
+            $updatedPermissions = [];
+
+            foreach ($input["permissions"] as $perm) {
+                if (isset($perm["permission_id"]) && isset($perm["status"])) {
+                    $stmt->bindParam(":status", $perm["status"]);
+                    $stmt->bindParam(":permission_id", $perm["permission_id"]);
+                    $stmt->execute();
+
+                    $updatedPermissions[] = [
+                        'permission_id' => $perm["permission_id"],
+                        'status' => $perm["status"]
+                    ];
+                }
+            }
+
+            // ดึงข้อมูล permission ใหม่หลัง update
+            $stmtNewPerms = $dbh->prepare("SELECT * FROM permission WHERE role_id = :role_id");
+            $stmtNewPerms->bindParam(":role_id", $input["role_id"]);
+            $stmtNewPerms->execute();
+            $newPermissions = $stmtNewPerms->fetchAll(PDO::FETCH_ASSOC);
+
+            // บันทึก log แค่ครั้งเดียว พร้อมข้อมูลรวม
+            $oldLogData = [
+                'role_id' => $input["role_id"],
+                'role_name' => $roleData['role_name'],
+                'permissions_updated' => count($updatedPermissions),
+                'permissions_data' => $oldPermissions
+            ];
+
+            $newLogData = [
+                'role_id' => $input["role_id"],
+                'role_name' => $roleData['role_name'],
+                'permissions_updated' => count($updatedPermissions),
+                'permissions_data' => $newPermissions
+            ];
+
+            $logModel->insertLog($u_id, 'permission', 'UPDATE', $oldLogData, $newLogData);
+
+            $dbh->commit();
+            echo json_encode([
+                "status" => "ok", 
+                "message" => "แก้ไข permissions เรียบร้อย",
+                "updated_count" => count($updatedPermissions)
+            ]);
+            exit;
+        }
+
+        // ====== แก้ไข permission เดี่ยว ======
+        if (!empty($input["permission_id"]) && isset($input["status"]) && empty($input["permissions"])) {
             // ดึงข้อมูลเดิม
             $stmtOld = $dbh->prepare("SELECT * FROM permission WHERE permission_id = :permission_id");
             $stmtOld->bindParam(":permission_id", $input["permission_id"]);
