@@ -13,6 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
     $dbh->beginTransaction();
     $user_id = $decoded->data->ID ?? null;
+    if (!$user_id)
+        throw new Exception("User ID not found");
     $log = new LogModel($dbh);
 
     // ------------------ CONFIG ------------------
