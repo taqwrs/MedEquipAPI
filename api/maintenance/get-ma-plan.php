@@ -83,10 +83,11 @@ try {
 
     // --- SQL  ---
     $baseSql = "
-        SELECT mp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,
+        SELECT mp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name, u2.full_name AS updated_by_name, 
                COUNT(DISTINCT dmp.details_ma_id) AS total_schedules
         FROM maintenance_plans mp
         LEFT JOIN users u ON mp.user_id = u.ID
+        LEFT JOIN users u2 ON mp.updated_by = u2.ID
         LEFT JOIN group_user gu ON mp.group_user_id = gu.group_user_id
         LEFT JOIN companies c ON mp.company_id = c.company_id
         LEFT JOIN details_maintenance_plans dmp ON mp.plan_id = dmp.plan_id
