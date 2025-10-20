@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -25,6 +26,9 @@ if (!isset($input['plan_id'])) {
 
 try {
     $dbh->beginTransaction();
+    $log = new LogModel($dbh);
+    $user_id = $decoded->data->ID ?? null;
+    if (!$user_id) throw new Exception("User ID not found");
 
     // ดึงข้อมูล plan ปัจจุบัน
     $stmt = $dbh->prepare("SELECT * FROM maintenance_plans WHERE plan_id=:plan_id");
@@ -35,7 +39,7 @@ try {
         exit;
     }
 
-    // ------ตรวจสอบว่ามีผลลัพธ์จริงใน maintenance_result หรือไม่ ถ้า result ยังไม่มีค่า → สามารถแก้ไขรอบได้ ------ //
+    // ตรวจสอบว่ามีผลลัพธ์จริงใน maintenance_result
     $stmtCheck = $dbh->prepare("
         SELECT COUNT(*) 
         FROM maintenance_result mr
@@ -47,193 +51,155 @@ try {
     $stmtCheck->execute([':plan_id' => $input['plan_id']]);
     $hasResult = $stmtCheck->fetchColumn() > 0;
 
-    // ------เตรียมข้อมูลสำหรับ update ------ //
+    // เตรียมข้อมูล update
     $fields = [
-        'plan_name',
-        'user_id',
-        'group_user_id',
-        'company_id',
-        'frequency_number',
-        'frequency_unit',
-        'frequency_type',
-        'start_waranty',
-        'start_date',
-        'end_date',
-        'cost_type',
-        'price',
-        'type_ma',
-        'contract',
-        'is_active'
+        'plan_name','user_id','group_user_id','company_id','frequency_number',
+        'frequency_unit','frequency_type','start_waranty','start_date','end_date',
+        'cost_type','price','type_ma','contract','is_active'
     ];
 
     $updateData = [];
     foreach ($fields as $f) {
         if (array_key_exists($f, $input)) {
-            // ถ้าเป็นวันที่ และค่าเป็น empty string ให้เป็น NULL
-            if (in_array($f, ['start_waranty', 'start_date', 'end_date']) && $input[$f] === '') {
-                $updateData[$f] = null;
-            } else {
-                $updateData[$f] = $input[$f];
-            }
+            $updateData[$f] = in_array($f, ['start_waranty','start_date','end_date']) && $input[$f]==='' 
+                ? null 
+                : $input[$f];
         } else {
             $updateData[$f] = $current[$f];
         }
     }
 
-    // ------------------ ส่วนที่แก้ไขและเพิ่ม Flag ------------------
-    $restrictedFieldsRetained = false; // สถานะสำหรับส่งกลับ Frontend
-
-    // ถ้ามีผลลัพธ์แล้ว บางฟิลด์ที่กระทบรอบต้องไม่แก้ไข
+    // ------------------ Restricted Fields Flag ------------------
+    $restrictedFieldsRetained = false;
     if ($hasResult) {
-        $restrictedFields = ['frequency_number', 'frequency_unit', 'frequency_type', 'start_date', 'end_date'];
+        $restrictedFields = ['frequency_number','frequency_unit','frequency_type','start_date','end_date'];
         foreach ($restrictedFields as $rf) {
-            // ตรวจสอบว่าผู้ใช้พยายามเปลี่ยนค่าหรือไม่ ก่อนจะคืนค่าเดิม
             if (array_key_exists($rf, $input) && $input[$rf] !== $current[$rf]) {
-                $restrictedFieldsRetained = true; // ตั้งค่าสถานะว่ามีการคงค่าเดิม
+                $restrictedFieldsRetained = true;
             }
             $updateData[$rf] = $current[$rf]; // บังคับคืนค่าเดิม
         }
     }
 
-    // ------กรณี Soft Delete (เปิด/ปิด plan) ------ //
+    // ------ Soft Delete ------
     if (isset($input['is_active']) && count($input) === 2) {
         $stmt = $dbh->prepare("UPDATE maintenance_plans SET is_active=:is_active WHERE plan_id=:plan_id");
-        $stmt->execute([
-            ':is_active' => $input['is_active'],
-            ':plan_id' => $input['plan_id']
-        ]);
+        $stmt->execute([':is_active'=>$input['is_active'], ':plan_id'=>$input['plan_id']]);
+
+        // Log Soft Delete
+        $changed = $log->filterChangedFields($current, ['is_active'=>$input['is_active']]);
+        if ($changed) {
+            $changedWithPK = array_merge(['plan_id'=>$input['plan_id']], $changed);
+            $log->insertLog($user_id, 'maintenance_plans','UPDATE',['plan_id'=>$current['plan_id']], $changedWithPK);
+        }
+
         $dbh->commit();
-        echo json_encode(["status" => "success", "message" => "Soft delete success"]);
+        echo json_encode(["status"=>"success","message"=>"Soft delete success"]);
         exit;
     }
 
-    // ------ตรวจสอบค่าที่ถูกต้อง ------ //
-    $allowed_type_ma = ['ภายใน', 'ภายนอก'];
-    $allowed_cost_type = ['แยกรายรอบ', 'รวมตลอดทั้งสัญญา'];
-    $allowed_frequency_unit = [1, 2, 3, 4];
+    // ------ Validate fields ------
+    $allowed_type_ma = ['ภายใน','ภายนอก'];
+    $allowed_cost_type = ['แยกรายรอบ','รวมตลอดทั้งสัญญา'];
+    $allowed_frequency_unit = [1,2,3,4];
 
-    if (!in_array($updateData['type_ma'], $allowed_type_ma)) {
-        echo json_encode(["status" => "error", "message" => "Invalid type_ma"]);
-        exit;
-    }
-    if (!in_array($updateData['cost_type'], $allowed_cost_type)) {
-        echo json_encode(["status" => "error", "message" => "Invalid cost_type"]);
-        exit;
-    }
-    if (!in_array((int) $updateData['frequency_unit'], $allowed_frequency_unit)) {
-        echo json_encode(["status" => "error", "message" => "Invalid frequency_unit"]);
-        exit;
-    }
+    if (!in_array($updateData['type_ma'],$allowed_type_ma))
+        throw new Exception("Invalid type_ma");
+    if (!in_array($updateData['cost_type'],$allowed_cost_type))
+        throw new Exception("Invalid cost_type");
+    if (!in_array((int)$updateData['frequency_unit'],$allowed_frequency_unit))
+        throw new Exception("Invalid frequency_unit");
 
-    // ------คำนวณจำนวนรอบและวันที่รอบ (เฉพาะ plan ยังไม่เริ่มใช้งาน) ------// 
+    // ------ คำนวณรอบ ------
     $roundDates = [];
     $intervalCount = 0;
     if (!$hasResult) {
-        if ($updateData['frequency_type'] === 'รอบเดียว') {
-            $intervalCount = 1;
+        if ($updateData['frequency_type']==='รอบเดียว') {
+            $intervalCount=1;
             $roundDates[] = $updateData['start_date'];
         } else {
-            $startDate = new DateTime($updateData['start_date']);
-            $endDate = new DateTime($updateData['end_date']);
-            $intervalNumber = (int) $updateData['frequency_number'];
-            $intervalUnit = (int) $updateData['frequency_unit'];
-            if ($endDate < $startDate) {
-                echo json_encode(["status" => "error", "message" => "วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น"]);
-                exit;
-            }
-            $tempDate = clone $startDate;
-            while ($tempDate <= $endDate) {
+            $startDate=new DateTime($updateData['start_date']);
+            $endDate=new DateTime($updateData['end_date']);
+            $intervalNumber=(int)$updateData['frequency_number'];
+            $intervalUnit=(int)$updateData['frequency_unit'];
+            if ($endDate<$startDate) throw new Exception("วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น");
+            $tempDate=clone $startDate;
+            while($tempDate<=$endDate){
                 $intervalCount++;
                 $roundDates[] = $tempDate->format('Y-m-d');
-                switch ($intervalUnit) {
-                    case 1:
-                        $tempDate->add(new DateInterval('P' . $intervalNumber . 'D'));
-                        break;
-                    case 2:
-                        $tempDate->add(new DateInterval('P' . ($intervalNumber * 7) . 'D'));
-                        break;
-                    case 3:
-                        $tempDate->add(new DateInterval('P' . $intervalNumber . 'M'));
-                        break;
-                    case 4:
-                        $tempDate->add(new DateInterval('P' . $intervalNumber . 'Y'));
-                        break;
+                switch($intervalUnit){
+                    case 1:$tempDate->add(new DateInterval('P'.$intervalNumber.'D'));break;
+                    case 2:$tempDate->add(new DateInterval('P'.($intervalNumber*7).'D'));break;
+                    case 3:$tempDate->add(new DateInterval('P'.$intervalNumber.'M'));break;
+                    case 4:$tempDate->add(new DateInterval('P'.$intervalNumber.'Y'));break;
                 }
             }
         }
     } else {
-        // Plan เริ่มใช้งานแล้ว → ใช้ intervalCount เดิม
         $intervalCount = $current['interval_count'];
     }
 
-    // ------ตรวจสอบชื่อ plan ซ้ำ (ไม่รวม plan ตัวเอง) ------ //
-    $stmtCheckName = $dbh->prepare("
-    SELECT COUNT(*) 
-    FROM maintenance_plans 
-    WHERE plan_name = :plan_name 
-      AND plan_id != :plan_id
+    // ------ ตรวจชื่อ plan ซ้ำ ------
+    $stmtCheckName=$dbh->prepare("
+        SELECT COUNT(*) FROM maintenance_plans 
+        WHERE plan_name=:plan_name AND plan_id!=:plan_id
     ");
-    $stmtCheckName->execute([
-        ':plan_name' => $updateData['plan_name'],
-        ':plan_id' => $input['plan_id']
-    ]);
-    if ($stmtCheckName->fetchColumn() > 0) {
-        echo json_encode(["status" => "error", "message" => "ชื่อแผนซ้ำ"]);
-        exit;
-    }
+    $stmtCheckName->execute([':plan_name'=>$updateData['plan_name'], ':plan_id'=>$input['plan_id']]);
+    if($stmtCheckName->fetchColumn()>0) throw new Exception("ชื่อแผนซ้ำ");
 
-    // ------Update plan ------ //
-    $stmt = $dbh->prepare("UPDATE maintenance_plans SET
-        plan_name=:plan_name, 
-        user_id=:user_id,
-        group_user_id=:group_user_id,
-        company_id=:company_id,
-        frequency_number=:frequency_number,
-        frequency_unit=:frequency_unit,
-        frequency_type=:frequency_type,
-        interval_count=:interval_count,
-        start_waranty=:start_waranty,
-        start_date=:start_date,
-        end_date=:end_date,
-        cost_type=:cost_type,
-        contract=:contract,
-        price=:price,
-        type_ma=:type_ma,
-        is_active=:is_active
+    // ------ Update plan ------
+    $stmt=$dbh->prepare("UPDATE maintenance_plans SET
+        plan_name=:plan_name,user_id=:user_id,group_user_id=:group_user_id,company_id=:company_id,
+        frequency_number=:frequency_number,frequency_unit=:frequency_unit,frequency_type=:frequency_type,
+        interval_count=:interval_count,start_waranty=:start_waranty,start_date=:start_date,end_date=:end_date,
+        cost_type=:cost_type,contract=:contract,price=:price,type_ma=:type_ma,is_active=:is_active
         WHERE plan_id=:plan_id
     ");
-    $stmt->execute(array_merge($updateData, [
-        ':interval_count' => $intervalCount,
-        ':plan_id' => $input['plan_id']
-    ]));
+    $stmt->execute(array_merge($updateData,[':interval_count'=>$intervalCount, ':plan_id'=>$input['plan_id']]));
 
-    // ------อัปเดตรอบ details_maintenance_plans เฉพาะ plan ที่ยังไม่เริ่มใช้งาน ------ //
-    if (!$hasResult) {
+    // ------ Log update maintenance_plans ------
+    $changedFields = $log->filterChangedFields($current,$updateData);
+    if($changedFields){
+        $changedWithPK = array_merge(['plan_id'=>$input['plan_id']], $changedFields);
+        $log->insertLog($user_id,'maintenance_plans','UPDATE',['plan_id'=>$current['plan_id']],$changedWithPK);
+    }
+
+    // ------ Update details_maintenance_plans (ใช้ UPDATE log ทั้งหมด) ------
+    if(!$hasResult){
+        // เก็บรอบเก่า
+        $stmtOld = $dbh->prepare("SELECT start_date FROM details_maintenance_plans WHERE plan_id=:plan_id ORDER BY start_date ASC");
+        $stmtOld->execute([':plan_id'=>$input['plan_id']]);
+        $oldRounds = $stmtOld->fetchAll(PDO::FETCH_COLUMN);
+
         // ลบรอบเก่า
         $stmtDel = $dbh->prepare("DELETE FROM details_maintenance_plans WHERE plan_id=:plan_id");
-        $stmtDel->execute([':plan_id' => $input['plan_id']]);
+        $stmtDel->execute([':plan_id'=>$input['plan_id']]);
 
         // สร้างรอบใหม่
-        $stmtIns = $dbh->prepare("INSERT INTO details_maintenance_plans (plan_id, start_date) VALUES (:plan_id, :start_date)");
-        foreach ($roundDates as $rd) {
-            $stmtIns->execute([
-                ':plan_id' => $input['plan_id'],
-                ':start_date' => $rd
-            ]);
+        $stmtIns = $dbh->prepare("INSERT INTO details_maintenance_plans (plan_id,start_date) VALUES(:plan_id,:start_date)");
+        foreach($roundDates as $rd){
+            $stmtIns->execute([':plan_id'=>$input['plan_id'], ':start_date'=>$rd]);
         }
+
+        // Log as UPDATE
+        $log->insertLog(
+            $user_id,
+            'details_maintenance_plans',
+            'UPDATE',
+            ['plan_id'=>$input['plan_id'],'round_dates'=>$oldRounds],
+            ['plan_id'=>$input['plan_id'],'round_dates'=>$roundDates]
+        );
     }
 
     $dbh->commit();
 
-    // ------------------ JSON Response ที่รวม Flag ------------------
-    $response = [
-        "status" => "success",
-        "message" => "Plan updated",
-        "restricted_fields" => $restrictedFieldsRetained
-    ];
-    echo json_encode($response);
-} catch (Exception $e) {
-    if ($dbh->inTransaction())
-        $dbh->rollBack();
-    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+    echo json_encode([
+        "status"=>"success",
+        "message"=>"Plan updated",
+        "restricted_fields"=>$restrictedFieldsRetained
+    ]);
+
+} catch(Exception $e){
+    if($dbh->inTransaction()) $dbh->rollBack();
+    echo json_encode(["status"=>"error","message"=>$e->getMessage()]);
 }
