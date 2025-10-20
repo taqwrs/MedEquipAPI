@@ -28,17 +28,17 @@ try {
     ];
 
 
-    $roleId = 0;
+    $role_id = 0;
     if ($user_id !== '') {
         $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE ID = :user_id");
         $stmtRole->bindValue(':user_id', $user_id, PDO::PARAM_STR);
         $stmtRole->execute();
-        $roleId = (int)$stmtRole->fetchColumn();
+        $role_id = (int)$stmtRole->fetchColumn();
     }
 
     $isAdminMain = false;
     $groupUserIds = [];
-    if ($user_id !== '' && $roleId !== 6) { 
+    if ($user_id !== '' && $role_id !== 6) { 
         $stmtGroup = $dbh->prepare("
             SELECT gu.group_user_id, gu.type
             FROM relation_user ru
@@ -71,8 +71,7 @@ try {
         $params[':statusFilter'] = $statusMap[$statusFilter];
     }
 
-    // ✅ เงื่อนไขกรองรายการ (w.user_id เก็บค่า ID อยู่แล้ว ไม่ต้องแก้)
-    if ($roleId !== 6) {
+    if ($role_id !== 6) {
         if ($isAdminMain && !empty($groupUserIds)) {
             $inQuery = [];
             foreach ($groupUserIds as $k => $id) {
@@ -97,7 +96,6 @@ try {
     }
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
-    // ✅ แก้ไข: JOIN users ด้วย w.user_id = u.ID และ w.approved_by = a.ID
     $query = "
         SELECT w.*, e.name AS equipment_name, e.subcategory_id,
                u.full_name AS requester_name, 
@@ -145,7 +143,7 @@ try {
         $canApprove = false;
         
         // กรณีเป็น role_id = 6 (Super Admin)
-        if ($roleId === 6) {
+        if ($role_id === 6) {
             $canApprove = true;
         } 
         elseif ($isAdminMain && !empty($groupUserIds) && !empty($wo['subcategory_id'])) {
