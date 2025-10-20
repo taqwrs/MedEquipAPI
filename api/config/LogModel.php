@@ -29,4 +29,23 @@ class LogModel {
             ':new_data' => $newData ? json_encode($newData, JSON_UNESCAPED_UNICODE) : null
         ]);
     }
+
+    /**
+     * คืนค่าเฉพาะ field ที่มีการเปลี่ยนแปลง
+     * @param array|null $oldData
+     * @param array|null $newData
+     * @return array|null
+     */
+    public function filterChangedFields($oldData, $newData) {
+        if (!$oldData || !$newData) return $newData;
+
+        $changed = [];
+        foreach ($newData as $key => $value) {
+            // ถ้า oldData ไม่มี field นี้ หรือ value แตกต่างกัน → เก็บ
+            if (!array_key_exists($key, $oldData) || $oldData[$key] !== $value) {
+                $changed[$key] = $value;
+            }
+        }
+        return !empty($changed) ? $changed : null;
+    }
 }
