@@ -44,3 +44,9 @@ try {
 } catch (Exception $e) {
     echo json_encode(array("status" => "error", "message" => $e->getMessage()));
 }
+
+// โค้ดนี้ทำหน้าที่ตรวจสอบสิทธิ์การเข้าถึงเมนูตาม path ที่ผู้ใช้ส่งมา (menuPath)
+// โดยดึง role_id จากข้อมูลใน token JWT เพื่อใช้ตรวจสอบสิทธิ์
+// จากนั้นจะเช็คในตาราง permission ว่าบทบาท (role) นี้มีสิทธิ์ (status = 1) เข้าถึงเมนูที่มี path_name ตรงกับ menuPath หรือไม่
+// หากมีสิทธิ์ จะส่งผลลัพธ์กลับเป็น success พร้อมข้อความ "Access granted"
+// หากไม่มีสิทธิ์ จะส่ง HTTP status 403 พร้อมข้อความ "Access denied"
