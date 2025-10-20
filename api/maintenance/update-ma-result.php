@@ -1,5 +1,6 @@
 <?php
 include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -28,6 +29,8 @@ if (!$ma_result_id) {
 
 try {
     $dbh->beginTransaction();
+    $user_id = $decoded->data->ID ?? null;
+    if (!$user_id) throw new Exception("User ID not found");
 
     // ตรวจสอบว่ามีผล MA นี้อยู่หรือไม่
     $checkStmt = $dbh->prepare("
@@ -39,40 +42,49 @@ try {
     $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$existing) {
-        // ถ้าไม่พบข้อมูล ให้ rollback และออกจากระบบ
         $dbh->rollBack();
         echo json_encode(["status" => "error", "message" => "ไม่พบผล MA นี้"]);
         exit;
     }
 
-    // อัปเดตข้อมูล
-    $stmt = $dbh->prepare("
-        UPDATE maintenance_result
-        SET user_id = :user_id,
-            performed_date = :performed_date,
-            result = :result,
-            details = :details,
-            reason = :reason,
-            send_repair = :send_repair
-        WHERE ma_result_id = :ma_result_id
-    ");
+    // เตรียมข้อมูลใหม่
+    $newData = [
+        "user_id"        => $user_id        ?? $existing['user_id'],
+        "performed_date" => $performed_date ?? $existing['performed_date'],
+        "result"         => $result         ?? $existing['result'],
+        "details"        => $details        ?? $existing['details'],
+        "reason"         => $reason         ?? $existing['reason'],
+        "send_repair"    => $send_repair    ?? $existing['send_repair']
+    ];
 
-    $stmt->execute([
-        ":user_id"        => $user_id        ?? $existing['user_id'],
-        ":performed_date" => $performed_date ?? $existing['performed_date'],
-        ":result"         => $result         ?? $existing['result'],
-        ":details"        => $details        ?? $existing['details'],
-        ":reason"         => $reason         ?? $existing['reason'],
-        ":send_repair"    => $send_repair    ?? $existing['send_repair'],
-        ":ma_result_id"   => $ma_result_id
-    ]);
+    // หาเฉพาะ field ที่เปลี่ยนจริง
+    $logModel = new LogModel($dbh);
+    $changedData = $logModel->filterChangedFields($existing, $newData);
 
-    // ยืนยันการเปลี่ยนแปลง
+    if ($changedData) {
+        // อัปเดตข้อมูล
+        $stmt = $dbh->prepare("
+            UPDATE maintenance_result
+            SET user_id = :user_id,
+                performed_date = :performed_date,
+                result = :result,
+                details = :details,
+                reason = :reason,
+                send_repair = :send_repair
+            WHERE ma_result_id = :ma_result_id
+        ");
+        $stmt->execute(array_merge($newData, [":ma_result_id" => $ma_result_id]));
+
+        // เพิ่ม log เฉพาะ field ที่เปลี่ยน
+        $logModel->insertLog($user_id, 'maintenance_result', 'UPDATE', $existing, $changedData);
+    }
+
     $dbh->commit();
 
     echo json_encode([
-        "status" => "success", 
-        "message" => "Update MA result successfully"
+        "status" => "success",
+        "message" => "Update MA result successfully",
+        "changed_fields" => $changedData
     ]);
 
 } catch (PDOException $e) {
