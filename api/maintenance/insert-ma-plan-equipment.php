@@ -19,7 +19,7 @@ try {
         $stmt = $dbh->prepare("
             SELECT equipment_id, name, brand, model, asset_code, status, location_details, subcategory_id
             FROM equipments
-            WHERE status IN ('ใช้งาน', 'คลัง') AND active = 1
+            WHERE active = 1
             ORDER BY subcategory_id
         ");
         $stmt->execute();
