@@ -38,9 +38,39 @@ try {
         echo json_encode(["status" => "ok", "data" => $results], JSON_UNESCAPED_UNICODE);
 
     } elseif ($method === 'POST') {
+        // ถ้ามี check_name ให้เช็คชื่อซ้ำจากทั้งหมด
+        if (isset($input['check_name'])) {
+            $nameToCheck = trim($input['check_name']);
+            if (!$nameToCheck) {
+                echo json_encode(["status" => "error", "message" => "กรุณากรอกชื่อแผนก"]);
+                exit;
+            }
+
+            $stmt = $dbh->prepare("SELECT department_id FROM departments WHERE LOWER(department_name) = LOWER(:name)");
+            $stmt->bindParam(":name", $nameToCheck);
+            $stmt->execute();
+            $exists = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($exists) {
+                echo json_encode(["status" => "error", "message" => "ชื่อแผนกนี้มีอยู่แล้ว"]);
+            } else {
+                echo json_encode(["status" => "ok", "message" => "สามารถใช้ชื่อได้"]);
+            }
+            exit;
+        }
+
         // CREATE
         if (empty($input['department_name'])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก department_name"]);
+            exit;
+        }
+
+        // เช็คชื่อซ้ำก่อน insert
+        $stmtCheck = $dbh->prepare("SELECT department_id FROM departments WHERE LOWER(department_name) = LOWER(:name)");
+        $stmtCheck->bindParam(":name", $input['department_name']);
+        $stmtCheck->execute();
+        if ($stmtCheck->fetch(PDO::FETCH_ASSOC)) {
+            echo json_encode(["status" => "error", "message" => "ชื่อแผนกนี้มีอยู่แล้ว"]);
             exit;
         }
 
@@ -63,6 +93,16 @@ try {
         // UPDATE
         if (empty($input['department_id']) || empty($input['department_name'])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก department_id และ department_name"]);
+            exit;
+        }
+
+        // เช็คชื่อซ้ำ (ไม่รวมตัวเอง)
+        $stmtCheck = $dbh->prepare("SELECT department_id FROM departments WHERE LOWER(department_name) = LOWER(:name) AND department_id != :id");
+        $stmtCheck->bindParam(":name", $input['department_name']);
+        $stmtCheck->bindParam(":id", $input['department_id']);
+        $stmtCheck->execute();
+        if ($stmtCheck->fetch(PDO::FETCH_ASSOC)) {
+            echo json_encode(["status" => "error", "message" => "ชื่อแผนกนี้มีอยู่แล้ว"]);
             exit;
         }
 
