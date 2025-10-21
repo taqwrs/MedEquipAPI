@@ -125,6 +125,26 @@ try {
         echo json_encode(["status" => "error", "message" => "ชื่อแผนซ้ำ"]);
         exit;
     }
+    // ตรวจ contract ซ้ำเฉพาะภายในบริษัทเดียว หากมีค่า contract ส่งมา
+    if (!empty($insertData['contract'])) {
+        $stmtContract = $dbh->prepare("
+        SELECT COUNT(*) 
+        FROM maintenance_plans 
+        WHERE contract = :contract 
+          AND company_id = :company_id
+    ");
+        $stmtContract->execute([
+            ':contract' => $insertData['contract'],
+            ':company_id' => $insertData['company_id']
+        ]);
+        if ($stmtContract->fetchColumn() > 0) {
+            echo json_encode([
+                "status" => "error",
+                "message" => "เลขที่สัญญา ซ้ำกับแผนอื่นในบริษัทเดียวกัน"
+            ]);
+            exit;
+        }
+    }
 
     // Insert แผน MA
     $cols = implode(',', $insertFields);
