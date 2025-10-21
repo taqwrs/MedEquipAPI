@@ -45,40 +45,36 @@ try {
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode(["status" => "ok", "data" => $results], JSON_UNESCAPED_UNICODE);
 
-    } elseif ($method === 'POST') {
-        // CREATE
-        if (empty($input['spare_category_id']) || empty($input['name'])) {
-            echo json_encode(["status" => "error", "message" => "กรุณากรอก spare_category_id และ name"]);
-            exit;
-        }
-        $dbh->beginTransaction();
-        try {
-            $stmt = $dbh->prepare("
-                INSERT INTO spare_subcategories (spare_category_id, name) 
-                VALUES (:spare_category_id, :name)
-            ");
-            $stmt->bindParam(":spare_category_id", $input['spare_category_id']);
-            $stmt->bindParam(":name", $input['name']);
-            $stmt->execute();
+    } elseif ($method === 'POST' && isset($input['check_duplicate'])) {
+    if (empty($input['name'])) {
+        echo json_encode(["status" => "error", "message" => "กรุณากรอกชื่อชนิดอะไหล่"]);
+        exit;
+    }
 
-            $newId = $dbh->lastInsertId();
+    $sql = "SELECT spare_subcategory_id 
+            FROM spare_subcategories 
+            WHERE LOWER(name) = LOWER(:name)";
+    
+    if (!empty($input['spare_subcategory_id'])) {
+        // ถ้าเป็น edit ให้ exclude ตัวเอง
+        $sql .= " AND spare_subcategory_id != :id";
+    }
 
-            $logData = [
-                'spare_subcategory_id' => $newId,
-                'spare_category_id' => $input['spare_category_id'],
-                'name' => $input['name']
-            ];
+    $stmt = $dbh->prepare($sql);
+    $stmt->bindParam(":name", $input['name']);
+    if (!empty($input['spare_subcategory_id'])) {
+        $stmt->bindParam(":id", $input['spare_subcategory_id']);
+    }
+    $stmt->execute();
+    $exists = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            $logModel->insertLog($u_id, 'spare_subcategories', 'INSERT', null, $logData);
+    echo json_encode([
+        "status" => "ok",
+        "duplicate" => $exists ? true : false
+    ]);
+    exit;
 
-            $dbh->commit();
 
-            echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย", "spare_subcategory_id" => $newId]);
-
-        } catch (Exception $e) {
-            $dbh->rollBack();
-            throw $e;
-        }
 
     } elseif ($method === 'PUT') {
         // UPDATE
