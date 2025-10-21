@@ -151,7 +151,7 @@ try {
     $stmtCheckName = $dbh->prepare("SELECT COUNT(*) FROM maintenance_plans WHERE plan_name=:plan_name AND plan_id!=:plan_id");
     $stmtCheckName->execute([':plan_name' => $updateData['plan_name'], ':plan_id' => $input['plan_id']]);
     if ($stmtCheckName->fetchColumn() > 0)
-        throw new Exception("ชื่อแผนซ้ำ");
+        throw new Exception("ชื่อแผน");
     // ตรวจ contract ซ้ำเฉพาะภายในบริษัทเดียว หากมีค่า contract ส่งมา
     if (!empty($updateData['contract'])) {
         $stmtContract = $dbh->prepare("

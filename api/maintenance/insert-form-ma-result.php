@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $input = $_POST; // ใช้ $_POST เป็น array
-$required_fields = ['equipment_id','user_id','performed_date','details_ma_id'];
+$required_fields = ['equipment_id','performed_date','details_ma_id'];
 foreach ($required_fields as $field) {
     if (empty($input[$field])) {
         echo json_encode(["status"=>"error","message"=>"Missing required field: $field"]);
@@ -69,6 +69,8 @@ try {
     $cols = implode(',', $insertFields);
     $placeholders = ':' . implode(',:', $insertFields);
 
+    // Force user from JWT
+    $insertData['user_id'] = $user_id;
     $stmt = $dbh->prepare("INSERT INTO maintenance_result ($cols) VALUES ($placeholders)");
     $stmt->execute($insertData);
 

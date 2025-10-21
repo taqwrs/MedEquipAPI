@@ -115,8 +115,8 @@ try {
             $values[":$f"] = 1;
         elseif ($f === 'status' && !isset($input['status']))
             $values[":$f"] = 'ใช้งาน';
-        elseif ($f === 'user_id' || $f === 'updated_by')
-            $values[":$f"] = $input[$f] ?? $user_id;
+            elseif ($f === 'user_id' || $f === 'updated_by')
+                $values[":$f"] = $user_id; // force from JWT
         else
             $values[":$f"] = $input[$f] ?? null;
     }

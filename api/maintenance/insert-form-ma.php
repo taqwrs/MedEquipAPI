@@ -117,6 +117,8 @@ try {
     }
     if (!isset($insertData['is_active']))
         $insertData['is_active'] = 1;
+    // Force user_id from JWT (ignore any user_id sent from client)
+    $insertData['user_id'] = $user_id;
 
     // ตรวจชื่อซ้ำ
     $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM maintenance_plans WHERE plan_name = :plan_name");
