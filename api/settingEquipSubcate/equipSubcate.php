@@ -45,6 +45,44 @@ try {
         exit;
     }
 
+    // GET เช็คชื่อซ้ำ
+    if ($method === "GET" && isset($_GET["action"]) && $_GET["action"] === "check_duplicate") {
+        $name = trim($_GET["name"] ?? "");
+        $excludeId = $_GET["exclude_id"] ?? null;
+
+        if (empty($name)) {
+            echo json_encode(["status" => "error", "message" => "กรุณาระบุชื่อที่ต้องการตรวจสอบ"]);
+            exit;
+        }
+
+        if ($excludeId) {
+            $stmt = $dbh->prepare("
+                SELECT COUNT(*) as count 
+                FROM equipment_subcategories 
+                WHERE LOWER(TRIM(name)) = LOWER(:name) 
+                AND subcategory_id != :exclude_id
+            ");
+            $stmt->bindParam(":name", $name);
+            $stmt->bindParam(":exclude_id", $excludeId);
+        } else {
+            $stmt = $dbh->prepare("
+                SELECT COUNT(*) as count 
+                FROM equipment_subcategories 
+                WHERE LOWER(TRIM(name)) = LOWER(:name)
+            ");
+            $stmt->bindParam(":name", $name);
+        }
+        
+        $stmt->execute();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        echo json_encode([
+            "status" => "ok", 
+            "isDuplicate" => $result['count'] > 0
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // GET รายการ subcategories
     if ($method === "GET") {
         $stmt = $dbh->prepare("
@@ -81,6 +119,22 @@ try {
         }
         $dbh->beginTransaction();
         try {
+            // เช็คชื่อซ้ำก่อน insert
+            $stmtCheck = $dbh->prepare("
+                SELECT COUNT(*) as count 
+                FROM equipment_subcategories 
+                WHERE LOWER(TRIM(name)) = LOWER(:name)
+            ");
+            $stmtCheck->bindParam(":name", $input["name"]);
+            $stmtCheck->execute();
+            $checkResult = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+            if ($checkResult['count'] > 0) {
+                $dbh->rollBack();
+                echo json_encode(["status" => "error", "message" => "ชื่อชนิดเครื่องมือแพทย์นี้มีอยู่แล้ว"]);
+                exit;
+            }
+
             // เพิ่ม subcategory
             $stmt = $dbh->prepare("
                 INSERT INTO equipment_subcategories (category_id, name, type)
@@ -145,6 +199,24 @@ try {
             if (!$oldData) {
                 $dbh->rollBack();
                 echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูล subcategory"]);
+                exit;
+            }
+
+            // เช็คชื่อซ้ำ (ยกเว้น ID ตัวเอง)
+            $stmtCheck = $dbh->prepare("
+                SELECT COUNT(*) as count 
+                FROM equipment_subcategories 
+                WHERE LOWER(TRIM(name)) = LOWER(:name) 
+                AND subcategory_id != :id
+            ");
+            $stmtCheck->bindParam(":name", $input["name"]);
+            $stmtCheck->bindParam(":id", $input["subcategory_id"]);
+            $stmtCheck->execute();
+            $checkResult = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+            if ($checkResult['count'] > 0) {
+                $dbh->rollBack();
+                echo json_encode(["status" => "error", "message" => "ชื่อชนิดเครื่องมือแพทย์นี้มีอยู่แล้ว"]);
                 exit;
             }
 
