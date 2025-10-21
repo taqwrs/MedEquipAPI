@@ -16,13 +16,8 @@ try {
         echo json_encode(buildApiResponse('error', null, null, 'Unauthorized'));
         exit;
     }
-
-    // --- ดึง role ของผู้ใช้ ---
-    $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE ID = :user_id LIMIT 1");
-    $stmtRole->bindValue(':user_id', $user_id, PDO::PARAM_INT);
-    $stmtRole->execute();
-    $roleId = $stmtRole->fetchColumn();
-    $isAdmin = ($roleId == 6); // 6 = admin
+    $role_id = $decoded->data->role_id ?? null;
+    $isAdmin = ($role_id == 6); // 6 = admin
 
     // --- เงื่อนไข non-admin ---
     $showInactive = isset($input['showInactive']) ? intval($input['showInactive']) : 0;
