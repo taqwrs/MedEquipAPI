@@ -17,7 +17,7 @@ $stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1
 $stmtUser->bindParam(":user_id", $user_id);
 $stmtUser->execute();
 $userData = $stmtUser->fetch(PDO::FETCH_ASSOC);
-$u_id = $userData['ID'] ?? null;
+$u_id = $userData['ID'] ?? null; 
 
 if (!$u_id) {
     echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลผู้ใช้"]);
