@@ -1,4 +1,18 @@
 <?php
+// C:\xampp\htdocs\back_equip\api\files\download-file.php
+
+// เพิ่ม CORS headers ที่ด้านบนสุด
+header("Access-Control-Allow-Origin: http://localhost:5173");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, Accept, If-Modified-Since, If-None-Match");
+header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Expose-Headers: Content-Disposition");
+
+// Handle preflight request
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    exit(0);
+}
+
 include "../config/config.php"; // ให้ $dbh พร้อมใช้งาน
 
 $type = $_GET['type'] ?? null;
@@ -6,7 +20,9 @@ $file_id = $_GET['file_id'] ?? null;
 
 if (!$type || !$file_id) {
     error_log("Missing parameters: type={$type}, file_id={$file_id}");
-    exit('Missing parameters');
+    http_response_code(400);
+    echo 'Missing parameters';
+    exit;
 }
 
 // Mapping table/column และ folder ตามจริง
@@ -43,7 +59,9 @@ $typeMap = [
 
 if (!isset($typeMap[$type])) {
     error_log("Unknown type: {$type}");
-    exit('Unknown type');
+    http_response_code(400);
+    echo 'Unknown type';
+    exit;
 }
 
 $map = $typeMap[$type];
@@ -59,7 +77,9 @@ $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$row) {
     error_log("File not found in DB: type={$type}, id={$file_id}");
-    exit('File not found in DB');
+    http_response_code(404);
+    echo 'File not found in DB';
+    exit;
 }
 
 $url = $row['url'];
@@ -74,12 +94,14 @@ if (filter_var($url, FILTER_VALIDATE_URL)) {
     $fileContents = @file_get_contents($url);
     if ($fileContents === false) {
         error_log("Cannot fetch file from URL: {$url}");
-        exit('Cannot fetch file from URL');
+        http_response_code(500);
+        echo 'Cannot fetch file from URL';
+        exit;
     }
 
     header('Content-Description: File Transfer');
     header('Content-Type: application/octet-stream');
-    header('Content-Disposition: attachment; filename="' . basename($url) . '"');
+    header('Content-Disposition: attachment; filename="' . basename($row['name']) . '"'); // ใช้ชื่อไฟล์จาก DB
     header('Expires: 0');
     header('Cache-Control: must-revalidate');
     header('Pragma: public');
@@ -97,12 +119,14 @@ error_log("Local file path resolved to: {$filePath}");
 
 if (!file_exists($filePath)) {
     error_log("File not found on server: {$filePath}");
-    exit('File not found on server');
+    http_response_code(404);
+    echo 'File not found on server';
+    exit;
 }
 
 header('Content-Description: File Transfer');
 header('Content-Type: application/octet-stream');
-header('Content-Disposition: attachment; filename="' . basename($row['name']) . '"');
+header('Content-Disposition: attachment; filename="' . basename($row['name']) . '"'); // ใช้ชื่อไฟล์จาก DB
 header('Expires: 0');
 header('Cache-Control: must-revalidate');
 header('Pragma: public');
@@ -111,3 +135,4 @@ header('Content-Length: ' . filesize($filePath));
 readfile($filePath);
 error_log("File sent successfully: {$filePath}");
 exit;
+?>
