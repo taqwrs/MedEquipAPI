@@ -16,16 +16,15 @@ try {
         echo json_encode(buildApiResponse('error', null, null, 'Unauthorized'));
         exit;
     }
-
-    // --- ดึง role ของผู้ใช้ ---
-    $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE ID = :user_id LIMIT 1");
-    $stmtRole->bindValue(':user_id', $user_id, PDO::PARAM_INT);
-    $stmtRole->execute();
-    $roleId = $stmtRole->fetchColumn();
-    $isAdmin = ($roleId == 6); // 6 = admin
+    $role_id = $decoded->data->role_id ?? null;
+    $isAdmin = ($role_id == 6); // 6 = admin
 
     // --- เงื่อนไข non-admin ---
-    $whereClause = "WHERE mp.is_active = 1";
+    $showInactive = isset($input['showInactive']) ? intval($input['showInactive']) : 0;
+    $whereClause = "WHERE 1"; // เริ่มจากไม่มีเงื่อนไข
+    if ($showInactive === 0) {
+        $whereClause .= " AND mp.is_active = 1";
+    }
     $additionalParams = [];
 
     if (!$isAdmin) {
@@ -42,8 +41,10 @@ try {
         $mainGroups = [];
         $normalGroups = [];
         foreach ($groups as $g) {
-            if ($g['type'] === 'ผู้ดูแลหลัก') $mainGroups[] = $g['group_user_id'];
-            else $normalGroups[] = $g['group_user_id'];
+            if ($g['type'] === 'ผู้ดูแลหลัก')
+                $mainGroups[] = $g['group_user_id'];
+            else
+                $normalGroups[] = $g['group_user_id'];
         }
 
         $allGroups = array_merge($mainGroups, $normalGroups);
@@ -77,10 +78,11 @@ try {
 
     // --- SQL  ---
     $baseSql = "
-        SELECT mp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,
+        SELECT mp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name, u2.full_name AS updated_by_name, 
                COUNT(DISTINCT dmp.details_ma_id) AS total_schedules
         FROM maintenance_plans mp
         LEFT JOIN users u ON mp.user_id = u.ID
+        LEFT JOIN users u2 ON mp.updated_by = u2.ID
         LEFT JOIN group_user gu ON mp.group_user_id = gu.group_user_id
         LEFT JOIN companies c ON mp.company_id = c.company_id
         LEFT JOIN details_maintenance_plans dmp ON mp.plan_id = dmp.plan_id
@@ -117,7 +119,7 @@ try {
         $equipmentsMap = [];
         foreach ($equipStmt->fetchAll(PDO::FETCH_ASSOC) as $eq) {
             $equipmentsMap[$eq['plan_id']][] = [
-                "equipment_id" => (int)$eq['equipment_id'],
+                "equipment_id" => (int) $eq['equipment_id'],
                 "name" => $eq['name'] ?? "-",
                 "asset_code" => $eq['asset_code'] ?? "-"
             ];
@@ -133,7 +135,7 @@ try {
         $filesMap = [];
         foreach ($fileStmt->fetchAll(PDO::FETCH_ASSOC) as $file) {
             $filesMap[$file['plan_id']][] = [
-                "file_ma_id" => (int)$file['file_ma_id'],
+                "file_ma_id" => (int) $file['file_ma_id'],
                 "file_ma_name" => $file['file_ma_name'],
                 "file_ma_url" => $file['file_ma_url'],
                 "ma_type_name" => $file['ma_type_name']
@@ -144,7 +146,7 @@ try {
         foreach ($response['data'] as &$res) {
             $res['equipments'] = $equipmentsMap[$res['plan_id']] ?? [];
             $res['files'] = $filesMap[$res['plan_id']] ?? [];
-            $res['frequency_display'] = "ทุก {$res['frequency_number']} " . match ((int)$res['frequency_unit']) {
+            $res['frequency_display'] = "ทุก {$res['frequency_number']} " . match ((int) $res['frequency_unit']) {
                 1 => 'วัน',
                 2 => 'สัปดาห์',
                 3 => 'เดือน',

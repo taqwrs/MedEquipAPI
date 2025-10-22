@@ -19,7 +19,7 @@ try {
         $stmt = $dbh->prepare("
             SELECT equipment_id, name, brand, model, asset_code, status, location_details, subcategory_id
             FROM equipments
-            WHERE status IN ('ใช้งาน', 'คลัง') AND active = 1
+            WHERE active = 1
             ORDER BY subcategory_id
         ");
         $stmt->execute();
@@ -66,8 +66,18 @@ try {
             $stmt->execute([':plan_id' => $plan_id]);
             $existing = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-            // เพิ่มอุปกรณ์ใหม่ที่ยังไม่มี
-            $toAdd = array_diff($newEquipmentIds, $existing);
+            // หารายการที่เพิ่มและลบ
+            $toAdd = array_values(array_diff($newEquipmentIds, $existing));
+            $toDelete = array_values(array_diff($existing, $newEquipmentIds));
+
+            // ลบรายการที่ไม่ได้เลือก
+            if (!empty($toDelete)) {
+                $inQuery = implode(',', array_fill(0, count($toDelete), '?'));
+                $stmtDelete = $dbh->prepare("DELETE FROM plan_ma_equipments WHERE plan_id = ? AND equipment_id IN ($inQuery)");
+                $stmtDelete->execute(array_merge([$plan_id], $toDelete));
+            }
+
+            // เพิ่มรายการใหม่
             if (!empty($toAdd)) {
                 $stmtInsert = $dbh->prepare("INSERT INTO plan_ma_equipments (plan_id, equipment_id) VALUES (:plan_id, :equipment_id)");
                 foreach ($toAdd as $equipment_id) {
@@ -76,26 +86,12 @@ try {
                         ':equipment_id' => $equipment_id
                     ]);
                 }
-                // Log auto-generate สำหรับอุปกรณ์ที่เพิ่ม
-                $logData = array_map(fn($eid) => ['plan_id' => $plan_id, 'equipment_id' => $eid], $toAdd);
-                foreach ($logData as $item) {
-                    $log->insertLog($user_id, 'plan_ma_equipments', 'ADD', null, $item);
-                }
             }
 
-            // ลบอุปกรณ์ที่ไม่ได้เลือก
-            $toDelete = array_diff($existing, $newEquipmentIds);
-            if (!empty($toDelete)) {
-                $inQuery = implode(',', array_fill(0, count($toDelete), '?'));
-                $stmtDelete = $dbh->prepare("DELETE FROM plan_ma_equipments WHERE plan_id = ? AND equipment_id IN ($inQuery)");
-                $stmtDelete->execute(array_merge([$plan_id], $toDelete));
-
-                // Log auto-generate สำหรับอุปกรณ์ที่ลบ
-                $logData = array_map(fn($eid) => ['plan_id' => $plan_id, 'equipment_id' => $eid], $toDelete);
-                foreach ($logData as $item) {
-                    $log->insertLog($user_id, 'plan_ma_equipments', 'DELETE', null, $item);
-                }
-            }
+            // สร้าง log แบบ UPDATE เดียว
+            $oldData = ['plan_id' => $plan_id, 'equipment_ids' => $existing];
+            $newData = ['plan_id' => $plan_id, 'equipment_ids' => $newEquipmentIds, 'added' => $toAdd, 'deleted' => $toDelete];
+            $log->insertLog($user_id, 'plan_ma_equipments', 'UPDATE', $oldData, $newData);
 
             $dbh->commit();
 
@@ -115,6 +111,7 @@ try {
             exit;
         }
     }
+
 
     echo json_encode([
         "status" => "error",

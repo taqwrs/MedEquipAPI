@@ -96,7 +96,7 @@ try {
         elseif ($f === 'record_status' && !isset($_POST['record_status']))
             $values[":$f"] = 'complete';
         elseif ($f === 'user_id' || $f === 'updated_by')
-            $values[":$f"] = $_POST[$f] ?? $user_id;
+            $values[":$f"] = $user_id; // force from JWT
         else
             $values[":$f"] = $_POST[$f] ?? null;
     }

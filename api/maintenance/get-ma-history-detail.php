@@ -30,6 +30,7 @@ try {
         LEFT JOIN (
             SELECT ma_result_id,
                    JSON_ARRAYAGG(JSON_OBJECT(
+                        'id', file_ma_result_id,
                        'name', file_ma_name,
                        'url', file_ma_url,
                        'type', ma_type_name

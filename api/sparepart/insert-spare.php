@@ -13,6 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
     $dbh->beginTransaction();
     $user_id = $decoded->data->ID ?? null;
+    if (!$user_id)
+        throw new Exception("User ID not found");
     $log = new LogModel($dbh);
 
     // ------------------ CONFIG ------------------
@@ -113,8 +115,8 @@ try {
             $values[":$f"] = 1;
         elseif ($f === 'status' && !isset($input['status']))
             $values[":$f"] = 'ใช้งาน';
-        elseif ($f === 'user_id' || $f === 'updated_by')
-            $values[":$f"] = $input[$f] ?? $user_id;
+            elseif ($f === 'user_id' || $f === 'updated_by')
+                $values[":$f"] = $user_id; // force from JWT
         else
             $values[":$f"] = $input[$f] ?? null;
     }

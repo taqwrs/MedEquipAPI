@@ -117,6 +117,8 @@ try {
     }
     if (!isset($insertData['is_active']))
         $insertData['is_active'] = 1;
+    // Force user_id from JWT (ignore any user_id sent from client)
+    $insertData['user_id'] = $user_id;
 
     // ตรวจชื่อซ้ำ
     $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM maintenance_plans WHERE plan_name = :plan_name");
@@ -124,6 +126,26 @@ try {
     if ($stmtCheck->fetchColumn() > 0) {
         echo json_encode(["status" => "error", "message" => "ชื่อแผนซ้ำ"]);
         exit;
+    }
+    // ตรวจ contract ซ้ำเฉพาะภายในบริษัทเดียว หากมีค่า contract ส่งมา
+    if (!empty($insertData['contract'])) {
+        $stmtContract = $dbh->prepare("
+        SELECT COUNT(*) 
+        FROM maintenance_plans 
+        WHERE contract = :contract 
+          AND company_id = :company_id
+    ");
+        $stmtContract->execute([
+            ':contract' => $insertData['contract'],
+            ':company_id' => $insertData['company_id']
+        ]);
+        if ($stmtContract->fetchColumn() > 0) {
+            echo json_encode([
+                "status" => "error",
+                "message" => "เลขที่สัญญา ซ้ำกับแผนอื่นในบริษัทเดียวกัน"
+            ]);
+            exit;
+        }
     }
 
     // Insert แผน MA
@@ -135,12 +157,17 @@ try {
 
     // Insert details MA
     $detailsStmt = $dbh->prepare("INSERT INTO details_maintenance_plans (plan_id,start_date) VALUES (:plan_id,:start_date)");
+    $allDates = [];
+
     if ($input['frequency_type'] === 'รอบเดียว') {
         $detailsStmt->execute([':plan_id' => $plan_id, ':start_date' => $startDate->format('Y-m-d')]);
+        $allDates[] = $startDate->format('Y-m-d');
     } else {
         $scheduledDate = clone $startDate;
         for ($i = 1; $i <= $intervalCount; $i++) {
             $detailsStmt->execute([':plan_id' => $plan_id, ':start_date' => $scheduledDate->format('Y-m-d')]);
+            $allDates[] = $scheduledDate->format('Y-m-d');
+
             switch ($intervalUnit) {
                 case 1:
                     $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'D'));
@@ -157,6 +184,12 @@ try {
             }
         }
     }
+
+    // log row เดียว สำหรับทุก start_date
+    $log->insertLog($user_id, 'details_maintenance_plans', 'INSERT', null, [
+        'plan_id' => $plan_id,
+        'start_dates' => $allDates
+    ]);
 
     // Log auto-generate จาก array
     $logData = $insertData;
