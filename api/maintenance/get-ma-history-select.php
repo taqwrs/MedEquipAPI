@@ -25,13 +25,18 @@ try {
         echo json_encode([
             'status' => 'success',
             'data' => array_map(function ($r, $i) {
+                // แปลงวันที่ให้อยู่ในรูป d/m/Y
+                $startDate = isset($r['start_date']) && $r['start_date'] !== null
+                    ? date('d/m/Y', strtotime($r['start_date']))
+                    : '-';
                 return [
-                    'label' => "รอบที่ " . ($i + 1) . " (" . ($r['start_date'] ?? '-') . ")",
+                    'label' => "รอบที่ " . ($i + 1) . " วันที่ $startDate ",
                     'value' => $r['round_id']
                 ];
             }, $rounds, array_keys($rounds))
         ]);
         exit;
+
     } elseif ($viewType === "allEquipments" && $planId) {
         // ดึงอุปกรณ์ทั้งหมดที่อยู่ในแผน จากตาราง plan_ma_equipments
         $stmt = $dbh->prepare("
