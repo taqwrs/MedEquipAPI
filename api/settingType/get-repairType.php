@@ -13,6 +13,7 @@ $input = json_decode(file_get_contents("php://input"), true);
 if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
 }
+
 $stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
 $stmtUser->bindParam(":user_id", $user_id);
 $stmtUser->execute();
@@ -30,6 +31,29 @@ $repair_type_id = $input['repair_type_id'] ?? $_GET['repair_type_id'] ?? null;
 try {
     $dbh->beginTransaction();
 
+    if ($method === 'POST' && isset($input['check_duplicate'])) {
+        $name_type = trim($input['name_type']);
+        $edit_id = $input['repair_type_id'] ?? null;
+
+        $sql = "SELECT COUNT(*) AS count FROM repair_type WHERE LOWER(name_type) = LOWER(:name_type)";
+        if ($edit_id) {
+            $sql .= " AND repair_type_id != :edit_id";
+        }
+        $stmt = $dbh->prepare($sql);
+        $stmt->bindParam(":name_type", $name_type);
+        if ($edit_id) $stmt->bindParam(":edit_id", $edit_id);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        echo json_encode([
+            "status" => "ok",
+            "duplicate" => $row['count'] > 0
+        ], JSON_UNESCAPED_UNICODE);
+        $dbh->rollBack(); 
+        exit;
+    }
+
+    // ✅ GET ทั้งหมด หรือเฉพาะ ID
     if ($method === 'GET') {
         if ($repair_type_id) {
             $stmt = $dbh->prepare("
@@ -47,17 +71,7 @@ try {
                 throw new Exception("ไม่พบข้อมูล repair_type_id นี้");
             }
             
-            $data = [
-                'repair_type_id' => $row['repair_type_id'],
-                'name_type' => $row['name_type'],
-                'group_user' => [
-                    'group_user_id' => $row['group_user_id'],
-                    'group_name' => $row['group_name'],
-                    'group_type' => $row['group_type']
-                ]
-            ];
-
-            echo json_encode(["status" => "ok", "data" => $data], JSON_UNESCAPED_UNICODE);
+            echo json_encode(["status" => "ok", "data" => $row], JSON_UNESCAPED_UNICODE);
         } else {
             $stmt = $dbh->prepare("
                 SELECT rt.repair_type_id, rt.name_type,
@@ -68,21 +82,7 @@ try {
             ");
             $stmt->execute();
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-            $repair_types = [];
-            foreach ($results as $row) {
-                $repair_types[] = [
-                    'repair_type_id' => $row['repair_type_id'],
-                    'name_type' => $row['name_type'],
-                    'group_user' => [
-                        'group_user_id' => $row['group_user_id'],
-                        'group_name' => $row['group_name'],
-                        'group_type' => $row['group_type']
-                    ]
-                ];
-            }
-
-            echo json_encode(["status" => "ok", "data" => $repair_types], JSON_UNESCAPED_UNICODE);
+            echo json_encode(["status" => "ok", "data" => $results], JSON_UNESCAPED_UNICODE);
         }
 
     } elseif ($method === 'POST') {
@@ -100,12 +100,11 @@ try {
 
         $newId = $dbh->lastInsertId();
 
-        $logData = [
+        $logModel->insertLog($u_id, 'repair_type', 'INSERT', null, [
             'repair_type_id' => $newId,
             'name_type' => $input['name_type'],
             'group_user_id' => $input['group_user_id']
-        ];
-        $logModel->insertLog($u_id, 'repair_type', 'INSERT', null, $logData);
+        ]);
 
         echo json_encode(["status" => "ok", "message" => "เพิ่มประเภทงานซ่อมเรียบร้อย", "repair_type_id" => $newId], JSON_UNESCAPED_UNICODE);
 
@@ -133,12 +132,7 @@ try {
         $stmt->bindParam(":id", $repair_type_id);
         $stmt->execute();
 
-        $logData = [
-            'repair_type_id' => $repair_type_id,
-            'name_type' => $input['name_type'],
-            'group_user_id' => $input['group_user_id']
-        ];
-        $logModel->insertLog($u_id, 'repair_type', 'UPDATE', $oldData, $logData);
+        $logModel->insertLog($u_id, 'repair_type', 'UPDATE', $oldData, $input);
 
         echo json_encode(["status" => "ok", "message" => "แก้ไขประเภทงานซ่อมเรียบร้อย"], JSON_UNESCAPED_UNICODE);
 
@@ -167,6 +161,7 @@ try {
     } else {
         throw new Exception("Method not allowed");
     }
+
     $dbh->commit();
 
 } catch (Exception $e) {
