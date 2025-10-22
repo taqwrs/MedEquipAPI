@@ -1,6 +1,6 @@
 <?php
 //generate_keys.php
-require __DIR__ . '/../../vendor/autoload.php';
+require '../../vendor/autoload.php';
 
 use Minishlink\WebPush\VAPID;
 
