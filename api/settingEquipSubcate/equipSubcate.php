@@ -1,6 +1,6 @@
 <?php
-include "../config/jwt.php"; 
-include "../config/LogModel.php"; 
+include "../config/jwt.php";
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -55,7 +55,7 @@ try {
         $sql = "SELECT subcategory_id 
                 FROM equipment_subcategories 
                 WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))";
-        
+
         if (!empty($_GET["exclude_id"])) {
             $sql .= " AND subcategory_id != :exclude_id";
         }
@@ -161,7 +161,6 @@ try {
 
             echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย", "subcategory_id" => $newId]);
             exit;
-
         } catch (Exception $e) {
             $dbh->rollBack();
             throw $e;
@@ -245,22 +244,43 @@ try {
 
             echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
             exit;
-
         } catch (Exception $e) {
             $dbh->rollBack();
             throw $e;
         }
     }
 
-    // DELETE
+    // DELETE with enhanced check
     if ($method === "DELETE") {
         if (empty($input["subcategory_id"])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก subcategory_id"]);
             exit;
         }
+
         $dbh->beginTransaction();
 
         try {
+            // ตรวจสอบว่ามีการใช้งานใน equipments หรือไม่ (นับจำนวน)
+            $stmtCheck = $dbh->prepare("
+                SELECT COUNT(*) as count
+                FROM equipments 
+                WHERE subcategory_id = :id
+            ");
+            $stmtCheck->bindParam(":id", $input["subcategory_id"]);
+            $stmtCheck->execute();
+            $result = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+            if ($result['count'] > 0) {
+                // ถ้ามีการใช้งาน ห้ามลบ
+                $dbh->rollBack();
+                echo json_encode([
+                    "status" => "error",
+                    "message" => "ไม่สามารถลบชนิดเครื่องมือได้เนื่องจากมีเครื่องมือ " . $result['count'] . " รายการที่ใช้งานอยู่",
+                    "equipment_count" => $result['count']
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+
             // ดึงข้อมูล subcategory ก่อนลบ
             $stmtOld = $dbh->prepare("SELECT * FROM equipment_subcategories WHERE subcategory_id = :id");
             $stmtOld->bindParam(":id", $input["subcategory_id"]);
@@ -284,7 +304,6 @@ try {
             $stmtRelations->execute();
             $relationData = $stmtRelations->fetchAll(PDO::FETCH_ASSOC);
 
-            // รวมข้อมูล relation_group เข้าไปใน oldData
             $oldData['relations'] = $relationData;
 
             // ลบ relation_group ก่อน
@@ -303,7 +322,6 @@ try {
 
             echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
             exit;
-
         } catch (Exception $e) {
             $dbh->rollBack();
             throw $e;
@@ -312,8 +330,6 @@ try {
 
     echo json_encode(["status" => "error", "message" => "Method not allowed"]);
     exit;
-
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>

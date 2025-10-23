@@ -7,6 +7,11 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents("php://input"), true);
 
@@ -14,6 +19,67 @@ if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
 }
 
+if ($method === 'POST' && isset($input['check_duplicate'])) {
+    try {
+        $groupName = $input['group_name'] ?? '';
+        $excludeId = $input['exclude_id'] ?? null;
+
+        if (empty($groupName)) {
+            echo json_encode([
+                "status" => "error", 
+                "message" => "กรุณาระบุชื่อกลุ่ม"
+            ]);
+            exit;
+        }
+
+        // Normalize ชื่อเพื่อเปรียบเทียบ (ลบช่องว่างและแปลงเป็นตัวพิมพ์เล็ก)
+        $normalizedInput = mb_strtolower(preg_replace('/\s+/', '', $groupName), 'UTF-8');
+        $sql = "SELECT group_user_id, group_name FROM group_user";
+        
+        if ($excludeId !== null) {
+            $sql .= " WHERE group_user_id != :exclude_id";
+        }
+        $stmt = $dbh->prepare($sql);
+        if ($excludeId !== null) {
+            $stmt->bindParam(":exclude_id", $excludeId, PDO::PARAM_INT);
+        }
+        
+        $stmt->execute();
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // เช็คทีละรายการ
+        $isDuplicate = false;
+        foreach ($results as $row) {
+            $normalizedDb = mb_strtolower(preg_replace('/\s+/', '', $row['group_name']), 'UTF-8');
+            if ($normalizedDb === $normalizedInput) {
+                $isDuplicate = true;
+                break;
+            }
+        }
+
+        if ($isDuplicate) {
+            // พบข้อมูลซ้ำ
+            echo json_encode([
+                "status" => "duplicate",
+                "message" => "ชื่อกลุ่มนี้มีอยู่แล้ว"
+            ]);
+        } else {
+            // ไม่พบข้อมูลซ้ำ
+            echo json_encode([
+                "status" => "available",
+                "message" => "สามารถใช้งานได้"
+            ]);
+        }
+        exit;
+
+    } catch (Exception $e) {
+        echo json_encode([
+            "status" => "error", 
+            "message" => $e->getMessage()
+        ]);
+        exit;
+    }
+}
 // ดึง ID ของผู้ใช้จาก JWT
 $stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
 $stmtUser->bindParam(":user_id", $user_id);
@@ -29,29 +95,8 @@ if (!$u_id) {
 $logModel = new LogModel($dbh);
 
 try {
-    if ($method === 'GET' && isset($_GET['check_name'])) {
-        $groupName = trim($_GET['check_name']);
-        $groupId = isset($_GET['group_id']) ? $_GET['group_id'] : null;
-
-        $normalized = mb_strtolower(preg_replace('/\s+/', '', $groupName));
-
-        $stmt = $dbh->prepare("SELECT group_user_id, group_name FROM group_user");
-        $stmt->execute();
-        $groups = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $isDuplicate = false;
-        foreach ($groups as $g) {
-            $gNormalized = mb_strtolower(preg_replace('/\s+/', '', $g['group_name']));
-            if ($gNormalized === $normalized && (string)$g['group_user_id'] !== (string)$groupId) {
-                $isDuplicate = true;
-                break;
-            }
-        }
-
-        echo json_encode(["status" => "ok", "duplicate" => $isDuplicate], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
     if ($method === 'GET') {
+        // ดึงข้อมูล group_user + relation_user + users + departments
         $stmt = $dbh->prepare("
             SELECT 
                 gu.group_user_id,
@@ -73,6 +118,7 @@ try {
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+        // ดึง ENUM ของ type
         $stmtEnum = $dbh->prepare("
             SELECT COLUMN_TYPE 
             FROM INFORMATION_SCHEMA.COLUMNS 
