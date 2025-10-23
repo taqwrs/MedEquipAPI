@@ -44,28 +44,15 @@ try {
             exit;
         }
 
-        $name = trim($input['name']);
-
-        $stmtCheck = $dbh->prepare("SELECT COUNT(*) AS cnt FROM writeoff_types WHERE LOWER(name) = LOWER(:name)");
-        $stmtCheck->bindParam(":name", $name);
-        $stmtCheck->execute();
-        $count = $stmtCheck->fetch(PDO::FETCH_ASSOC)['cnt'];
-
-        if ($count > 0) {
-            echo json_encode(["status" => "duplicate", "message" => "ชื่อประเภทนี้มีอยู่แล้ว"]);
-            exit;
-        }
-
-        // INSERT
         $stmt = $dbh->prepare("INSERT INTO writeoff_types (name) VALUES (:name)");
-        $stmt->bindParam(":name", $name);
+        $stmt->bindParam(":name", $input['name']);
         $stmt->execute();
 
         $newId = $dbh->lastInsertId();
 
         $logData = [
             'writeoff_types_id' => $newId,
-            'name' => $name
+            'name' => $input['name']
         ];
 
         $logModel->insertLog($u_id, 'writeoff_types', 'INSERT', null, $logData);
@@ -79,40 +66,21 @@ try {
             exit;
         }
 
-        $id = $input['writeoff_types_id'];
-        $name = trim($input['name']);
-
-        $stmtCheck = $dbh->prepare("
-            SELECT COUNT(*) AS cnt 
-            FROM writeoff_types 
-            WHERE LOWER(name) = LOWER(:name) 
-              AND writeoff_types_id != :id
-        ");
-        $stmtCheck->bindParam(":name", $name);
-        $stmtCheck->bindParam(":id", $id);
-        $stmtCheck->execute();
-        $count = $stmtCheck->fetch(PDO::FETCH_ASSOC)['cnt'];
-
-        if ($count > 0) {
-            echo json_encode(["status" => "duplicate", "message" => "ชื่อประเภทนี้มีอยู่แล้ว"]);
-            exit;
-        }
-
         // ดึงข้อมูลเดิม
         $stmtOld = $dbh->prepare("SELECT * FROM writeoff_types WHERE writeoff_types_id = :id");
-        $stmtOld->bindParam(":id", $id);
+        $stmtOld->bindParam(":id", $input['writeoff_types_id']);
         $stmtOld->execute();
         $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
-        // UPDATE
+        // อัพเดทข้อมูล
         $stmt = $dbh->prepare("UPDATE writeoff_types SET name = :name WHERE writeoff_types_id = :id");
-        $stmt->bindParam(":name", $name);
-        $stmt->bindParam(":id", $id);
+        $stmt->bindParam(":name", $input['name']);
+        $stmt->bindParam(":id", $input['writeoff_types_id']);
         $stmt->execute();
 
         $logData = [
-            'writeoff_types_id' => $id,
-            'name' => $name
+            'writeoff_types_id' => $input['writeoff_types_id'],
+            'name' => $input['name']
         ];
 
         $logModel->insertLog($u_id, 'writeoff_types', 'UPDATE', $oldData, $logData);
@@ -126,17 +94,15 @@ try {
             exit;
         }
 
-        $id = $input['writeoff_types_id'];
-
         // ดึงข้อมูลก่อนลบ
         $stmtOld = $dbh->prepare("SELECT * FROM writeoff_types WHERE writeoff_types_id = :id");
-        $stmtOld->bindParam(":id", $id);
+        $stmtOld->bindParam(":id", $input['writeoff_types_id']);
         $stmtOld->execute();
         $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
-        // DELETE
+        // ลบข้อมูล
         $stmt = $dbh->prepare("DELETE FROM writeoff_types WHERE writeoff_types_id = :id");
-        $stmt->bindParam(":id", $id);
+        $stmt->bindParam(":id", $input['writeoff_types_id']);
         $stmt->execute();
 
         $logModel->insertLog($u_id, 'writeoff_types', 'DELETE', $oldData, null);
