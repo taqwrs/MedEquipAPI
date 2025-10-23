@@ -3,10 +3,9 @@
 require '../../vendor/autoload.php';
 $dbh = new PDO('mysql:host=192.168.2.41;dbname=intern_medequipment', 'intern', 'intern@Tsh');
 
-const VAPID_SUBJECT = 'mailto:thichanontcn33@gmail.com';
-const VAPID_PUBLIC = 'BAWUaKUGWbR_OVbKirmke2UC8QC5RsrobaEYlUTv6RnEAFvQXT8ZpvJSqJYZLVQ_3icB-QAmuD29RMgrmV7u6_A';
-const VAPID_PRIVATE = '8QqkU-UFjl62MsKzWEzx1kFqtBoimvvEP05d2DK5E2E';
-
+const VAPID_SUBJECT = 'mailto:thichanon2413@gmail.com';
+const VAPID_PUBLIC  = 'BFbpUKSWv1hiLck_vWC7ONpxw1NIhBDbMOSsoP-KQyVhyEASitPmBeNbywffugsYJEyCnibFLieb_CTRaL1Ygx4';
+const VAPID_PRIVATE = 'rXOAyai7b9UnpkvZAGHGl5mjO9jPAMI2HTyW-EFSxBc';
 
 use Minishlink\WebPush\WebPush;
 use Minishlink\WebPush\Subscription;
