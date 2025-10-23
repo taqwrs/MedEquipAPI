@@ -44,7 +44,6 @@ try {
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode(["status" => "ok", "data" => $results], JSON_UNESCAPED_UNICODE);
-
     } elseif ($method === 'POST' && isset($input['check_duplicate'])) {
         // ตรวจสอบชื่อซ้ำ
         if (empty($input['name'])) {
@@ -55,7 +54,7 @@ try {
         $sql = "SELECT spare_category_id 
                 FROM spare_categories 
                 WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))";
-        
+
         if (!empty($input['spare_category_id'])) {
             // ถ้าเป็น edit ให้ exclude ตัวเอง
             $sql .= " AND spare_category_id != :id";
@@ -74,7 +73,6 @@ try {
             "duplicate" => $exists ? true : false
         ]);
         exit;
-
     } elseif ($method === 'POST') {
         // CREATE
         if (empty($input['name'])) {
@@ -96,12 +94,11 @@ try {
         $stmt->execute();
 
         $newId = $dbh->lastInsertId();
-        $logData = ['spare_category_id' => $newId,'name' => $input['name']];
-        
+        $logData = ['spare_category_id' => $newId, 'name' => $input['name']];
+
         $logModel->insertLog($u_id, 'spare_categories', 'INSERT', null, $logData);
 
         echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย", "id" => $newId]);
-
     } elseif ($method === 'PUT') {
         // UPDATE
         if (empty($input['spare_category_id']) || empty($input['name'])) {
@@ -131,16 +128,33 @@ try {
         $stmt->bindParam(":id", $input['spare_category_id']);
         $stmt->execute();
 
-        $logData = ['spare_category_id' => $input['spare_category_id'],'name' => $input['name']];
-
+        $logData = ['spare_category_id' => $input['spare_category_id'], 'name' => $input['name']];
         $logModel->insertLog($u_id, 'spare_categories', 'UPDATE', $oldData, $logData);
 
         echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
-
     } elseif ($method === 'DELETE') {
         // DELETE
         if (empty($input['spare_category_id'])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก spare_category_id"]);
+            exit;
+        }
+
+        // 🔹 ตรวจสอบว่าหมวดหมู่นี้ถูกใช้ใน spare_subcategories หรือไม่
+        $stmtCheckUse = $dbh->prepare("
+            SELECT COUNT(*) AS cnt 
+            FROM spare_subcategories 
+            WHERE spare_category_id = :id
+        ");
+        $stmtCheckUse->bindParam(":id", $input['spare_category_id']);
+        $stmtCheckUse->execute();
+        $useCheck = $stmtCheckUse->fetch(PDO::FETCH_ASSOC);
+        $count = $useCheck['cnt'] ?? 0;
+
+        if ($count > 0) {
+            echo json_encode([
+                "status" => "error",
+                "message" => "ไม่สามารถลบหมวดหมู่เครื่องมือได้เนื่องจากถูกใช้กับชนิดเครื่องมือจำนวน {$count} รายการ"
+            ], JSON_UNESCAPED_UNICODE);
             exit;
         }
 
@@ -158,12 +172,9 @@ try {
         $logModel->insertLog($u_id, 'spare_categories', 'DELETE', $oldData, null);
 
         echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
-
     } else {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
     }
-
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
-?>
