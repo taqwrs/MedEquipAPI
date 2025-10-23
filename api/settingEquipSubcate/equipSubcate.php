@@ -45,6 +45,36 @@ try {
         exit;
     }
 
+    // GET check duplicate
+    if ($method === "GET" && isset($_GET["action"]) && $_GET["action"] === "check_duplicate") {
+        if (empty($_GET["name"])) {
+            echo json_encode(["status" => "error", "message" => "กรุณากรอกชื่อชนิดเครื่องมือ"]);
+            exit;
+        }
+
+        $sql = "SELECT subcategory_id 
+                FROM equipment_subcategories 
+                WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))";
+        
+        if (!empty($_GET["exclude_id"])) {
+            $sql .= " AND subcategory_id != :exclude_id";
+        }
+
+        $stmt = $dbh->prepare($sql);
+        $stmt->bindParam(":name", $_GET["name"]);
+        if (!empty($_GET["exclude_id"])) {
+            $stmt->bindParam(":exclude_id", $_GET["exclude_id"]);
+        }
+        $stmt->execute();
+        $exists = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        echo json_encode([
+            "status" => "ok",
+            "isDuplicate" => $exists ? true : false
+        ]);
+        exit;
+    }
+
     // GET รายการ subcategories
     if ($method === "GET") {
         $stmt = $dbh->prepare("
@@ -79,6 +109,16 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก category_id, name, type"]);
             exit;
         }
+
+        // ตรวจสอบชื่อซ้ำก่อนเพิ่ม
+        $stmtCheck = $dbh->prepare("SELECT subcategory_id FROM equipment_subcategories WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))");
+        $stmtCheck->bindParam(":name", $input["name"]);
+        $stmtCheck->execute();
+        if ($stmtCheck->fetch(PDO::FETCH_ASSOC)) {
+            echo json_encode(["status" => "error", "message" => "ชื่อชนิดเครื่องมือนี้มีอยู่แล้ว"]);
+            exit;
+        }
+
         $dbh->beginTransaction();
         try {
             // เพิ่ม subcategory
@@ -134,6 +174,17 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก subcategory_id, name, type"]);
             exit;
         }
+
+        // ตรวจสอบชื่อซ้ำก่อนแก้ไข (ยกเว้นตัวเอง)
+        $stmtCheck = $dbh->prepare("SELECT subcategory_id FROM equipment_subcategories WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND subcategory_id != :id");
+        $stmtCheck->bindParam(":name", $input["name"]);
+        $stmtCheck->bindParam(":id", $input["subcategory_id"]);
+        $stmtCheck->execute();
+        if ($stmtCheck->fetch(PDO::FETCH_ASSOC)) {
+            echo json_encode(["status" => "error", "message" => "ชื่อชนิดเครื่องมือนี้มีอยู่แล้ว"]);
+            exit;
+        }
+
         $dbh->beginTransaction();
         try {
             // ดึงข้อมูลเดิม
