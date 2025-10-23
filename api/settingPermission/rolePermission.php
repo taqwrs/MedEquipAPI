@@ -44,7 +44,7 @@ try {
             FROM roles r
             LEFT JOIN permission p ON r.role_id = p.role_id
             LEFT JOIN menu m ON p.menu_id = m.menu_id
-            ORDER BY r.role_id, m.menu_id
+            ORDER BY r.role_id DESC,m.menu_id
         ");
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -79,8 +79,20 @@ try {
     if ($method === "POST") {
         // ====== เพิ่ม role พร้อม auto permission ======
         if (!empty($input["role_name"])) {
-            $dbh->beginTransaction();
+            // ตรวจสอบชื่อซ้ำ
+            $stmtCheck = $dbh->prepare("SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) = LOWER(TRIM(:role_name))");
+            $stmtCheck->bindParam(":role_name", $input["role_name"]);
+            $stmtCheck->execute();
+            
+            if ($stmtCheck->fetch()) {
+                echo json_encode([
+                    "status" => "duplicate", 
+                    "message" => "ชื่อบทบาทนี้มีอยู่แล้ว"
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
 
+            $dbh->beginTransaction();
             // เพิ่ม role
             $stmt = $dbh->prepare("INSERT INTO roles (role_name) VALUES (:role_name)");
             $stmt->bindParam(":role_name", $input["role_name"]);
@@ -131,6 +143,19 @@ try {
     if ($method === "PUT") {
         // ====== แก้ไขชื่อ role ======
         if (!empty($input["role_id"]) && !empty($input["role_name"]) && empty($input["permissions"])) {
+            // ตรวจสอบชื่อซ้ำ (ยกเว้น role_id ปัจจุบัน)
+            $stmtCheck = $dbh->prepare("SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) = LOWER(TRIM(:role_name)) AND role_id != :role_id");
+            $stmtCheck->bindParam(":role_name", $input["role_name"]);
+            $stmtCheck->bindParam(":role_id", $input["role_id"]);
+            $stmtCheck->execute();
+            
+            if ($stmtCheck->fetch()) {
+                echo json_encode([
+                    "status" => "duplicate", 
+                    "message" => "ชื่อบทบาทนี้มีอยู่แล้ว"
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
             // ดึงข้อมูลเดิม
             $stmtOld = $dbh->prepare("SELECT * FROM roles WHERE role_id = :role_id");
             $stmtOld->bindParam(":role_id", $input["role_id"]);
