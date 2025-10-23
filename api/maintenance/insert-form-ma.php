@@ -18,7 +18,7 @@ if (!$input) {
     exit;
 }
 
-$required_fields = ['plan_name', 'user_id', 'group_user_id', 'company_id', 'frequency_number', 'frequency_unit', 'frequency_type', 'start_date', 'end_date', 'type_ma'];
+$required_fields = ['plan_name', 'group_user_id', 'company_id', 'frequency_number', 'frequency_unit', 'frequency_type', 'start_date', 'end_date', 'type_ma'];
 foreach ($required_fields as $field) {
     if (!array_key_exists($field, $input)) {
         echo json_encode(["status" => "error", "message" => "Missing field: $field"]);

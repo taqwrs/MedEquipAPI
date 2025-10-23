@@ -7,11 +7,88 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents("php://input"), true);
 
 if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
+}
+
+// ========== ฟังก์ชันตรวจสอบข้อมูลซ้ำ ==========
+if ($method === 'POST' && isset($input['check_duplicate'])) {
+    try {
+        $field = $input['field'] ?? '';
+        $value = $input['value'] ?? '';
+        $excludeId = $input['exclude_id'] ?? null;
+
+        if (empty($field) || empty($value)) {
+            echo json_encode([
+                "status" => "error", 
+                "message" => "กรุณาระบุ field และ value"
+            ]);
+            exit;
+        }
+
+        $allowedFields = ['name', 'tax_number'];
+        if (!in_array($field, $allowedFields)) {
+            echo json_encode([
+                "status" => "error", 
+                "message" => "Field ไม่ถูกต้อง"
+            ]);
+            exit;
+        }
+
+        $sql = "SELECT company_id, $field FROM companies WHERE $field = :value";
+        
+        if ($excludeId !== null) {
+            $sql .= " AND company_id != :exclude_id";
+        }
+        
+        $sql .= " LIMIT 1";
+
+        $stmt = $dbh->prepare($sql);
+        $stmt->bindParam(":value", $value);
+        
+        if ($excludeId !== null) {
+            $stmt->bindParam(":exclude_id", $excludeId);
+        }
+        
+        $stmt->execute();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($result) {
+            // พบข้อมูลซ้ำ
+            $fieldNameThai = [
+                'name' => 'ชื่อบริษัทนี้มีอยู่แล้ว',
+                'tax_number' => 'เลขผู้เสียภาษีนี้มีอยู่แล้ว'
+            ];
+            echo json_encode([
+                "status" => "duplicate",
+                "message" => $fieldNameThai[$field],
+                "field" => $field,
+                "existing_id" => $result['company_id']
+            ]);
+        } else {
+            // ไม่พบข้อมูลซ้ำ
+            echo json_encode([
+                "status" => "available",
+                "message" => "สามารถใช้งานได้",
+                "field" => $field
+            ]);
+        }
+        exit;
+
+    } catch (Exception $e) {
+        echo json_encode([
+            "status" => "error", 
+            "message" => $e->getMessage()
+        ]);
+        exit;
+    }
 }
 
 //ดึง ID จากตาราง users โดยใช้ user_id จาก JWT
