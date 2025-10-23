@@ -80,6 +80,7 @@ if ($method === 'POST' && isset($input['check_duplicate'])) {
         exit;
     }
 }
+
 // ดึง ID ของผู้ใช้จาก JWT
 $stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
 $stmtUser->bindParam(":user_id", $user_id);
@@ -400,6 +401,25 @@ try {
         // เริ่ม Transaction
         $dbh->beginTransaction();
         if (!empty($input['group_user_id'])) {
+            // ตรวจสอบว่ามีการใช้งานในตาราง relation_group หรือไม่
+            $stmtCheckUsage = $dbh->prepare("
+                SELECT COUNT(*) as usage_count 
+                FROM relation_group 
+                WHERE group_user_id = :group_user_id
+            ");
+            $stmtCheckUsage->bindParam(":group_user_id", $input['group_user_id']);
+            $stmtCheckUsage->execute();
+            $usageResult = $stmtCheckUsage->fetch(PDO::FETCH_ASSOC);
+
+            if ($usageResult['usage_count'] > 0) {
+                // ถูกใช้งานอยู่ ไม่สามารถลบได้
+                $dbh->rollBack();
+                echo json_encode([
+                    "status" => "in_use", 
+                    "message" => "ไม่สามารถลบกลุ่มสิทธิ์นี้ได้ เนื่องจากถูกใช้งานอยู่ในชนิดเครื่องมือแพทย์"
+                ]);
+                exit;
+            }
             // ดึงข้อมูล group_user ก่อนลบ
             $stmtOldGroup = $dbh->prepare("SELECT * FROM group_user WHERE group_user_id = :id");
             $stmtOldGroup->bindParam(":id", $input['group_user_id']);
