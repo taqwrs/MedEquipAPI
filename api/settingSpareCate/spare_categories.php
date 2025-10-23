@@ -45,12 +45,52 @@ try {
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode(["status" => "ok", "data" => $results], JSON_UNESCAPED_UNICODE);
 
+    } elseif ($method === 'POST' && isset($input['check_duplicate'])) {
+        // ตรวจสอบชื่อซ้ำ
+        if (empty($input['name'])) {
+            echo json_encode(["status" => "error", "message" => "กรุณากรอกชื่อหมวดหมู่อะไหล่"]);
+            exit;
+        }
+
+        $sql = "SELECT spare_category_id 
+                FROM spare_categories 
+                WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))";
+        
+        if (!empty($input['spare_category_id'])) {
+            // ถ้าเป็น edit ให้ exclude ตัวเอง
+            $sql .= " AND spare_category_id != :id";
+        }
+
+        $stmt = $dbh->prepare($sql);
+        $stmt->bindParam(":name", $input['name']);
+        if (!empty($input['spare_category_id'])) {
+            $stmt->bindParam(":id", $input['spare_category_id']);
+        }
+        $stmt->execute();
+        $exists = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        echo json_encode([
+            "status" => "ok",
+            "duplicate" => $exists ? true : false
+        ]);
+        exit;
+
     } elseif ($method === 'POST') {
         // CREATE
         if (empty($input['name'])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก name"]);
             exit;
         }
+
+        // ตรวจสอบชื่อซ้ำก่อนเพิ่ม
+        $stmtCheck = $dbh->prepare("SELECT spare_category_id FROM spare_categories WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))");
+        $stmtCheck->bindParam(":name", $input['name']);
+        $stmtCheck->execute();
+        if ($stmtCheck->fetch(PDO::FETCH_ASSOC)) {
+            echo json_encode(["status" => "error", "message" => "ชื่อหมวดหมู่อะไหล่นี้มีอยู่แล้ว"]);
+            exit;
+        }
+
         $stmt = $dbh->prepare("INSERT INTO spare_categories (name) VALUES (:name)");
         $stmt->bindParam(":name", $input['name']);
         $stmt->execute();
@@ -60,12 +100,22 @@ try {
         
         $logModel->insertLog($u_id, 'spare_categories', 'INSERT', null, $logData);
 
-        echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
+        echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย", "id" => $newId]);
 
     } elseif ($method === 'PUT') {
         // UPDATE
         if (empty($input['spare_category_id']) || empty($input['name'])) {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก spare_category_id และ name"]);
+            exit;
+        }
+
+        // ตรวจสอบชื่อซ้ำก่อนแก้ไข (ยกเว้นตัวเอง)
+        $stmtCheck = $dbh->prepare("SELECT spare_category_id FROM spare_categories WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND spare_category_id != :id");
+        $stmtCheck->bindParam(":name", $input['name']);
+        $stmtCheck->bindParam(":id", $input['spare_category_id']);
+        $stmtCheck->execute();
+        if ($stmtCheck->fetch(PDO::FETCH_ASSOC)) {
+            echo json_encode(["status" => "error", "message" => "ชื่อหมวดหมู่อะไหล่นี้มีอยู่แล้ว"]);
             exit;
         }
 
