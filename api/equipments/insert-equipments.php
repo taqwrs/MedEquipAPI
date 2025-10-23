@@ -2,11 +2,13 @@
 include "../config/jwt.php";
 include "../config/LogModel.php";
 
+$isJsonRequest = (strpos(strtolower(getenv("CONTENT_TYPE")), 'application/json') !== false);
+$input = $isJsonRequest ? json_decode(file_get_contents('php://input'), true) : $_POST;
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(["status" => "error", "message" => "POST method only"]);
     exit;
 }
-
 try {
     $dbh->beginTransaction();
     $log = new LogModel($dbh);
@@ -14,7 +16,7 @@ try {
     if (!$user_id)
         throw new Exception("User ID not found");
 
-    $requiredFields = ['name', 'asset_code'];
+    $requiredFields = ['name', 'asset_code', 'location_details',];
     $allFields = [
         'name',
         'brand',
@@ -117,24 +119,35 @@ try {
     // --- Relations ---
     foreach ($relations as $relKey => $relConfig) {
         if (!empty($_POST[$relKey])) {
-            $arr = $_POST[$relKey];
-            if (is_string($arr))
-                $arr = json_decode($arr, true);
+            $arr = is_string($_POST[$relKey]) ? json_decode($_POST[$relKey], true) : $_POST[$relKey];
             if (is_array($arr) && isset($arr[0]) && !is_array($arr[0])) {
                 $arr = array_map(fn($id) => [$relConfig['idField'] => $id], $arr);
             }
+
             foreach ($arr as $item) {
                 if (!empty($item[$relConfig['idField']])) {
-                    // --- ก่อน update ดึงค่าเก่าเพื่อ log ---
-                    $stmtCheck = $dbh->prepare("SELECT * FROM {$relConfig['table']} WHERE {$relConfig['idField']}=:id");
-                    $stmtCheck->execute([':id' => $item[$relConfig['idField']]]);
-                    $oldData = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                    $id = $item[$relConfig['idField']];
 
+                    // ดึงค่าเดิมของความสัมพันธ์เฉพาะ field ที่เกี่ยวข้อง
+                    $stmtCheck = $dbh->prepare("SELECT {$relConfig['fk']} FROM {$relConfig['table']} WHERE {$relConfig['idField']}=:id");
+                    $stmtCheck->execute([':id' => $id]);
+                    $oldMain = $stmtCheck->fetchColumn();
+
+                    // อัปเดตค่าใหม่
                     $stmt = $dbh->prepare("UPDATE {$relConfig['table']} 
-                                         SET {$relConfig['fk']}=:main, updated_by=:updated_by, updated_at=NOW() 
-                                         WHERE {$relConfig['idField']}=:id");
-                    $stmt->execute([':main' => $equipId, ':id' => $item[$relConfig['idField']], ':updated_by' => $user_id]);
-                    $log->insertLog($user_id, $relConfig['table'], 'UPDATE', $oldData, ['equipment_id' => $equipId, 'updated_id' => $item[$relConfig['idField']]]);
+                                       SET {$relConfig['fk']}=:main, updated_by=:updated_by, updated_at=NOW() 
+                                       WHERE {$relConfig['idField']}=:id");
+                    $stmt->execute([':main' => $equipId, ':id' => $id, ':updated_by' => $user_id]);
+
+                    // ตรวจว่ามีการย้ายจากอุปกรณ์อื่นหรือไม่
+                    $actionType = ($oldMain && $oldMain != $equipId) ? 'TRANSFER' : 'UPDATE';
+
+                    // Log เฉพาะ field ที่เปลี่ยน
+                    $log->insertLog(
+                        $user_id, $relConfig['table'], $actionType,
+                        [$relConfig['idField'] => $id, $relConfig['fk'] => $oldMain],
+                        [$relConfig['idField'] => $id, $relConfig['fk'] => $equipId]
+                    );
                 }
             }
         }
