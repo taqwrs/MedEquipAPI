@@ -14,30 +14,29 @@ if ($method === 'POST' && isset($input['_method'])) {
     $method = strtoupper($input['_method']);
 }
 
-// ดึง ID ของผู้ใช้จาก JWT
+// ดึง ID จากตาราง users โดยใช้ user_id จาก JWT
 $stmtUser = $dbh->prepare("SELECT ID FROM users WHERE user_id = :user_id LIMIT 1");
 $stmtUser->bindParam(":user_id", $user_id);
 $stmtUser->execute();
 $userData = $stmtUser->fetch(PDO::FETCH_ASSOC);
 $u_id = $userData['ID'] ?? null;
-
 if (!$u_id) {
     echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลผู้ใช้"]);
     exit;
 }
 
+// สร้าง instance ของ LogModel
 $logModel = new LogModel($dbh);
 
 try {
-
     if ($method === 'GET') {
-        // ==== READ ====
+        // ดึงข้อมูลทั้งหมด
         $dataSql = "
             SELECT 
                 c.category_id,
-                c.name AS category_name,
+                c.name as category_name,
                 s.subcategory_id,
-                s.name AS subcategory_name,
+                s.name as subcategory_name,
                 s.type
             FROM equipment_categories c
             LEFT JOIN equipment_subcategories s ON c.category_id = s.category_id
@@ -55,32 +54,31 @@ try {
     } elseif ($method === 'POST') {
         // ==== CREATE ====
         if (empty($input['name'])) {
-            echo json_encode(["status" => "error", "message" => "กรุณากรอกชื่อหมวดหมู่"]);
+            echo json_encode(["status" => "error", "message" => "กรุณากรอก name"]);
             exit;
         }
 
-        // ✅ ตรวจสอบชื่อซ้ำ
-        $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM equipment_categories WHERE LOWER(name) = LOWER(:name)");
-        $stmtCheck->bindParam(":name", $input['name']);
-        $stmtCheck->execute();
-
-        if ($stmtCheck->fetchColumn() > 0) {
-            echo json_encode(["status" => "error", "message" => "ชื่อหมวดหมู่นี้มีอยู่แล้ว"]);
-            exit;
-        }
-
-        // เพิ่มข้อมูล
         $stmt = $dbh->prepare("INSERT INTO equipment_categories (name) VALUES (:name)");
         $stmt->bindParam(":name", $input['name']);
         $stmt->execute();
-
+        
         $newCategoryId = $dbh->lastInsertId();
 
-        // Log
-        $logModel->insertLog($u_id, 'equipment_categories', 'INSERT', null, [
+        $logData = $input;
+        unset($logData['_method']);
+        $logData = [
             'category_id' => $newCategoryId,
             'name' => $input['name']
-        ]);
+        ];
+
+        // บันทึก log การ INSERT
+        $logModel->insertLog(
+            $u_id,
+            'equipment_categories',
+            'INSERT',
+            null,
+            $logData
+        );
 
         echo json_encode(["status" => "ok", "message" => "เพิ่มข้อมูลเรียบร้อย"]);
 
@@ -91,38 +89,29 @@ try {
             exit;
         }
 
-        // ✅ ตรวจสอบชื่อซ้ำ (ยกเว้นตัวเอง)
-        $stmtCheck = $dbh->prepare("
-            SELECT COUNT(*) FROM equipment_categories 
-            WHERE LOWER(name) = LOWER(:name) AND category_id != :id
-        ");
-        $stmtCheck->execute([
-            ":name" => $input['name'],
-            ":id" => $input['category_id']
-        ]);
-
-        if ($stmtCheck->fetchColumn() > 0) {
-            echo json_encode(["status" => "error", "message" => "ชื่อหมวดหมู่นี้มีอยู่แล้ว"]);
-            exit;
-        }
-
-        // ดึงข้อมูลเดิม
+        // ดึงข้อมูลเดิมก่อน update
         $stmtOld = $dbh->prepare("SELECT * FROM equipment_categories WHERE category_id = :id");
         $stmtOld->bindParam(":id", $input['category_id']);
         $stmtOld->execute();
         $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
-        // อัปเดต
         $stmt = $dbh->prepare("UPDATE equipment_categories SET name = :name WHERE category_id = :id");
         $stmt->bindParam(":name", $input['name']);
         $stmt->bindParam(":id", $input['category_id']);
         $stmt->execute();
 
-        // Log
-        $logModel->insertLog($u_id, 'equipment_categories', 'UPDATE', $oldData, [
-            'category_id' => $input['category_id'],
-            'name' => $input['name']
-        ]);
+        // เตรียมข้อมูลสำหรับ log (ไม่เก็บ _method)
+        $logData = $input;
+        unset($logData['_method']);
+
+        // บันทึก log การ UPDATE
+        $logModel->insertLog(
+            $u_id,
+            'equipment_categories',
+            'UPDATE',
+            $oldData,
+            $logData
+        );
 
         echo json_encode(["status" => "ok", "message" => "แก้ไขข้อมูลเรียบร้อย"]);
 
@@ -133,6 +122,7 @@ try {
             exit;
         }
 
+        // ดึงข้อมูลก่อนลบ
         $stmtOld = $dbh->prepare("SELECT * FROM equipment_categories WHERE category_id = :id");
         $stmtOld->bindParam(":id", $input['category_id']);
         $stmtOld->execute();
@@ -142,7 +132,18 @@ try {
         $stmt->bindParam(":id", $input['category_id']);
         $stmt->execute();
 
-        $logModel->insertLog($u_id, 'equipment_categories', 'DELETE', $oldData, null);
+        // เตรียมข้อมูลสำหรับ log (ไม่เก็บ _method)
+        $logData = $input;
+        unset($logData['_method']);
+
+        // บันทึก log การ DELETE
+        $logModel->insertLog(
+            $u_id,
+            'equipment_categories',
+            'DELETE',
+            $oldData,
+            null
+        );
 
         echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
 
