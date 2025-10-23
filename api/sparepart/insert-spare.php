@@ -86,7 +86,7 @@ try {
         $start = new DateTime($input['start_date']);
         $end = new DateTime($input['end_date']);
         if ($end < $start) {
-            throw new Exception("วันที่สิ้นสุดสัญญาต้องไม่น้อยกว่าวันที่เริ่มต้น");
+            throw new Exception("วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น");
         }
         $input['warranty_duration_days'] = $start->diff($end)->days;
     } else
