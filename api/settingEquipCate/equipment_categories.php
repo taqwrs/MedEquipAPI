@@ -133,18 +133,57 @@ try {
             exit;
         }
 
-        $stmtOld = $dbh->prepare("SELECT * FROM equipment_categories WHERE category_id = :id");
-        $stmtOld->bindParam(":id", $input['category_id']);
-        $stmtOld->execute();
-        $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+        $dbh->beginTransaction();
 
-        $stmt = $dbh->prepare("DELETE FROM equipment_categories WHERE category_id = :id");
-        $stmt->bindParam(":id", $input['category_id']);
-        $stmt->execute();
+        try {
+            // ✅ ตรวจสอบว่ามีการใช้งานใน equipment_subcategories หรือไม่
+            $stmtCheck = $dbh->prepare("
+                SELECT COUNT(*) as count
+                FROM equipment_subcategories 
+                WHERE category_id = :id
+            ");
+            $stmtCheck->bindParam(":id", $input['category_id']);
+            $stmtCheck->execute();
+            $result = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
-        $logModel->insertLog($u_id, 'equipment_categories', 'DELETE', $oldData, null);
+            if ($result['count'] > 0) {
+                // ถ้ามีการใช้งาน ห้ามลบ
+                $dbh->rollBack();
+                echo json_encode([
+                    "status" => "error",
+                    "message" => "ไม่สามารถลบหมวดหมู่เครื่องมือได้เนื่องจากมีชนิดเครื่องมือ " . $result['count'] . " รายการที่ใช้งานอยู่",
+                    "subcategory_count" => $result['count']
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
 
-        echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
+            // ดึงข้อมูลเดิมสำหรับ log
+            $stmtOld = $dbh->prepare("SELECT * FROM equipment_categories WHERE category_id = :id");
+            $stmtOld->bindParam(":id", $input['category_id']);
+            $stmtOld->execute();
+            $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+            if (!$oldData) {
+                $dbh->rollBack();
+                echo json_encode(["status" => "error", "message" => "ไม่พบข้อมูลหมวดหมู่"]);
+                exit;
+            }
+
+            // ลบข้อมูล
+            $stmt = $dbh->prepare("DELETE FROM equipment_categories WHERE category_id = :id");
+            $stmt->bindParam(":id", $input['category_id']);
+            $stmt->execute();
+
+            // Log
+            $logModel->insertLog($u_id, 'equipment_categories', 'DELETE', $oldData, null);
+
+            $dbh->commit();
+
+            echo json_encode(["status" => "ok", "message" => "ลบข้อมูลเรียบร้อย"]);
+        } catch (Exception $e) {
+            $dbh->rollBack();
+            throw $e;
+        }
 
     } else {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
