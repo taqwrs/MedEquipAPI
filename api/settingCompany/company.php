@@ -214,6 +214,51 @@ try {
             exit;
         }
 
+        // ตรวจสอบการใช้งานใน equipments (manufacturer, supplier, maintainer)
+        $stmtCheckEquip = $dbh->prepare("
+            SELECT COUNT(*) as usage_count 
+            FROM equipments 
+            WHERE manufacturer_company_id = :company_id 
+               OR supplier_company_id = :company_id 
+               OR maintainer_company_id = :company_id
+        ");
+        $stmtCheckEquip->bindParam(":company_id", $input['company_id']);
+        $stmtCheckEquip->execute();
+        $equipUsage = $stmtCheckEquip->fetch(PDO::FETCH_ASSOC);
+
+        // ตรวจสอบการใช้งานใน calibration_plans
+        $stmtCheckCal = $dbh->prepare("
+            SELECT COUNT(*) as usage_count 
+            FROM calibration_plans 
+            WHERE company_id = :company_id
+        ");
+        $stmtCheckCal->bindParam(":company_id", $input['company_id']);
+        $stmtCheckCal->execute();
+        $calUsage = $stmtCheckCal->fetch(PDO::FETCH_ASSOC);
+
+        // ตรวจสอบการใช้งานใน maintenance_plans
+        $stmtCheckMain = $dbh->prepare("
+            SELECT COUNT(*) as usage_count 
+            FROM maintenance_plans 
+            WHERE company_id = :company_id
+        ");
+        $stmtCheckMain->bindParam(":company_id", $input['company_id']);
+        $stmtCheckMain->execute();
+        $mainUsage = $stmtCheckMain->fetch(PDO::FETCH_ASSOC);
+
+        // รวมจำนวนการใช้งานทั้งหมด
+        $totalUsage = $equipUsage['usage_count'] + $calUsage['usage_count'] + $mainUsage['usage_count'];
+
+        if ($totalUsage > 0) {
+            // ถูกใช้งานอยู่ ไม่สามารถลบได้
+            echo json_encode([
+                "status" => "error",
+                "message" => "ไม่สามารถลบข้อมูลบริษัทนี้ได้เนื่องจากถูกใช้งานอยู่ {$totalUsage} รายการ",
+                "usage_count" => $totalUsage
+            ]);
+            exit;
+        }
+
         // ดึงข้อมูลก่อนลบ
         $stmtOld = $dbh->prepare("SELECT * FROM companies WHERE company_id = :id");
         $stmtOld->bindParam(":id", $input['company_id']);
