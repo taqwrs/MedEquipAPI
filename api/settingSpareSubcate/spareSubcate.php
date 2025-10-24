@@ -189,7 +189,27 @@ try {
         $dbh->beginTransaction();
 
         try {
-            // ดึงข้อมูลก่อนลบ
+            // 🔹 ตรวจสอบว่ามีการใช้งานใน spare_parts หรือไม่
+            $stmtCheckUse = $dbh->prepare("
+                SELECT COUNT(*) AS cnt 
+                FROM spare_parts 
+                WHERE spare_subcategory_id = :id
+            ");
+            $stmtCheckUse->bindParam(":id", $input['spare_subcategory_id']);
+            $stmtCheckUse->execute();
+            $useCheck = $stmtCheckUse->fetch(PDO::FETCH_ASSOC);
+            $count = $useCheck['cnt'] ?? 0;
+
+            if ($count > 0) {
+                echo json_encode([
+                    "status" => "error",
+                    "message" => "ไม่สามารถลบชนิดอะไหล่ได้เนื่องจากถูกใช้กับอะไหล่ {$count} รายการ"
+                ], JSON_UNESCAPED_UNICODE);
+                $dbh->rollBack();
+                exit;
+            }
+
+            // 🔹 ดึงข้อมูลก่อนลบ
             $stmtOld = $dbh->prepare("SELECT * FROM spare_subcategories WHERE spare_subcategory_id = :id");
             $stmtOld->bindParam(":id", $input['spare_subcategory_id']);
             $stmtOld->execute();
@@ -201,11 +221,12 @@ try {
                 exit;
             }
 
-            // ลบข้อมูล
+            // 🔹 ลบข้อมูล
             $stmt = $dbh->prepare("DELETE FROM spare_subcategories WHERE spare_subcategory_id = :id");
             $stmt->bindParam(":id", $input['spare_subcategory_id']);
             $stmt->execute();
 
+            // 🔹 Log การลบ
             $logModel->insertLog($u_id, 'spare_subcategories', 'DELETE', $oldData, null);
 
             $dbh->commit();
@@ -216,6 +237,7 @@ try {
             $dbh->rollBack();
             throw $e;
         }
+
 
     } else {
         echo json_encode(["status" => "error", "message" => "Method not allowed"]);
