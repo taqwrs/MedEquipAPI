@@ -141,7 +141,7 @@ try {
             // ถูกใช้งานอยู่ ไม่สามารถลบได้
             echo json_encode([
                 "status" => "error",
-                "message" => "ไม่สามารถลบประเภทการแทงจำหน่ายนี้ได้เนื่องจากถูกใช้งานอยู่ {usage_count} รายการ",
+                "message" => "ไม่สามารถลบประเภทการแทงจำหน่ายนี้ได้เนื่องจากถูกใช้งานอยู่" . $usageResult['usage_count'] ." รายการ",
                 "usage_count" => $usageResult['usage_count']
             ]);
             exit;

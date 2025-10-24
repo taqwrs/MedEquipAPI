@@ -141,6 +141,27 @@ try {
             throw new Exception("กรุณากรอก repair_type_id");
         }
 
+        // ตรวจสอบว่ามีการใช้งานในตาราง repair หรือไม่
+        $stmtCheckUsage = $dbh->prepare("
+            SELECT COUNT(*) as usage_count 
+            FROM repair 
+            WHERE repair_type_id = :repair_type_id
+        ");
+        $stmtCheckUsage->bindParam(":repair_type_id", $repair_type_id);
+        $stmtCheckUsage->execute();
+        $usageResult = $stmtCheckUsage->fetch(PDO::FETCH_ASSOC);
+
+        if ($usageResult['usage_count'] > 0) {
+            // ถูกใช้งานอยู่ ไม่สามารถลบได้
+            $dbh->rollBack();
+            echo json_encode([
+                "status" => "error",
+                "message" => "ไม่สามารถลบประเภทการแจ้งซ่อมนี้ได้เนื่องจากถูกใช้งานอยู่ " . $usageResult['usage_count'] . " รายการ",
+                "usage_count" => $usageResult['usage_count']
+            ]);
+            exit;
+        }
+
         $stmtOld = $dbh->prepare("SELECT * FROM repair_type WHERE repair_type_id = :id");
         $stmtOld->bindParam(":id", $repair_type_id);
         $stmtOld->execute();
