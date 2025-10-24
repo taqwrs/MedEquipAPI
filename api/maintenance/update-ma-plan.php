@@ -148,10 +148,10 @@ try {
         $intervalCount = $current['interval_count'];
 
     // --- ตรวจชื่อซ้ำ ---
-    $stmtCheckName = $dbh->prepare("SELECT COUNT(*) FROM maintenance_plans WHERE plan_name=:plan_name AND plan_id!=:plan_id");
+    $stmtCheckName = $dbh->prepare("SELECT COUNT(*) FROM maintenance_plans WHERE plan_name=:plan_name AND plan_id!=:plan_id AND is_active = 1");
     $stmtCheckName->execute([':plan_name' => $updateData['plan_name'], ':plan_id' => $input['plan_id']]);
     if ($stmtCheckName->fetchColumn() > 0)
-        throw new Exception("ชื่อแผน");
+        throw new Exception("ชื่อแผนซ้ำ กรุณาเปลี่ยนชื่อแผนใหม่");
     // ตรวจ contract ซ้ำเฉพาะภายในบริษัทเดียว หากมีค่า contract ส่งมา
     if (!empty($updateData['contract'])) {
         $stmtContract = $dbh->prepare("

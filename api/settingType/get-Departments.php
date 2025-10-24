@@ -1,6 +1,6 @@
 <?php
-include "../config/jwt.php"; // DB + JWT
-include "../config/LogModel.php"; // LogModel
+include "../config/jwt.php"; 
+include "../config/LogModel.php";
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -133,16 +133,57 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก department_id"]);
             exit;
         }
+        $id = $input['department_id'];
+        // ตรวจสอบการใช้งานในตาราง equipments
+        $stmtCheckEquipment = $dbh->prepare("
+            SELECT COUNT(*) as count 
+            FROM equipments 
+            WHERE location_department_id = :department_id
+        ");
+        $stmtCheckEquipment->bindParam(":department_id", $id);
+        $stmtCheckEquipment->execute();
+        $equipmentCount = $stmtCheckEquipment->fetch(PDO::FETCH_ASSOC)['count'];
+
+        // ตรวจสอบการใช้งานในตาราง spare_parts
+        $stmtCheckSparePart = $dbh->prepare("
+            SELECT COUNT(*) as count 
+            FROM spare_parts 
+            WHERE location_department_id = :department_id
+        ");
+        $stmtCheckSparePart->bindParam(":department_id", $id);
+        $stmtCheckSparePart->execute();
+        $sparePartCount = $stmtCheckSparePart->fetch(PDO::FETCH_ASSOC)['count'];
+
+        // ตรวจสอบการใช้งานในตาราง users
+        $stmtCheckUser = $dbh->prepare("
+            SELECT COUNT(*) as count 
+            FROM users 
+            WHERE department_id = :department_id
+        ");
+        $stmtCheckUser->bindParam(":department_id", $id);
+        $stmtCheckUser->execute();
+        $userCount = $stmtCheckUser->fetch(PDO::FETCH_ASSOC)['count'];
+
+        $totalUsage = $equipmentCount + $sparePartCount + $userCount;
+        if ($totalUsage > 0) {
+            // ถูกใช้งานอยู่ ไม่สามารถลบได้
+            echo json_encode([
+                "status" => "error",
+                "message" => "ไม่สามารถลบแผนกนี้ได้เนื่องจากถูกใช้งานอยู่ ".$totalUsage ." รายการ",
+                "usage_count" => $totalUsage
+            ]);
+            exit;
+        }
 
         // ดึงข้อมูลก่อนลบ
         $stmtOld = $dbh->prepare("SELECT * FROM departments WHERE department_id = :id");
-        $stmtOld->bindParam(":id", $input['department_id']);
+        $stmtOld->bindParam(":id", $id);
         $stmtOld->execute();
         $oldData = $stmtOld->fetch(PDO::FETCH_ASSOC);
 
         // ลบข้อมูล
         $stmt = $dbh->prepare("DELETE FROM departments WHERE department_id = :id");
-        $stmt->bindParam(":id", $input['department_id']);
+        $stmt->bindParam(":id", $id);
         $stmt->execute();
 
         $logModel->insertLog($u_id, 'departments', 'DELETE', $oldData, null);
