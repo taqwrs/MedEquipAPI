@@ -121,10 +121,10 @@ try {
     $insertData['user_id'] = $user_id;
 
     // ตรวจชื่อซ้ำ
-    $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM maintenance_plans WHERE plan_name = :plan_name");
+    $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM maintenance_plans WHERE plan_name = :plan_name AND is_active = 1");
     $stmtCheck->execute([':plan_name' => $insertData['plan_name']]);
     if ($stmtCheck->fetchColumn() > 0) {
-        echo json_encode(["status" => "error", "message" => "ชื่อแผนซ้ำ"]);
+        echo json_encode(["status" => "error", "message" => "ชื่อแผนซ้ำ กรุณาเปลี่ยนชื่อแผนใหม่"]);
         exit;
     }
     // ตรวจ contract ซ้ำเฉพาะภายในบริษัทเดียว หากมีค่า contract ส่งมา
