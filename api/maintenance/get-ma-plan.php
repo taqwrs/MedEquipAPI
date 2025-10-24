@@ -70,7 +70,9 @@ try {
 
             $additionalParams[':user_id'] = $user_id;
         } else {
-            $groupCondition = "1=0"; // ไม่มีสิทธิ์เลย
+            // ถ้าไม่มีกลุ่มเลย ให้เห็นเฉพาะแผนที่ตัวเองสร้าง
+            $groupCondition = "mp.user_id = :user_id";
+            $additionalParams[':user_id'] = $user_id;
         }
 
         $whereClause .= " AND " . $groupCondition;
