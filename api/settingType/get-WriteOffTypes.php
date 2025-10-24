@@ -128,6 +128,25 @@ try {
 
         $id = $input['writeoff_types_id'];
 
+        $stmtCheckUsage = $dbh->prepare("
+            SELECT COUNT(*) as usage_count 
+            FROM write_offs 
+            WHERE writeoff_types_id = :writeoff_types_id
+        ");
+        $stmtCheckUsage->bindParam(":writeoff_types_id", $id);
+        $stmtCheckUsage->execute();
+        $usageResult = $stmtCheckUsage->fetch(PDO::FETCH_ASSOC);
+
+        if ($usageResult['usage_count'] > 0) {
+            // ถูกใช้งานอยู่ ไม่สามารถลบได้
+            echo json_encode([
+                "status" => "error",
+                "message" => "ไม่สามารถลบประเภทการแทงจำหน่ายนี้ได้เนื่องจากถูกใช้งานอยู่ {usage_count} รายการ",
+                "usage_count" => $usageResult['usage_count']
+            ]);
+            exit;
+        }
+
         // ดึงข้อมูลก่อนลบ
         $stmtOld = $dbh->prepare("SELECT * FROM writeoff_types WHERE writeoff_types_id = :id");
         $stmtOld->bindParam(":id", $id);
