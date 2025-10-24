@@ -87,8 +87,9 @@ try {
     $stmt = $dbh->prepare("INSERT INTO calibration_plans 
     (plan_name, user_id, group_user_id, company_id, frequency_number, frequency_unit, frequency_type, interval_count, contract, start_waranty, start_date, end_date, cost_type, price, type_cal, is_active)
     VALUES (:plan_name, :user_id, :group_user_id, :company_id, :frequency_number, :frequency_unit, :frequency_type, :interval_count, :contract, :start_waranty, :start_date, :end_date, :cost_type, :price, :type_cal, :is_active)");
-    $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM calibration_plans WHERE plan_name = :plan_name");
+    $stmtCheck = $dbh->prepare("SELECT COUNT(*) FROM calibration_plans WHERE plan_name = :plan_name AND is_active = 1");
     $stmtCheck->execute([':plan_name' => $input['plan_name']]);
+
     if ($stmtCheck->fetchColumn() > 0) {
         echo json_encode(["status" => "error", "message" => "ชื่อแผนซ้ำ"]);
         exit;
@@ -135,7 +136,7 @@ try {
         'type_cal' => $input['type_cal'],
         'is_active' => $input['is_active'] ?? 1
     ];
-    
+
     $logModel->insertLog(
         $input['user_id'],
         'calibration_plans',
@@ -153,7 +154,7 @@ try {
             ':plan_id' => $plan_id,
             ':start_date' => $startDate->format('Y-m-d')
         ]);
-        
+
         $detailsData[] = [
             'details_cal_id' => $dbh->lastInsertId(),
             'plan_id' => $plan_id,
@@ -166,13 +167,13 @@ try {
                 ':plan_id' => $plan_id,
                 ':start_date' => $scheduledDate->format('Y-m-d')
             ]);
-            
+
             $detailsData[] = [
                 'details_cal_id' => $dbh->lastInsertId(),
                 'plan_id' => $plan_id,
                 'start_date' => $scheduledDate->format('Y-m-d')
             ];
-            
+
             switch ($intervalUnit) {
                 case 1:
                     $scheduledDate->add(new DateInterval('P' . $intervalNumber . 'D'));
