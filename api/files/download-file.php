@@ -62,13 +62,26 @@ $typeMap = [
         'idCol' => 'file_cal_id',
         'folder' => '/../file-upload/file_cal/'
     ],
-
     'cal_result' => [
         'table' => 'file_cal_result',
         'urlCol' => 'file_cal_url',
         'nameCol' => 'file_cal_name',
         'idCol' => 'file_cal_result_id',
         'folder' => '/../file-upload/file_cal_result/'
+    ],
+    'writeoff' => [
+        'table' => 'file_writeoffs',
+        'urlCol' => 'url',
+        'nameCol' => 'File_name',
+        'idCol' => 'file_writeoffs_id',
+        'folder' => '/../file-upload/writeoffs/'
+    ],
+    'repair' => [
+        'table' => 'file_repair_result',
+        'urlCol' => 'repair_file_url',
+        'nameCol' => 'repair_file_name',
+        'idCol' => 'file_repair_result_id',
+        'folder' => '/../file-upload/repair_results/'
     ],
 ];
 
