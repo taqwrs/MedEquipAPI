@@ -106,6 +106,36 @@ try {
             echo json_encode(["status" => "error", "message" => "กรุณากรอก import_type_id"]);
             exit;
         }
+        // ตรวจสอบในตาราง equipments
+        $stmtCheckEquipment = $dbh->prepare("
+            SELECT COUNT(*) as count 
+            FROM equipments 
+            WHERE import_type_id = :import_type_id
+        ");
+        $stmtCheckEquipment->bindParam(":import_type_id", $input['import_type_id']);
+        $stmtCheckEquipment->execute();
+        $equipmentCount = $stmtCheckEquipment->fetch()['count'];
+
+        // ตรวจสอบในตาราง spare_parts
+        $stmtCheckSparePart = $dbh->prepare("
+            SELECT COUNT(*) as count 
+            FROM spare_parts 
+            WHERE import_type_id = :import_type_id
+        ");
+        $stmtCheckSparePart->bindParam(":import_type_id", $input['import_type_id']);
+        $stmtCheckSparePart->execute();
+        $sparePartCount = $stmtCheckSparePart->fetch()['count'];
+
+        $totalUsage = $equipmentCount + $sparePartCount;
+
+        if ($totalUsage > 0) {
+            echo json_encode([
+                "status" => "error",
+                "message" => "ไม่สามารถลบประเภทการนำเข้านี้ได้เนื่องจากถูกใช้งานอยู่ " . $totalUsage . " รายการ",
+                "usage_count" => $totalUsage
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
 
         $stmtOld = $dbh->prepare("SELECT * FROM import_types WHERE import_type_id = :id");
         $stmtOld->bindParam(":id", $input['import_type_id']);
