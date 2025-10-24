@@ -55,6 +55,21 @@ $typeMap = [
         'idCol' => 'file_ma_result_id',
         'folder' => '/../file-upload/file_ma_result/'
     ],
+    'cal' => [
+        'table' => 'file_cal',
+        'urlCol' => 'file_cal_url', 
+        'nameCol' => 'file_cal_name',
+        'idCol' => 'file_cal_id',
+        'folder' => '/../file-upload/file_cal/'
+    ],
+
+    'cal_result' => [
+        'table' => 'file_cal_result',
+        'urlCol' => 'file_cal_url',
+        'nameCol' => 'file_cal_name',
+        'idCol' => 'file_cal_result_id',
+        'folder' => '/../file-upload/file_cal_result/'
+    ],
 ];
 
 if (!isset($typeMap[$type])) {
@@ -90,7 +105,7 @@ error_log("Attempting to fetch file: {$url}");
 // ถ้า URL เป็นไฟล์เว็บ ให้ดาวน์โหลดจาก URL
 if (filter_var($url, FILTER_VALIDATE_URL)) {
     error_log("Detected external URL, fetching: {$url}");
-    
+
     $fileContents = @file_get_contents($url);
     if ($fileContents === false) {
         error_log("Cannot fetch file from URL: {$url}");
