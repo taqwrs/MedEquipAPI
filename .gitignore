@@ -1,6 +1,6 @@
 gitignore_content = """
 # Composer dependencies
-/vendor/
+# /vendor/
 
 # Laravel specific
 /node_modules/

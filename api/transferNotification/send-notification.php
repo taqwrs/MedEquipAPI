@@ -88,7 +88,7 @@ try {
     ];
 
     $targets = getActiveSubscriptions($dbh, $recipient_id);
-    var_dump($targets);
+    // var_dump($targets);
     if (empty($targets)) {
         // echo "aa";
         echo json_encode([
@@ -101,7 +101,7 @@ try {
     }
 $results = [];
     $results = sendPushToTargets($targets, $payload);
-    var_dump("results data:", $results);
+    // var_dump("results data:", $results);
     // 6) จัดการ endpoint ที่ตาย (404/410) -> set inactive
     $toDeactivate = [];
     foreach ($results as $r) {
