@@ -80,8 +80,6 @@ function sendPushToTargets(array $targets, array $payload): array
     return $results;
 }
 try {
-    // $user_id = $decoded->data->ID ?? null;
-    // $regis_user_name = $decoded->data->name ?? 'ผู้ใช้งานไม่ทราบชื่อ';
     $equipment_id = $input->equipment_id;
 
     $stmt = $dbh->prepare("
@@ -122,7 +120,11 @@ try {
         'user_id' => $user_id
     ];
 
-    $targets = getActiveSubscriptions($dbh, $recipient_id);
+    $targets = [];
+    foreach ($recipientsArr as $r) {
+        $targets = array_merge($targets, getActiveSubscriptions($dbh, $r['recipient_id']));
+    }
+
     // var_dump($targets);
     if (empty($targets)) {
         // echo "aa";
