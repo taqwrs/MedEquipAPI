@@ -51,9 +51,13 @@ try {
             e.model,
             et.transfer_id,
             et.transfer_date,
+            et.transfer_user_id,
+            et.recipient_user_id,
             from_dept.department_name AS from_department_name,
             to_dept.department_name AS to_department_name,
-            loc_dept.department_name AS location_department_name
+            loc_dept.department_name AS location_department_name,
+            tu.full_name AS transfer_user_name,
+            recu.full_name AS recipient_user_name           
         FROM users u
         INNER JOIN relation_user ru ON u.ID = ru.u_id
         INNER JOIN group_user gu ON ru.group_user_id = gu.group_user_id 
@@ -62,13 +66,15 @@ try {
         INNER JOIN equipment_transfers et ON et.recipient_user_id = u.ID 
             AND et.transfer_type = 'โอนย้ายชั่วคราว'
             AND et.now_subcategory_id = rg.subcategory_id
+            AND et.status = 0
         INNER JOIN equipments e ON et.equipment_id = e.equipment_id
         INNER JOIN equipment_subcategories es ON et.now_subcategory_id = es.subcategory_id
         LEFT JOIN departments from_dept ON et.from_department_id = from_dept.department_id
         LEFT JOIN departments to_dept ON et.to_department_id = to_dept.department_id
         LEFT JOIN departments loc_dept ON et.location_department_id = loc_dept.department_id
+        LEFT JOIN users tu ON et.transfer_user_id = tu.ID
+        LEFT JOIN users recu ON et.recipient_user_id = recu.ID
         WHERE u.ID = :u_id
-          AND et.status = 0
     ";
 
     if (!empty($search)) {
@@ -106,7 +112,17 @@ try {
     }
     $stmt->execute();
     $equipment_list = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
+        foreach ($equipment_list as &$item) {
+        // fallback ถ้า transfer_user_name หรือ recipient_user_name เป็น null
+        if (!isset($item['transfer_user_name']) || $item['transfer_user_name'] === null) {
+            $item['transfer_user_name'] = 'ผู้โอน';
+        }
+        if (!isset($item['recipient_user_name']) || $item['recipient_user_name'] === null) {
+            $item['recipient_user_name'] = 'ผู้รับ';
+        }
+    }
+    unset($item);
+        
     // Summary (ยังไม่ได้โอนคืน / โอนคืนแล้ว / รวมทั้งหมด)
     $sql_not_returned = "
         SELECT COUNT(equipment_id) AS total_not_returned
