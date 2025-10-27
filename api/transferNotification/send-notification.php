@@ -3,15 +3,22 @@
 // include "../config/config-subs.php"; // ต้องมี VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE
 require '../../vendor/autoload.php';
 $dbh = new PDO('mysql:host=192.168.2.41;dbname=intern_medequipment', 'intern', 'intern@Tsh');
-const VAPID_SUBJECT = 'mailto:thichanontcn33@gmail.com';
-const VAPID_PUBLIC  = 'BAWUaKUGWbR_OVbKirmke2UC8QC5RsrobaEYlUTv6RnEAFvQXT8ZpvJSqJYZLVQ_3icB-QAmuD29RMgrmV7u6_A';
-const VAPID_PRIVATE = '8QqkU-UFjl62MsKzWEzx1kFqtBoimvvEP05d2DK5E2E';
+const VAPID_SUBJECT = 'mailto:surapits@thaksinhospital.com';
+const VAPID_PUBLIC  = 'BLU8U0B0dbsPUjYzjn3wIvyhhxWvWKh2hVCSWhisJacbsMGXv80mMKsBf9XGzSkpENVohwSX06vvd5J1JYLx1cc';
+const VAPID_PRIVATE = 'ITjZ7YXOJYG93JJho-l3z5aTUawifIx9JKeCIsHJB0U';
 
 $input = json_decode(file_get_contents('php://input'));
 
 use Minishlink\WebPush\WebPush;
 use Minishlink\WebPush\Subscription;
 
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    header("Access-Control-Allow-Origin: *");
+    header("Access-Control-Allow-Headers: Content-Type, Authorization");
+    header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+    http_response_code(200);
+    exit;
+}
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(array("status" => "error", "message" => "post method!!!"));
     die();
