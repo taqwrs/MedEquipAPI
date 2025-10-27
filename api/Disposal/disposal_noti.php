@@ -163,7 +163,7 @@ try {
     $payload = [
         'title' => "คำขอแทงจำหน่ายใหม่",
         'body' => "เครื่องมือ: {$equipment_code} - {$equipment_name}\n"  ,
-        'url' => "http://localhost:5173/writeoff",
+        'url' => "http://localhost:5173/disposal",
     ];
 
 
