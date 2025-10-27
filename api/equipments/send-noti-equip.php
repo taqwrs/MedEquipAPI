@@ -82,26 +82,40 @@ function sendPushToTargets(array $targets, array $payload): array
 try {
     $equipment_id = $input->equipment_id;
 
+    // 1. ดึงข้อมูลผู้ลงทะเบียนจาก equipments -> user_id
+    $stmtUser = $dbh->prepare("
+    SELECT u.full_name
+    FROM equipments e
+    JOIN users u ON e.user_id = u.ID
+    WHERE e.equipment_id = :equipment_id
+");
+    $stmtUser->execute([':equipment_id' => $equipment_id]);
+    $regis_user_name = $stmtUser->fetchColumn();
+    if (!$regis_user_name) {
+        $regis_user_name = 'ไม่ทราบชื่อ';
+    }
+
+    // 2. ดึงผู้ดูแลหลัก
     $stmt = $dbh->prepare("
-        SELECT 
-            ru.u_id AS recipient_id,
-            u.full_name AS recipient_name
-        FROM equipments e
-        JOIN relation_group rg ON e.subcategory_id = rg.subcategory_id
-        JOIN group_user gu ON rg.group_user_id = gu.group_user_id
-        JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
-        LEFT JOIN users u ON ru.u_id = u.ID
-        WHERE gu.type = 'ผู้ดูแลหลัก'
-          AND e.equipment_id = :equipment_id
-    ");
-    $stmt->execute(['equipment_id' => $equipment_id]);
+    SELECT 
+        ru.u_id AS recipient_id,
+        u.full_name AS recipient_name
+    FROM equipments e
+    JOIN relation_group rg ON e.subcategory_id = rg.subcategory_id
+    JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+    JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
+    LEFT JOIN users u ON ru.u_id = u.ID
+    WHERE gu.type = 'ผู้ดูแลหลัก'
+      AND e.equipment_id = :equipment_id
+");
+    $stmt->execute([':equipment_id' => $equipment_id]);
     $recipients = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!$recipients) {
         throw new Exception("ไม่พบผู้ดูแลหลักของหมวดหมู่อุปกรณ์นี้");
     }
 
-    // สร้าง array ของ recipients
+    // 3. สร้าง array ของ recipients
     $recipientsArr = array_map(function ($r) {
         return [
             'recipient_id' => $r['recipient_id'],
@@ -109,6 +123,7 @@ try {
         ];
     }, $recipients);
 
+    // 4. สร้าง payload สำหรับ notification
     $payload = [
         'title' => "มีการลงทะเบียนอุปกรณ์ใหม่",
         'body' => "เครื่องมือ: {$input->equipment_code} - {$input->equipment_name}\nจาก: {$regis_user_name}",
