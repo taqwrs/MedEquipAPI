@@ -84,7 +84,7 @@ try {
     // $regis_user_name = $decoded->data->name ?? 'ผู้ใช้งานไม่ทราบชื่อ';
     $equipment_id = $input->equipment_id;
 
-    $stmt = $pdo->prepare("
+    $stmt = $dbh->prepare("
         SELECT 
             ru.u_id AS recipient_id,
             u.full_name AS recipient_name
