@@ -1,11 +1,11 @@
 <?php
-include "../config/jwt.php";
-include "../config/config-subs.php"; // ต้องมี VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE
-// require '../../vendor/autoload.php';
-// $dbh = new PDO('mysql:host=192.168.2.41;dbname=intern_medequipment', 'intern', 'intern@Tsh');
-// const VAPID_SUBJECT = 'mailto:surapits@thaksinhospital.com';
-// const VAPID_PUBLIC = 'BLU8U0B0dbsPUjYzjn3wIvyhhxWvWKh2hVCSWhisJacbsMGXv80mMKsBf9XGzSkpENVohwSX06vvd5J1JYLx1cc';
-// const VAPID_PRIVATE = 'ITjZ7YXOJYG93JJho-l3z5aTUawifIx9JKeCIsHJB0U';
+// include "../config/jwt.php";
+// include "../config/config-subs.php"; // ต้องมี VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE
+require '../../vendor/autoload.php';
+$dbh = new PDO('mysql:host=192.168.2.41;dbname=intern_medequipment', 'intern', 'intern@Tsh');
+const VAPID_SUBJECT = 'mailto:surapits@thaksinhospital.com';
+const VAPID_PUBLIC = 'BLU8U0B0dbsPUjYzjn3wIvyhhxWvWKh2hVCSWhisJacbsMGXv80mMKsBf9XGzSkpENVohwSX06vvd5J1JYLx1cc';
+const VAPID_PRIVATE = 'ITjZ7YXOJYG93JJho-l3z5aTUawifIx9JKeCIsHJB0U';
 
 $input = json_decode(file_get_contents('php://input'));
 
@@ -80,8 +80,8 @@ function sendPushToTargets(array $targets, array $payload): array
     return $results;
 }
 try {
-    $user_id = $decoded->data->ID ?? null;
-    $regis_user_name = $decoded->data->name ?? 'ผู้ใช้งานไม่ทราบชื่อ';
+    // $user_id = $decoded->data->ID ?? null;
+    // $regis_user_name = $decoded->data->name ?? 'ผู้ใช้งานไม่ทราบชื่อ';
     $equipment_id = $input->equipment_id;
 
     $stmt = $pdo->prepare("
