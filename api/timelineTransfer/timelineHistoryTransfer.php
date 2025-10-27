@@ -43,6 +43,7 @@ try {
         ht.transfer_user_id,
         ht.recipient_user_id,
         ht.now_equip_location_department_id,
+        ht.now_equip_location_details,
         tu.full_name AS transfer_user_name,
         tud.department_name AS transfer_user_department,
         ru.full_name AS recipient_user_name,
@@ -88,6 +89,7 @@ try {
             "ผู้รับโอน" => $recipientUser,
             "แผนกผู้รับ" => $row['recipient_user_department'] ?? "-",
             "สถานที่ติดตั้ง" => $row['now_location_name'] ?? "-",
+            "รายละเอียดสถานที่" => $row['now_equip_location_details'] ?? "-",
             "สถานะ" => $status
         ];
     }
