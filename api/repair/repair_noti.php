@@ -166,9 +166,8 @@ try {
         exit;
     }
 
-    // สร้าง payload
     $payload = [
-        'title' => "🔧 งานซ่อมใหม่: {$repair_type_name}",
+        'title' => "งานซ่อมใหม่: {$repair_type_name}",
         'body' => "เครื่องมือ: {$equipment_code} - {$equipment_name}\n" .
                   "หัวข้อ: {$title}\n",
         'url' => "http://localhost:5173/repair",
