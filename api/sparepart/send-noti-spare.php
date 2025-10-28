@@ -80,42 +80,49 @@ function sendPushToTargets(array $targets, array $payload): array
     return $results;
 }
 try {
-    $equipment_id = $input->equipment_id;
+    $spare_part_id = $input->spare_part_id;
 
-    // 1. ดึงข้อมูลผู้ลงทะเบียนจาก equipments -> user_id
-    $stmtUser = $dbh->prepare("
-    SELECT u.full_name
-    FROM equipments e
-    JOIN users u ON e.user_id = u.ID
-    WHERE e.equipment_id = :equipment_id
-");
-    $stmtUser->execute([':equipment_id' => $equipment_id]);
-    $regis_user_name = $stmtUser->fetchColumn();
-    if (!$regis_user_name) {
-        $regis_user_name = 'ไม่ทราบชื่อ';
+    // 1. ดึงข้อมูลอะไหล่
+    $stmtSpare = $dbh->prepare("
+        SELECT * 
+        FROM spare_parts 
+        WHERE spare_part_id = :spare_part_id
+    ");
+    $stmtSpare->execute([':spare_part_id' => $spare_part_id]);
+    $spare = $stmtSpare->fetch(PDO::FETCH_ASSOC);
+    if (!$spare) {
+        throw new Exception("ไม่พบข้อมูลอะไหล่");
     }
 
-    // 2. ดึงผู้ดูแลหลัก
+    // 2. ดึงชื่อผู้ลงทะเบียน
+    $stmtUser = $dbh->prepare("
+        SELECT u.full_name
+        FROM users u
+        WHERE u.ID = :user_id
+    ");
+    $stmtUser->execute([':user_id' => $spare['user_id']]);
+    $regis_user_name = $stmtUser->fetchColumn() ?: 'ไม่ทราบชื่อ';
+
+    // 3. ดึงผู้ดูแลหลักจาก spare_subcategory_id
     $stmt = $dbh->prepare("
-    SELECT 
-        ru.u_id AS recipient_id,
-        u.full_name AS recipient_name
-    FROM equipments e
-    JOIN relation_group rg ON e.subcategory_id = rg.subcategory_id
-    JOIN group_user gu ON rg.group_user_id = gu.group_user_id
-    JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
-    LEFT JOIN users u ON ru.u_id = u.ID
-    WHERE gu.type = 'ผู้ดูแลหลัก'
-      AND e.equipment_id = :equipment_id
-");
-    $stmt->execute([':equipment_id' => $equipment_id]);
+        SELECT 
+            ru.u_id AS recipient_id,
+            u.full_name AS recipient_name
+        FROM relation_group rg
+        JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+        JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
+        LEFT JOIN users u ON ru.u_id = u.ID
+        WHERE gu.type = 'ผู้ดูแลหลัก'
+          AND rg.subcategory_id = :spare_subcategory_id
+    ");
+    $stmt->execute([':spare_subcategory_id' => $spare['spare_subcategory_id']]);
     $recipients = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!$recipients) {
-        throw new Exception("ไม่พบผู้ดูแลหลักของหมวดหมู่อุปกรณ์นี้");
+        throw new Exception("ไม่พบผู้ดูแลหลักของหมวดหมู่อะไหล่");
     }
 
-    // 3. สร้าง array ของ recipients
+    // 4. สร้าง array ของ recipients
     $recipientsArr = array_map(function ($r) {
         return [
             'recipient_id' => $r['recipient_id'],
@@ -123,13 +130,14 @@ try {
         ];
     }, $recipients);
 
-    // 4. สร้าง payload สำหรับ notification
+    // 5. สร้าง payload สำหรับ notification
     $payload = [
-        'title' => "มีการลงทะเบียนอุปกรณ์ใหม่",
-        'body' => "เครื่องมือ: {$input->equipment_code} - {$input->equipment_name}\nจาก: {$regis_user_name}",
+        'title' => "มีการลงทะเบียนอะไหล่ใหม่",
+        'body' => "อะไหล่: {$spare['asset_code']} - {$spare['name']}\nจาก: {$regis_user_name}",
         'url' => "http://localhost:5173/register/",
     ];
 
+    // 6. ดึง subscription ของผู้ดูแลหลัก
     $targets = [];
     foreach ($recipientsArr as $r) {
         $targets = array_merge($targets, getActiveSubscriptions($dbh, $r['recipient_id']));
