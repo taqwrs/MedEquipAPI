@@ -144,7 +144,7 @@ try {
             $payload = [
                 'title' => $messages[$key],
                 'body' => "แผน: {$plan['plan_name']}\nวันที่: " . date('d/m/Y', strtotime($plan['start_date'])),
-                'url' => "http://localhost:5173/maintenance",
+                'url' => "https://medequipment.tsh/maintenance",
             ];
 
             $results = sendPushToTargets($targets, $payload);
