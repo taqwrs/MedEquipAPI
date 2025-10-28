@@ -104,57 +104,51 @@ function deactivateEndpoints(PDO $dbh, array $endpoints): void
 }
 
 try {
-    $today = date('Y-m-d');
-    
-     $sql = "SELECT 
-                mp.plan_id,
-                mp.plan_name,
-                mp.group_user_id,
-                gu.group_name,
-                MIN(dmp.start_date) AS start_date
-            FROM details_maintenance_plans dmp
-            INNER JOIN maintenance_plans mp ON dmp.plan_id = mp.plan_id
-            INNER JOIN group_user gu ON mp.group_user_id = gu.group_user_id
-            WHERE DATE(dmp.start_date) = :today
-              AND mp.is_active = 1
-            GROUP BY mp.plan_id, mp.plan_name, mp.group_user_id, gu.group_name";
-    
-    $stmt = $dbh->prepare($sql);
-    $stmt->execute([':today' => $today]);
-    $plans = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $dates = [
+        'today' => date('Y-m-d'),
+        'future' => date('Y-m-d', strtotime('+3 days'))
+    ];
 
-    if (empty($plans)) {
-        echo json_encode([
-            "success" => true,
-            "message" => "ไม่มีแผนบำรุงรักษาที่ถึงกำหนดวันนี้",
-            "date" => date('d/m/Y'),
-            "notifyResults" => []
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
+    $messages = [
+        'today' => "แจ้งเตือน: แผนการบำรุงรักษาวันนี้!",
+        'future' => "แจ้งเตือน: แผนการบำรุงรักษาที่จะถึงในอีก 3 วัน!"
+    ];
     $allResults = [];
 
-    foreach ($plans as $plan) {
-        $group_user_id = $plan['group_user_id'];
-        $plan_name = $plan['plan_name'];
-        $start_date = date('d/m/Y', strtotime($plan['start_date']));
-        $plan_id = $plan['plan_id'];
-        $group_name = $plan['group_name'];
+    foreach ($dates as $key => $date) {
+        $sql = "SELECT 
+                    mp.plan_id,
+                    mp.plan_name,
+                    mp.group_user_id,
+                    gu.group_name,
+                    MIN(dmp.start_date) AS start_date
+                FROM details_maintenance_plans dmp
+                INNER JOIN maintenance_plans mp ON dmp.plan_id = mp.plan_id
+                INNER JOIN group_user gu ON mp.group_user_id = gu.group_user_id
+                WHERE DATE(dmp.start_date) = :date
+                  AND mp.is_active = 1
+                GROUP BY mp.plan_id, mp.plan_name, mp.group_user_id, gu.group_name";
 
-        $targets = getGroupSubscriptions($dbh, $group_user_id);
+        $stmt = $dbh->prepare($sql);
+        $stmt->execute([':date' => $date]);
+        $plans = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        if (empty($targets)) {
-            continue;
+        if (empty($plans)) {
+            continue; // ไม่มีแผนสำหรับวันนั้นก็ข้าม
         }
 
-        $payload = [
-            'title' => "แจ้งเตือน: แผนการบำรุงรักษาวันนี้!",
-            'body' => "แผน: {$plan_name}\nวันที่: {$start_date}",
-            'url' => "http://localhost:5173/maintenance",
-        ];
-        
-        $results = sendPushToTargets($targets, $payload);
+        foreach ($plans as $plan) {
+            $targets = getGroupSubscriptions($dbh, $plan['group_user_id']);
+            if (empty($targets)) continue;
+
+            $payload = [
+                'title' => $messages[$key],
+                'body' => "แผน: {$plan['plan_name']}\nวันที่: " . date('d/m/Y', strtotime($plan['start_date'])),
+                'url' => "http://localhost:5173/maintenance",
+            ];
+
+            $results = sendPushToTargets($targets, $payload);
+        }
 
         $toDeactivate = [];
         foreach ($results as $r) {
