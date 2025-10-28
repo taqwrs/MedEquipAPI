@@ -103,23 +103,36 @@ try {
     $stmtUser->execute([':user_id' => $spare['user_id']]);
     $regis_user_name = $stmtUser->fetchColumn() ?: 'ไม่ทราบชื่อ';
 
-    // 3. ดึงผู้ดูแลหลักจาก spare_subcategory_id
+    // // 3. ดึงผู้ดูแลหลักจาก spare_subcategory_id
+    // $stmt = $dbh->prepare("
+    //     SELECT 
+    //         ru.u_id AS recipient_id,
+    //         u.full_name AS recipient_name
+    //     FROM relation_group rg
+    //     JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+    //     JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
+    //     LEFT JOIN users u ON ru.u_id = u.ID
+    //     WHERE gu.type = 'ผู้ดูแลหลัก'
+    //       AND rg.subcategory_id = :spare_subcategory_id
+    // ");
+    // $stmt->execute([':spare_subcategory_id' => $spare['spare_subcategory_id']]);
+    // $recipients = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // if (!$recipients) {
+    //     throw new Exception("ไม่พบผู้ดูแลหลักของหมวดหมู่อะไหล่");
+    // }
+
+    // 3. ดึงผู้ดูแลหลักแบบ fallback ไปที่ role_id = 6
     $stmt = $dbh->prepare("
-        SELECT 
-            ru.u_id AS recipient_id,
-            u.full_name AS recipient_name
-        FROM relation_group rg
-        JOIN group_user gu ON rg.group_user_id = gu.group_user_id
-        JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
-        LEFT JOIN users u ON ru.u_id = u.ID
-        WHERE gu.type = 'ผู้ดูแลหลัก'
-          AND rg.subcategory_id = :spare_subcategory_id
+    SELECT ID AS recipient_id, full_name AS recipient_name
+    FROM users
+    WHERE role_id = 6
     ");
-    $stmt->execute([':spare_subcategory_id' => $spare['spare_subcategory_id']]);
+    $stmt->execute();
     $recipients = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!$recipients) {
-        throw new Exception("ไม่พบผู้ดูแลหลักของหมวดหมู่อะไหล่");
+        throw new Exception("ไม่พบผู้ดูแลหลัก (role_id=6)");
     }
 
     // 4. สร้าง array ของ recipients

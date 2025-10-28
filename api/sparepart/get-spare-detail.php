@@ -14,8 +14,10 @@ if (function_exists('apache_request_headers')) {
     $authHeader = $reqHeaders['Authorization'] ?? $reqHeaders['authorization'] ?? null;
 }
 if (!$authHeader) {
-    if (!empty($_SERVER['HTTP_AUTHORIZATION'])) $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
-    elseif (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) $authHeader = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    if (!empty($_SERVER['HTTP_AUTHORIZATION']))
+        $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
+    elseif (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']))
+        $authHeader = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
 }
 if ($authHeader) {
     include "../config/jwt.php"; // optional auth
@@ -31,10 +33,10 @@ $method = $_SERVER['REQUEST_METHOD'];
 $sparePartId = 0;
 
 if ($method === 'GET') {
-    $sparePartId = (int)($_GET['spare_id'] ?? $_GET['spare_part_id'] ?? 0);
+    $sparePartId = (int) ($_GET['spare_id'] ?? $_GET['spare_part_id'] ?? 0);
 } elseif ($method === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true);
-    $sparePartId = (int)($input['spare_id'] ?? $input['spare_part_id'] ?? 0);
+    $sparePartId = (int) ($input['spare_id'] ?? $input['spare_part_id'] ?? 0);
 } else {
     http_response_code(405);
     echo json_encode(["status" => "error", "message" => "Method not allowed"]);
@@ -81,32 +83,32 @@ try {
     LEFT JOIN companies mc ON mc.company_id = sp.manufacturer_company_id
     LEFT JOIN companies scp ON scp.company_id = sp.supplier_company_id
     LEFT JOIN companies cc ON cc.company_id = sp.maintainer_company_id
+    -- equipments ก่อน เพื่อให้ JOIN relation_group ใช้ได้
+    LEFT JOIN equipments e ON e.equipment_id = sp.equipment_id
 
-    -- relation_group สำหรับผู้ใช้งาน
-    LEFT JOIN (
-        SELECT rg.subcategory_id, MIN(rg.group_user_id) AS group_user_id
-        FROM relation_group rg
-        JOIN group_user gu ON gu.group_user_id = rg.group_user_id
-        WHERE gu.type = 'ผู้ใช้งาน'
-        GROUP BY rg.subcategory_id
-    ) rg_user ON rg_user.subcategory_id = sp.spare_subcategory_id
-    LEFT JOIN group_user gu1 ON gu1.group_user_id = rg_user.group_user_id
-
-    -- relation_group สำหรับผู้ดูแลหลัก
+    -- ผู้ใช้งาน (จาก subcategory ของ equipment)
     LEFT JOIN (
         SELECT rg.subcategory_id, MIN(rg.group_user_id) AS group_user_id
         FROM relation_group rg
         JOIN group_user gu ON gu.group_user_id = rg.group_user_id
         WHERE gu.type = 'ผู้ดูแลหลัก'
         GROUP BY rg.subcategory_id
-    ) rg_responsible ON rg_responsible.subcategory_id = sp.spare_subcategory_id
-    LEFT JOIN group_user gu2 ON gu2.group_user_id = rg_responsible.group_user_id
+    ) rg_user ON e.subcategory_id = rg_user.subcategory_id
+    LEFT JOIN group_user gu2 ON gu2.group_user_id = rg_user.group_user_id
+
+    -- ผู้ดูแลหลัก (จาก subcategory ของ equipment)
+    LEFT JOIN (
+        SELECT rg.subcategory_id, MIN(rg.group_user_id) AS group_user_id
+        FROM relation_group rg
+        JOIN group_user gu ON gu.group_user_id = rg.group_user_id
+        WHERE gu.type = 'ผู้ใช้งาน'
+        GROUP BY rg.subcategory_id
+    ) rg_responsible ON e.subcategory_id = rg_responsible.subcategory_id
+    LEFT JOIN group_user gu1 ON gu1.group_user_id = rg_responsible.group_user_id
 
     LEFT JOIN users u1 ON u1.ID = sp.user_id
     LEFT JOIN users u2 ON u2.ID = sp.updated_by
     LEFT JOIN file_spare fs ON fs.spare_part_id = sp.spare_part_id
-    LEFT JOIN equipments e ON e.equipment_id = sp.equipment_id
-
     WHERE sp.spare_part_id = :id
     GROUP BY sp.spare_part_id
     LIMIT 1

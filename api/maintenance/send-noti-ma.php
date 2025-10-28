@@ -106,24 +106,24 @@ function deactivateEndpoints(PDO $dbh, array $endpoints): void
 try {
     $today = date('Y-m-d');
     
-    $sql = "SELECT 
-                dmp.details_ma_id,
-                dmp.plan_id,
-                dmp.start_date,
+     $sql = "SELECT 
+                mp.plan_id,
                 mp.plan_name,
                 mp.group_user_id,
-                gu.group_name
+                gu.group_name,
+                MIN(dmp.start_date) AS start_date
             FROM details_maintenance_plans dmp
             INNER JOIN maintenance_plans mp ON dmp.plan_id = mp.plan_id
             INNER JOIN group_user gu ON mp.group_user_id = gu.group_user_id
             WHERE DATE(dmp.start_date) = :today
-            AND mp.is_active = 1";
+              AND mp.is_active = 1
+            GROUP BY mp.plan_id, mp.plan_name, mp.group_user_id, gu.group_name";
     
     $stmt = $dbh->prepare($sql);
     $stmt->execute([':today' => $today]);
-    $schedules = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $plans = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if (empty($schedules)) {
+    if (empty($plans)) {
         echo json_encode([
             "success" => true,
             "message" => "ไม่มีแผนบำรุงรักษาที่ถึงกำหนดวันนี้",
@@ -135,12 +135,12 @@ try {
 
     $allResults = [];
 
-    foreach ($schedules as $schedule) {
-        $group_user_id = $schedule['group_user_id'];
-        $plan_name = $schedule['plan_name'];
-        $start_date = date('d/m/Y', strtotime($schedule['start_date']));
-        $plan_id = $schedule['plan_id'];
-        $group_name = $schedule['group_name'];
+    foreach ($plans as $plan) {
+        $group_user_id = $plan['group_user_id'];
+        $plan_name = $plan['plan_name'];
+        $start_date = date('d/m/Y', strtotime($plan['start_date']));
+        $plan_id = $plan['plan_id'];
+        $group_name = $plan['group_name'];
 
         $targets = getGroupSubscriptions($dbh, $group_user_id);
 
