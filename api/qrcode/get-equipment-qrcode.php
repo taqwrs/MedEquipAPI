@@ -42,7 +42,7 @@ try {
     }
 
     // URL สำหรับสแกน
-    $frontendBaseUrl = "http://localhost:5173"; // เปลี่ยนเป็น https://yourdomain.com เมื่อ deploy จริง
+    $frontendBaseUrl = "https://medequipment.tsh"; // เปลี่ยนเป็น https://yourdomain.com เมื่อ deploy จริง
     $qrData = "{$frontendBaseUrl}/qr-detail/{$equipmentId}?type=equipment";
     // $qrData = "https://yourserver/equipment-detail.php?id=".$equipmentId;
 

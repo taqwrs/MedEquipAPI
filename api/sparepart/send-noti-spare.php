@@ -147,7 +147,7 @@ try {
     $payload = [
         'title' => "มีการลงทะเบียนอะไหล่ใหม่",
         'body' => "อะไหล่: {$spare['asset_code']} - {$spare['name']}\nจาก: {$regis_user_name}",
-        'url' => "http://localhost:5173/register/",
+        'url' => "https://medequipment.tsh/register/",
     ];
 
     // 6. ดึง subscription ของผู้ดูแลหลัก
