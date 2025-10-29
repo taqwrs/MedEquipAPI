@@ -15,24 +15,36 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 try {
     $equipmentId = isset($_GET['equipment_id']) ? intval($_GET['equipment_id']) : null;
 
+    // ดึง spare_subcategory_id ที่เชื่อมกับเครื่องมือนั้นๆ
     $sql = "
-        SELECT
+        SELECT DISTINCT
             s.spare_part_id,
             s.equipment_id,
             s.name AS name,
             s.asset_code AS asset_code,
-            e.name AS equipment_name
+            s.spare_subcategory_id,
+            sc.name AS subcategory_name,
+            e.name AS equipment_name,
+            e.asset_code AS equipment_asset_code
         FROM spare_parts s
         LEFT JOIN equipments e ON s.equipment_id = e.equipment_id
-        WHERE 1=1
+        LEFT JOIN spare_subcategories sc ON s.spare_subcategory_id = sc.spare_subcategory_id
+        WHERE s.status = 'คลัง'
     ";
 
     $params = [];
 
     if ($equipmentId) {
-        $sql .= " AND s.equipment_id = :equipment_id";
+        // ดึงอะไหล่ที่มี spare_subcate_id เดียวกันกับเครื่องมือนั้น
+        $sql .= " AND s.spare_subcategory_id IN (
+            SELECT DISTINCT sp.spare_subcategory_id
+            FROM spare_parts sp 
+            WHERE sp.equipment_id = :equipment_id
+        )";
         $params[':equipment_id'] = $equipmentId;
     }
+
+    $sql .= " ORDER BY s.name ASC";
 
     $stmt = $dbh->prepare($sql);
     $stmt->execute($params);
@@ -41,6 +53,7 @@ try {
     echo json_encode([
         "status" => "success",
         "data" => $spareParts,
+        "count" => count($spareParts)
     ]);
 
 } catch (Exception $e) {
