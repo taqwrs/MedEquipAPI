@@ -16,6 +16,23 @@ try {
         exit;
     }
 
+    // ดึง user_id จาก JWT token
+    $u_id = $decoded->data->ID ?? null;
+    if (!$u_id) {
+        echo json_encode(["status" => "error", "message" => "User ID not found in token"]);
+        exit;
+    }
+
+    // ตรวจสอบว่า u_id มีอยู่จริง
+    $checkUser = $dbh->prepare("SELECT ID FROM users WHERE ID = :user_id");
+    $checkUser->bindParam(':user_id', $u_id, PDO::PARAM_INT);
+    $checkUser->execute();
+    
+    if ($checkUser->rowCount() == 0) {
+        echo json_encode(["status" => "error", "message" => "User not found"]);
+        exit;
+    }
+
     $input = json_decode(file_get_contents('php://input'), true);
 
     if (json_last_error() !== JSON_ERROR_NONE) {
@@ -23,22 +40,9 @@ try {
         exit;
     }
 
-    // ตรวจสอบข้อมูลที่จำเป็น
-    $required = ['transfer_id', 'recipient_user_id'];
-    foreach ($required as $field) {
-        if (!isset($input[$field]) || empty($input[$field])) {
-            echo json_encode(["status" => "error", "message" => "Missing required field: $field"]);
-            exit;
-        }
-    }
 
-    // ตรวจสอบว่า recipient_user_id มีอยู่จริง
-    $checkUser = $dbh->prepare("SELECT ID FROM users WHERE ID = :user_id");
-    $checkUser->bindParam(':user_id', $input['recipient_user_id'], PDO::PARAM_INT);
-    $checkUser->execute();
-    
-    if ($checkUser->rowCount() == 0) {
-        echo json_encode(["status" => "error", "message" => "recipient_user_id not found"]);
+    if (!isset($input['transfer_id']) || empty($input['transfer_id'])) {
+        echo json_encode(["status" => "error", "message" => "Missing required field: transfer_id"]);
         exit;
     }
 
@@ -81,7 +85,7 @@ try {
     // เริ่ม transaction
     $dbh->beginTransaction();
 
-    // อัปเดต equipment_transfers: เปลี่ยน status = 1, บันทึก returned_date และ recipient_user_id
+    // อัปเดต equipment_transfers: เปลี่ยน status = 1, บันทึก returned_date และ recipient_user_id (จาก JWT)
     $updateTransfer = $dbh->prepare("
         UPDATE equipment_transfers 
         SET status = 1,
@@ -90,7 +94,7 @@ try {
         WHERE transfer_id = :transfer_id
     ");
     $updateTransfer->bindParam(':returned_date', $now);
-    $updateTransfer->bindParam(':recipient_user_id', $input['recipient_user_id'], PDO::PARAM_INT);
+    $updateTransfer->bindParam(':recipient_user_id', $u_id, PDO::PARAM_INT);
     $updateTransfer->bindParam(':transfer_id', $input['transfer_id'], PDO::PARAM_INT);
 
     if (!$updateTransfer->execute()) {
@@ -101,7 +105,7 @@ try {
 
     // Log การ UPDATE ลงตาราง equipment_transfers
     $log->insertLog(
-        $input['recipient_user_id'],
+        $u_id,
         'equipment_transfers',
         'UPDATE',
         [
@@ -111,7 +115,7 @@ try {
         [
             'status' => 1,
             'returned_date' => $now,
-            'recipient_user_id' => $input['recipient_user_id']
+            'recipient_user_id' => $u_id
         ]
     );
 
@@ -126,7 +130,7 @@ try {
     ");
     $updateEquipLocation->bindParam(':location_department_id', $transfer['from_department_id'], PDO::PARAM_INT);
     $updateEquipLocation->bindParam(':location_details', $transfer['old_equip_location_details']);
-    $updateEquipLocation->bindParam(':updated_by', $input['recipient_user_id'], PDO::PARAM_INT);
+    $updateEquipLocation->bindParam(':updated_by', $u_id, PDO::PARAM_INT);
     $updateEquipLocation->bindParam(':updated_at', $now);
     $updateEquipLocation->bindParam(':equipment_id', $transfer['equipment_id'], PDO::PARAM_INT);
 
@@ -138,7 +142,7 @@ try {
 
     // Log การ UPDATE ลงตาราง equipments
     $log->insertLog(
-        $input['recipient_user_id'],
+        $u_id,
         'equipments',
         'UPDATE',
         [
@@ -148,7 +152,7 @@ try {
         [
             'location_department_id' => $transfer['from_department_id'],
             'location_details' => $transfer['old_equip_location_details'],
-            'updated_by' => $input['recipient_user_id'],
+            'updated_by' => $u_id,
             'updated_at' => $now
         ]
     );
@@ -180,7 +184,7 @@ try {
     $insertHistory->bindParam(':transfer_date', $transfer['transfer_date']);
     $insertHistory->bindParam(':reason', $transfer['reason']);
     $insertHistory->bindParam(':transfer_user_id', $transfer['transfer_user_id'], PDO::PARAM_INT);
-    $insertHistory->bindParam(':recipient_user_id', $input['recipient_user_id'], PDO::PARAM_INT);
+    $insertHistory->bindParam(':recipient_user_id', $u_id, PDO::PARAM_INT);
     $insertHistory->bindParam(':trans_location_department_id', $transfer['location_department_id'], PDO::PARAM_INT);
     $insertHistory->bindParam(':trans_location_details', $transfer['location_details']);
     $insertHistory->bindParam(':now_equip_location_department_id', $transfer['from_department_id'], PDO::PARAM_INT);
@@ -200,13 +204,13 @@ try {
     $dbh->commit();
 
     echo json_encode([
-        "status" => "success",
+        "status" => "ok",
         "message" => "Equipment returned successfully",
         "transfer_id" => (int)$input['transfer_id'],
         "equipment_id" => (int)$transfer['equipment_id'],
         "asset_code" => $transfer['asset_code'],
         "returned_date" => $now,
-        "returned_by" => (int)$input['recipient_user_id'],
+        "returned_by" => (int)$u_id,
         "returned_to_department_id" => (int)$transfer['from_department_id'],
         "returned_to_location_details" => $transfer['old_equip_location_details'],
         "transfer_status" => 1,
