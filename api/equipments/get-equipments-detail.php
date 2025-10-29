@@ -89,7 +89,11 @@ try {
                 'equip_url', f.equip_url,
                 'equip_type_name', f.equip_type_name
             )), ']'), '[]'
-        ) AS filesInfo
+        ) AS filesInfo,
+         CASE 
+        WHEN e.active = 0 THEN DATEDIFF(e.updated_at, e.purchase_date)
+        ELSE DATEDIFF(CURDATE(), e.purchase_date)
+        END AS age_in_days
     FROM equipments e
     LEFT JOIN equipments em ON em.equipment_id = e.main_equipment_id
     LEFT JOIN equipments ce ON ce.main_equipment_id = e.equipment_id

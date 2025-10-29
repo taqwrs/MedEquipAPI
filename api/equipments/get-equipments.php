@@ -56,11 +56,19 @@ SELECT
             'equip_url', f.equip_url,
             'equip_type_name', f.equip_type_name
         )), ']'), '[]'
-    ) AS filesInfo
+    ) AS filesInfo,
+    CASE 
+    WHEN e.active =0 THEN DATEDIFF(e.updated_at, e.purchase_date)
+    ELSE DATEDIFF(CURDATE(), e.purchase_date)
+    END AS age_in_days
 FROM equipments e
 LEFT JOIN equipments em ON em.equipment_id = e.main_equipment_id
-LEFT JOIN equipments ce ON ce.main_equipment_id = e.equipment_id
-LEFT JOIN spare_parts sp ON sp.equipment_id = e.equipment_id
+LEFT JOIN equipments ce 
+  ON ce.main_equipment_id = e.equipment_id 
+  AND ce.active = 1
+LEFT JOIN spare_parts sp 
+  ON sp.equipment_id = e.equipment_id 
+  AND sp.status IN ('ใช้งาน', 'คลัง')
 LEFT JOIN file_equip f ON f.equipment_id = e.equipment_id
 LEFT JOIN import_types it ON it.import_type_id = e.import_type_id
 LEFT JOIN equipment_subcategories sc ON sc.subcategory_id = e.subcategory_id
