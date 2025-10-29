@@ -44,6 +44,7 @@ try {
         'details',
         'status',
         'active',
+        'purchase_date',
         'first_register'
     ];
 
@@ -135,7 +136,9 @@ try {
 
                     // อัปเดตค่าใหม่
                     $stmt = $dbh->prepare("UPDATE {$relConfig['table']} 
-                                       SET {$relConfig['fk']}=:main, updated_by=:updated_by, updated_at=NOW() 
+                                       SET {$relConfig['fk']}=:main, 
+                                       status = CASE WHEN status='คลัง' THEN 'ใช้งาน' ELSE status END,
+                                       updated_by=:updated_by, updated_at=NOW() 
                                        WHERE {$relConfig['idField']}=:id");
                     $stmt->execute([':main' => $equipId, ':id' => $id, ':updated_by' => $user_id]);
 
