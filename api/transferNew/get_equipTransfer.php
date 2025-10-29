@@ -84,6 +84,13 @@ try {
                 )
             )
         )
+        -- เงื่อนไขเพิ่มเติม: equipment_id ต้องไม่อยู่ใน equipment_transfers ที่ status = 0
+        AND NOT EXISTS (
+            SELECT 1
+            FROM equipment_transfers et
+            WHERE et.equipment_id = e.equipment_id
+            AND et.status = 0
+        )
         $searchWhere
     ";
 
@@ -107,7 +114,6 @@ try {
             e.location_details,
             d.department_name as location_department_name,
             e.updated_at,
-            
             -- ตรวจสอบว่าเป็นผู้ดูแลหลักหรือไม่
             EXISTS (
                 SELECT 1
@@ -118,7 +124,6 @@ try {
                 AND ru1.u_id = :u_id 
                 AND gu1.type = 'ผู้ดูแลหลัก'
             ) as is_main_admin,
-
             -- ตรวจสอบว่าอยู่ในแผนกและไม่มีผู้ดูแลหรือไม่
             -- ต้องมี location_department_id = user.department_id ด้วย
             (
