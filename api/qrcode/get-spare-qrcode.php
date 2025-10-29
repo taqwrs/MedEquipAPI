@@ -30,7 +30,7 @@ try {
     }
 
     // URL สำหรับสแกนมือถือ
-    $frontendBaseUrl = "http://localhost:5173"; // เปลี่ยนเป็น https://yourdomain.com เมื่อ deploy จริง
+    $frontendBaseUrl = "https://medequipment.tsh"; // เปลี่ยนเป็น https://yourdomain.com เมื่อ deploy จริง
     $qrData = "{$frontendBaseUrl}/qr-detail/{$sparePartId}?type=spare";
     // $qrData = "https://yourserver/spare-detail.php?id=".$sparePartId;
 
