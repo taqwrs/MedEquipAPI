@@ -108,7 +108,7 @@ try {
 
 
     $query = "
-        SELECT cp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,
+        SELECT cp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,c.phone,
                COUNT(DISTINCT dcp.details_cal_id) AS total_schedules
         FROM calibration_plans cp
         LEFT JOIN users u ON cp.user_id = u.ID
@@ -129,7 +129,7 @@ try {
         $whereSQL
     ";
 
-    // ✅ นับจำนวนทั้งหมด
+
     $countStmt = $dbh->prepare($countQuery);
     foreach ($params as $k => $v) {
         $countStmt->bindValue($k, $v, is_int($v) ? PDO::PARAM_INT : PDO::PARAM_STR);
@@ -143,7 +143,6 @@ try {
         $params[':offset'] = $offset;
     }
 
-    // ✅ ดึงข้อมูลแผน
     $stmt = $dbh->prepare($query);
     foreach ($params as $k => $v) {
         if ($k === ':limit' || $k === ':offset') {
