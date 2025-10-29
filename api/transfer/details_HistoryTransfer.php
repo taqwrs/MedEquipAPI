@@ -46,8 +46,6 @@ try {
         ht.updated_at,
         ht.now_equip_location_department_id,
         ht.now_equip_location_details,
-        ht.old_subcategory_id,
-        ht.new_subcategory_id,
         ht.now_subcategory_id,
         ht.status_transfer,
         e.name AS equipment_name,
@@ -70,7 +68,7 @@ try {
     LEFT JOIN departments d_from ON ht.from_department_id = d_from.department_id
     LEFT JOIN departments d_to ON ht.to_department_id = d_to.department_id
     LEFT JOIN departments d_now_location ON ht.now_equip_location_department_id = d_now_location.department_id
-    LEFT JOIN equipment_subcategories sc_old ON ht.old_subcategory_id = sc_old.subcategory_id 
+    LEFT JOIN equipment_subcategories sc_old ON ht.now_subcategory_id = sc_old.subcategory_id 
                                                 AND ht.transfer_type = 'โอนย้ายชั่วคราว'
     LEFT JOIN equipment_subcategories sc_now ON ht.now_subcategory_id = sc_now.subcategory_id 
                                                 AND ht.transfer_type = 'โอนย้ายถาวร'
@@ -89,7 +87,7 @@ try {
     foreach ($rows as $history) {
         $subcategory_id = null;
         if ($history['transfer_type'] === 'โอนย้ายชั่วคราว') {
-            $subcategory_id = $history['old_subcategory_id'];
+            $subcategory_id = $history['now_subcategory_id'];
         } elseif ($history['transfer_type'] === 'โอนย้ายถาวร') {
             $subcategory_id = $history['now_subcategory_id'];
         }
