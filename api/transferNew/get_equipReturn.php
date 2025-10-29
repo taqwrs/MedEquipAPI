@@ -1,5 +1,5 @@
 <?php
-// API สำหรับดึงข้อมูลเครื่องมือที่จะโอนคืน
+
 include "../config/jwt.php"; 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -153,9 +153,24 @@ try {
         ];
     }
         
-    // Summary (จำนวนเครื่องมือที่รอโอนคืนในแผนกนี้)
-    $sql_summary = "
-        SELECT COUNT(et.equipment_id) AS total_waiting_return
+    // Summary - 1. เครื่องที่ได้รับโอนชั่วคราวทั้งหมด
+    $sql_total_temp = "
+        SELECT COUNT(DISTINCT et.equipment_id) AS total_temp_transfer
+        FROM equipment_transfers et
+        INNER JOIN users u ON u.department_id = et.to_department_id
+        WHERE et.transfer_type = 'โอนย้ายชั่วคราว'
+          AND et.to_department_id = :user_department_id
+          AND u.ID = :u_id
+    ";
+    $stmtTotalTemp = $dbh->prepare($sql_total_temp);
+    $stmtTotalTemp->bindParam(':u_id', $u_id, PDO::PARAM_INT);
+    $stmtTotalTemp->bindParam(':user_department_id', $user_department_id, PDO::PARAM_INT);
+    $stmtTotalTemp->execute();
+    $resTotalTemp = $stmtTotalTemp->fetch(PDO::FETCH_ASSOC);
+
+    // Summary - 2. เครื่องมือที่ยังไม่ได้คืน (status = 0)
+    $sql_not_returned = "
+        SELECT COUNT(et.equipment_id) AS total_not_returned
         FROM equipment_transfers et
         INNER JOIN users u ON u.department_id = et.to_department_id
         WHERE et.transfer_type = 'โอนย้ายชั่วคราว'
@@ -163,11 +178,27 @@ try {
           AND et.status = 0
           AND u.ID = :u_id
     ";
-    $stmtSummary = $dbh->prepare($sql_summary);
-    $stmtSummary->bindParam(':u_id', $u_id, PDO::PARAM_INT);
-    $stmtSummary->bindParam(':user_department_id', $user_department_id, PDO::PARAM_INT);
-    $stmtSummary->execute();
-    $resSummary = $stmtSummary->fetch(PDO::FETCH_ASSOC);
+    $stmtNotReturned = $dbh->prepare($sql_not_returned);
+    $stmtNotReturned->bindParam(':u_id', $u_id, PDO::PARAM_INT);
+    $stmtNotReturned->bindParam(':user_department_id', $user_department_id, PDO::PARAM_INT);
+    $stmtNotReturned->execute();
+    $resNotReturned = $stmtNotReturned->fetch(PDO::FETCH_ASSOC);
+
+    // Summary - 3. เครื่องมือที่โอนคืนแล้ว (status = 1)
+    $sql_returned = "
+        SELECT COUNT(et.equipment_id) AS total_returned
+        FROM equipment_transfers et
+        INNER JOIN users u ON u.department_id = et.to_department_id
+        WHERE et.transfer_type = 'โอนย้ายชั่วคราว'
+          AND et.to_department_id = :user_department_id
+          AND et.status = 1
+          AND u.ID = :u_id
+    ";
+    $stmtReturned = $dbh->prepare($sql_returned);
+    $stmtReturned->bindParam(':u_id', $u_id, PDO::PARAM_INT);
+    $stmtReturned->bindParam(':user_department_id', $user_department_id, PDO::PARAM_INT);
+    $stmtReturned->execute();
+    $resReturned = $stmtReturned->fetch(PDO::FETCH_ASSOC);
 
     // ส่งผลลัพธ์
     $response = [
@@ -179,7 +210,9 @@ try {
             'department_id' => $user_department_id ? (int)$user_department_id : null,
             'equipment_list' => $equipment_list,
             'summary' => [
-                'total_waiting_return' => (int)$resSummary['total_waiting_return']
+                'total_temp_transfer' => (int)$resTotalTemp['total_temp_transfer'],
+                'not_returned' => (int)$resNotReturned['total_not_returned'],
+                'returned' => (int)$resReturned['total_returned']
             ]
         ],
         'pagination' => [
