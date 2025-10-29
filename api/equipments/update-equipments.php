@@ -2,11 +2,7 @@
 include "../config/jwt.php";
 include "../config/LogModel.php";
 
-// ==================== Helper Functions ====================
-
-/**
- * คำนวณระยะเวลา Warranty (จำนวนวัน)
- */
+/* คำนวณระยะเวลา Warranty (จำนวนวัน)*/
 function calculateWarrantyDays($startDate, $endDate) {
     if (empty($startDate) || empty($endDate)) {
         return null;
@@ -22,9 +18,7 @@ function calculateWarrantyDays($startDate, $endDate) {
     return $start->diff($end)->days;
 }
 
-/**
- * ตรวจสอบ Asset Code ซ้ำ
- */
+/* ตรวจสอบ Asset Code ซ้ำ */
 function validateAssetCode($dbh, $assetCode, $equipmentId, $currentAssetCode) {
     if (empty($assetCode) || $assetCode === $currentAssetCode) {
         return true;
@@ -44,18 +38,14 @@ function validateAssetCode($dbh, $assetCode, $equipmentId, $currentAssetCode) {
     return true;
 }
 
-/**
- * ดึงข้อมูลอุปกรณ์เดิม
- */
+/* ดึงข้อมูลอุปกรณ์เดิม */
 function getOldEquipmentData($dbh, $equipmentId) {
     $stmt = $dbh->prepare("SELECT * FROM equipments WHERE equipment_id = :id");
     $stmt->execute([':id' => $equipmentId]);
     return $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-/**
- * ดึง ID ของอุปกรณ์ย่อยที่ผูกกับอุปกรณ์หลัก
- */
+/* ดึง ID ของอุปกรณ์ย่อยที่ผูกกับอุปกรณ์หลัก */
 function getChildEquipments($dbh, $mainEquipmentId) {
     $stmt = $dbh->prepare(
         "SELECT equipment_id FROM equipments WHERE main_equipment_id = :main_id"
@@ -64,9 +54,7 @@ function getChildEquipments($dbh, $mainEquipmentId) {
     return $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
 }
 
-/**
- * ดึง ID ของอะไหล่ที่ผูกกับอุปกรณ์
- */
+/* ดึง ID ของอะไหล่ที่ผูกกับอุปกรณ์ */
 function getSpareParts($dbh, $equipmentId) {
     $stmt = $dbh->prepare(
         "SELECT spare_part_id FROM spare_parts WHERE equipment_id = :main_id"
@@ -75,9 +63,7 @@ function getSpareParts($dbh, $equipmentId) {
     return $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
 }
 
-/**
- * สร้าง SET clause และ params สำหรับ UPDATE
- */
+/* สร้าง SET clause และ params สำหรับ UPDATE */
 function buildUpdateParams($fields, $postData, $oldEquipment, $equipmentId) {
     $setParts = [];
     $params = [':equipment_id' => $equipmentId];
@@ -91,7 +77,10 @@ function buildUpdateParams($fields, $postData, $oldEquipment, $equipmentId) {
         if ($field === 'record_status' && $oldEquipment['record_status'] === 'draft') {
             $newValue = 'complete';
         }
-
+        // เปลี่ยนฟิลด์ status ด้วย
+        if ($field === 'status' && $oldEquipment['status'] === 'คลัง') {
+            $newValue = 'ใช้งาน';
+        }
         $setParts[] = "$field = :$field";
         $params[":$field"] = $newValue;
 
@@ -105,9 +94,7 @@ function buildUpdateParams($fields, $postData, $oldEquipment, $equipmentId) {
     return [$setParts, $params, $oldData, $newData];
 }
 
-/**
- * อัปเดตข้อมูลหลักของอุปกรณ์
- */
+/* อัปเดตข้อมูลหลักของอุปกรณ์ */
 function updateMainEquipment($dbh, $equipmentId, $setParts, $params, $updatedBy) {
     if (empty($setParts)) {
         return;
@@ -124,9 +111,7 @@ function updateMainEquipment($dbh, $equipmentId, $setParts, $params, $updatedBy)
     $stmt->execute($params);
 }
 
-/**
- * จัดการการผูกอุปกรณ์ย่อย
- */
+/* จัดการการผูกอุปกรณ์ย่อย */
 function manageChildEquipments($dbh, $log, $equipmentId, $oldChilds, $newChilds, $updatedBy, $userId) {
     $newChilds = is_array($newChilds) ? $newChilds : [];
 
@@ -161,7 +146,8 @@ function manageChildEquipments($dbh, $log, $equipmentId, $oldChilds, $newChilds,
 
         // update main_equipment_id
         $stmt = $dbh->prepare(
-            "UPDATE equipments SET main_equipment_id = :main_id, 
+            "UPDATE equipments SET main_equipment_id = :main_id,
+            status = CASE WHEN status='คลัง' THEN 'ใช้งาน' ELSE status END,
          updated_by = :updated_by, updated_at = NOW() 
          WHERE equipment_id = :child_id"
         );
@@ -179,9 +165,7 @@ function manageChildEquipments($dbh, $log, $equipmentId, $oldChilds, $newChilds,
     }
 }
 
-/**
- * จัดการการผูกอะไหล่
- */
+/* จัดการการผูกอะไหล่ */
 function manageSpareParts($dbh, $log, $equipmentId, $oldSpares, $newSpares, $updatedBy, $userId) {
     $newSpares = is_array($newSpares) ? $newSpares : [];
 
@@ -204,29 +188,38 @@ function manageSpareParts($dbh, $log, $equipmentId, $oldSpares, $newSpares, $upd
     }
 
     // เพิ่มความสัมพันธ์ใหม่
-    foreach ($addedSpares as $spareId) {
-        $stmtOld = $dbh->prepare(
-            "SELECT equipment_id FROM spare_parts WHERE spare_part_id = :sid"
-        );
-        $stmtOld->execute([':sid' => $spareId]);
-        $oldEquipId = $stmtOld->fetchColumn();
+foreach ($addedSpares as $spareId) {
+    $stmtOld = $dbh->prepare(
+        "SELECT equipment_id, status FROM spare_parts WHERE spare_part_id = :sid"
+    );
+    $stmtOld->execute([':sid' => $spareId]);
+    $oldDataSpare = $stmtOld->fetch(PDO::FETCH_ASSOC);
+    $oldEquipId = $oldDataSpare['equipment_id'];
+    $oldStatus = $oldDataSpare['status'];
 
-        $stmt = $dbh->prepare(
-            "UPDATE spare_parts SET equipment_id = :main_id, 
-             updated_by = :updated_by, updated_at = NOW() 
-             WHERE spare_part_id = :sid"
-        );
-        $stmt->execute([
-            ':main_id' => $equipmentId,
-            ':updated_by' => $updatedBy,
-            ':sid' => $spareId
-        ]);
+    $stmt = $dbh->prepare(
+        "UPDATE spare_parts SET equipment_id = :main_id,
+         status = CASE WHEN status='คลัง' THEN 'ใช้งาน' ELSE status END, 
+         updated_by = :updated_by, updated_at = NOW() 
+         WHERE spare_part_id = :sid"
+    );
+    $stmt->execute([
+        ':main_id' => $equipmentId,
+        ':updated_by' => $updatedBy,
+        ':sid' => $spareId
+    ]);
 
-                $log->insertLog($userId, "spare_parts", "UPDATE",
-            ["spare_part_id" => $spareId, "equipment_id" => $oldEquipId],
-            ["spare_part_id" => $spareId, "equipment_id" => $equipmentId]
-        );
-    }
+    // ดึงค่า status ใหม่หลัง update
+    $stmtNew = $dbh->prepare("SELECT status FROM spare_parts WHERE spare_part_id = :sid");
+    $stmtNew->execute([':sid' => $spareId]);
+    $newStatus = $stmtNew->fetchColumn();
+
+    // log ทั้ง equipment_id และ status
+    $log->insertLog($userId, "spare_parts", "UPDATE",
+        ["spare_part_id" => $spareId, "equipment_id" => $oldEquipId, "status" => $oldStatus],
+        ["spare_part_id" => $spareId, "equipment_id" => $equipmentId, "status" => $newStatus]
+    );
+}
 }
 
 // ==================== Main Process ====================
@@ -265,13 +258,13 @@ try {
     $oldSpares = getSpareParts($dbh, $equipmentId);
 
     // กำหนด Fields ที่สามารถอัปเดตได้
-     $fields = [
-        'name', 'asset_code', 'serial_number', 'brand', 'model',
+    $fields = [
+        'name', 'serial_number', 'brand', 'model',
         'import_type_id', 'subcategory_id', 'location_department_id',
         'manufacturer_company_id', 'supplier_company_id', 'maintainer_company_id',
         'user_id', 'status', 'record_status', 'details', 'first_register',
         'location_details', 'spec', 'production_year', 'price', 'contract',
-        'start_date', 'end_date', 'warranty_condition'
+        'start_date', 'end_date', 'warranty_condition','purchase_date'
     ];
 
     // สร้าง Update Parameters

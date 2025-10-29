@@ -53,6 +53,7 @@ try {
         'status',
         'active',
         'user_id',
+        'purchase_date',
         'updated_by',
         'first_register'
     ];

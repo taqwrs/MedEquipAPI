@@ -75,7 +75,11 @@ try {
                 'spare_url', fs.spare_url,
                 'spare_type_name', fs.spare_type_name
             )), ']'), '[]'
-        ) AS filesInfo
+        ) AS filesInfo,
+         CASE 
+        WHEN sp.status = 'เสีย' THEN DATEDIFF(sp.updated_at, sp.purchase_date)
+        ELSE DATEDIFF(CURDATE(), sp.purchase_date)
+        END AS age_in_days
     FROM spare_parts sp
     LEFT JOIN import_types it ON it.import_type_id = sp.import_type_id
     LEFT JOIN spare_subcategories sc ON sc.spare_subcategory_id = sp.spare_subcategory_id

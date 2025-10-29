@@ -38,10 +38,10 @@ try {
 
     // Fields ที่อนุญาตให้อัปเดต
     $fields = [
-        'name', 'asset_code', 'import_type_id', 'spare_subcategory_id', 'location_department_id',
+        'name', 'import_type_id', 'spare_subcategory_id', 'location_department_id',
         'location_details', 'production_year', 'price', 'contract', 'start_date', 'end_date',
         'warranty_condition', 'maintainer_company_id', 'supplier_company_id', 'manufacturer_company_id',
-        'status', 'record_status', 'spec', 'model', 'brand', 'serial_number', 'details'
+        'status', 'record_status', 'spec', 'model', 'brand', 'serial_number', 'details','purchase_date'
     ];
 
     $setParts = [];
