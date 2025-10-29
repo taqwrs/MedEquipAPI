@@ -127,7 +127,7 @@ try {
     $payload = [
         'title' => "มีการลงทะเบียนอุปกรณ์ใหม่",
         'body' => "เครื่องมือ: {$input->equipment_code} - {$input->equipment_name}\nจาก: {$regis_user_name}",
-        'url' => "http://localhost:5173/register/",
+        'url' => "https://medequipment.tsh/register/",
     ];
 
     $targets = [];

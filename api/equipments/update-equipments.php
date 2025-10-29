@@ -166,7 +166,7 @@ function manageChildEquipments($dbh, $log, $equipmentId, $oldChilds, $newChilds,
 }
 
 /* จัดการการผูกอะไหล่ */
-function manageSpareParts($dbh, $log, $equipmentId, $oldSpares, $newSpares, $updatedBy, $userId) {
+function manageSpareParts($dbh, $log, $equipmentId, $oldSpares, $newSpares, $userId) {
     $newSpares = is_array($newSpares) ? $newSpares : [];
 
     $removedSpares = array_diff($oldSpares, $newSpares);
@@ -179,7 +179,7 @@ function manageSpareParts($dbh, $log, $equipmentId, $oldSpares, $newSpares, $upd
              updated_by = :updated_by, updated_at = NOW() 
              WHERE spare_part_id = :sid"
         );
-        $stmt->execute([':updated_by' => $updatedBy, ':sid' => $spareId]);
+        $stmt->execute([':updated_by' => $userId, ':sid' => $spareId]);
 
                 $log->insertLog($userId, "spare_parts", "UPDATE",
             ["spare_part_id" => $spareId, "equipment_id" => $equipmentId],
@@ -205,7 +205,7 @@ foreach ($addedSpares as $spareId) {
     );
     $stmt->execute([
         ':main_id' => $equipmentId,
-        ':updated_by' => $updatedBy,
+        ':updated_by' => $userId,
         ':sid' => $spareId
     ]);
 
@@ -247,7 +247,6 @@ try {
     $dbh->beginTransaction();
     $log = new LogModel($dbh);
     $userId = $decoded->data->ID ?? null;
-
     if (!$userId) {
         throw new Exception("User ID not found");
     }
@@ -308,7 +307,7 @@ try {
     $newSpares = !empty($_POST['spare_parts'])
         ? json_decode($_POST['spare_parts'], true)
         : [];
-    manageSpareParts($dbh, $log, $equipmentId, $oldSpares, $newSpares, $updatedBy, $userId);
+    manageSpareParts($dbh, $log, $equipmentId, $oldSpares, $newSpares, $userId );
 
     // บันทึก Log สำหรับอุปกรณ์หลัก (ถ้ามีการเปลี่ยนแปลง)
     if ($oldData !== $newData && count($oldData) > 1) {
