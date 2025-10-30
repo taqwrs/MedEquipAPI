@@ -27,6 +27,7 @@ try {
         'rejected' => 'ไม่อนุมัติ',
     ];
 
+    // ดึง role_id
     $role_id = 0;
     if ($user_id !== '') {
         $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE ID = :user_id");
@@ -35,8 +36,11 @@ try {
         $role_id = (int)$stmtRole->fetchColumn();
     }
 
+    // ตรวจสอบว่าเป็นผู้ดูแลหลักหรือไม่ (เฉพาะที่ไม่ใช่ role 6)
     $isAdminMain = false;
     $groupUserIds = [];
+    $adminMainGroupIds = []; // เก็บเฉพาะ group ที่เป็นผู้ดูแลหลัก
+    
     if ($user_id !== '' && $role_id !== 6) { 
         $stmtGroup = $dbh->prepare("
             SELECT gu.group_user_id, gu.type
@@ -48,15 +52,18 @@ try {
         $stmtGroup->bindValue(':user_id', $user_id, PDO::PARAM_STR);
         $stmtGroup->execute();
         $rows = $stmtGroup->fetchAll(PDO::FETCH_ASSOC);
+        
         foreach ($rows as $row) {
             $groupUserIds[] = $row['group_user_id'];
-            if ($row['type'] === 'ผู้ดูแลหลัก') {
+            // ต้องเป็น 'ผู้ดูแลหลัก' เท่านั้น (ตรงตัว)
+            if (trim($row['type']) === 'ผู้ดูแลหลัก') {
                 $isAdminMain = true;
+                $adminMainGroupIds[] = $row['group_user_id']; // เก็บเฉพาะ group ที่เป็นผู้ดูแลหลัก
             }
         }
     }
 
-    // Build WHERE
+    // Build WHERE clause
     $where = ["1"];
     $params = [];
 
@@ -70,6 +77,7 @@ try {
         $params[':statusFilter'] = $statusMap[$statusFilter];
     }
 
+    // กรอง write_offs ตาม role
     if ($role_id !== 6) {
         if ($isAdminMain && !empty($groupUserIds)) {
             $inQuery = [];
@@ -93,8 +101,10 @@ try {
             $params[':user_id'] = $user_id;
         }
     }
+    
     $whereSQL = "WHERE " . implode(" AND ", $where);
 
+    // Main query
     $query = "
         SELECT w.*, e.name AS equipment_name, e.subcategory_id,
                u.full_name AS requester_name, 
@@ -110,6 +120,7 @@ try {
             w.writeoff_id DESC
     ";
 
+    // Count query
     $countQuery = "
         SELECT COUNT(*) 
         FROM write_offs w
@@ -138,18 +149,13 @@ try {
     $writeoffs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($writeoffs as &$wo) {
-        // ตรวจสอบสิทธิ์อนุมัติสำหรับแต่ละรายการ
         $canApprove = false;
-        
-        // กรณีเป็น role_id = 6 (Super Admin)
         if ($role_id === 6) {
             $canApprove = true;
         } 
-        // กรณีเป็นผู้ดูแลหลัก และมี group_user_id
-        elseif ($isAdminMain && !empty($groupUserIds) && !empty($wo['subcategory_id'])) {
-            // สร้าง placeholders สำหรับ IN clause
+        elseif ($isAdminMain === true && !empty($adminMainGroupIds) && !empty($wo['subcategory_id'])) {
             $placeholders = [];
-            foreach ($groupUserIds as $k => $id) {
+            foreach ($adminMainGroupIds as $k => $id) {
                 $placeholders[] = ":chk_group_$k";
             }
             
@@ -161,7 +167,7 @@ try {
             ");
             $checkGroupStmt->bindValue(':subcategory_id', $wo['subcategory_id'], PDO::PARAM_INT);
             
-            foreach ($groupUserIds as $k => $id) {
+            foreach ($adminMainGroupIds as $k => $id) {
                 $checkGroupStmt->bindValue(":chk_group_$k", $id, PDO::PARAM_INT);
             }
             
@@ -169,13 +175,12 @@ try {
             $inGroup = (int)$checkGroupStmt->fetchColumn() > 0;
             $canApprove = $inGroup;
         }
-        // กรณีอื่นๆ (ไม่ใช่ Super Admin และไม่ใช่ผู้ดูแลหลัก)
         else {
             $canApprove = false;
         }
         
         $wo['can_approve'] = $canApprove;
-
+        
         // ดึงไฟล์แนบ
         $stmtFile = $dbh->prepare("
             SELECT DISTINCT file_writeoffs_id, File_name, url, type_name 
@@ -197,6 +202,7 @@ try {
             "limit" => $limit
         ]
     ], JSON_UNESCAPED_UNICODE);
+    
 } catch (Exception $e) {
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
