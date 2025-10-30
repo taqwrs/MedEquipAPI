@@ -34,6 +34,7 @@ try {
         INNER JOIN relation_group rg ON rg.subcategory_id = e.subcategory_id
         INNER JOIN group_user gu ON gu.group_user_id = rg.group_user_id
         INNER JOIN relation_user ru ON ru.group_user_id = gu.group_user_id
+        INNER JOIN users u ON u.ID = ru.u_id
     ";
 
 
@@ -43,6 +44,7 @@ try {
         INNER JOIN relation_group rg ON rg.subcategory_id = e.subcategory_id
         INNER JOIN group_user gu ON gu.group_user_id = rg.group_user_id
         INNER JOIN relation_user ru ON ru.group_user_id = gu.group_user_id
+        INNER JOIN users u ON u.ID = ru.u_id
     ";
 
 
@@ -50,6 +52,7 @@ try {
         WHERE e.active = 1
         AND ru.u_id = :user_id
         AND gu.type = 'ผู้ดูแลหลัก'
+        OR  e.dep_join = u.department_id
     ";
 
     $additionalParams = [
