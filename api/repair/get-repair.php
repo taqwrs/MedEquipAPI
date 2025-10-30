@@ -88,7 +88,7 @@ try {
             LEFT JOIN repair_type rt ON r.repair_type_id = rt.repair_type_id
             LEFT JOIN group_user gu ON rt.group_user_id = gu.group_user_id
             WHERE $where AND r.active = 1
-            ORDER BY r.request_date DESC";
+            ORDER BY r.repair_id DESC";
 
     if ($useLimit) {
         $sql .= " LIMIT :offset, :limit";
