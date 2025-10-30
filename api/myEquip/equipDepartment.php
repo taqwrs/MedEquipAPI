@@ -54,6 +54,7 @@ try {
     $whereClause = "
         WHERE e.active = 1
         AND e.location_department_id = :user_department_id
+        OR  e.dep_join = :user_department_id
     ";
 
     $additionalParams = [
