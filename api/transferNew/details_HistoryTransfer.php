@@ -23,12 +23,69 @@ try {
     if (!$u_id)
         throw new Exception("User ID not found");
 
-    $baseWhere = "WHERE (ht.transfer_user_id = :u_id OR ht.recipient_user_id = :u_id)
-        AND (
-            (ht.transfer_type = 'โอนย้ายถาวร' AND ht.status_transfer = 1) OR
-            (ht.transfer_type = 'โอนย้ายชั่วคราว')
-        )
-        AND ht.history_transfer_id = :history_transfer_id";
+    // ดึงข้อมูล department ของ user ที่ login
+    $sqlUserDept = "SELECT department_id FROM users WHERE ID = :u_id";
+    $stmtUserDept = $dbh->prepare($sqlUserDept);
+    $stmtUserDept->bindValue(':u_id', $u_id, PDO::PARAM_INT);
+    $stmtUserDept->execute();
+    $userDept = $stmtUserDept->fetch(PDO::FETCH_ASSOC);
+    $user_department_id = $userDept['department_id'] ?? null;
+
+    // ดึงรายการ subcategory_id ที่ user เป็นผู้ดูแลหลัก
+    $sqlUserSubcats = "
+        SELECT DISTINCT rg.subcategory_id
+        FROM relation_user ru
+        JOIN group_user gu ON ru.group_user_id = gu.group_user_id
+        JOIN relation_group rg ON gu.group_user_id = rg.group_user_id
+        WHERE ru.u_id = :u_id
+          AND gu.type = 'ผู้ดูแลหลัก'
+    ";
+    $stmtUserSubcats = $dbh->prepare($sqlUserSubcats);
+    $stmtUserSubcats->bindValue(':u_id', $u_id, PDO::PARAM_INT);
+    $stmtUserSubcats->execute();
+    $userSubcatRows = $stmtUserSubcats->fetchAll(PDO::FETCH_COLUMN);
+
+    // สร้างเงื่อนไข WHERE แบบใหม่
+    $whereConditions = [
+        "ht.history_transfer_id = :history_transfer_id"
+    ];
+
+    $accessConditions = [];
+    
+    // เงื่อนไข 1: แผนกต้นทางหรือปลายทางตรงกับแผนก user
+    if ($user_department_id) {
+        $accessConditions[] = "ht.from_department_id = :user_dept_id";
+        $accessConditions[] = "ht.to_department_id = :user_dept_id";
+    }
+
+    // เงื่อนไข 2: เป็นผู้ดูแลหลักของ subcategory
+    if (!empty($userSubcatRows)) {
+        $subcatPlaceholders = [];
+        foreach ($userSubcatRows as $idx => $subcatId) {
+            $subcatPlaceholders[] = ":subcat_id_{$idx}";
+        }
+        $accessConditions[] = "ht.now_subcategory_id IN (" . implode(',', $subcatPlaceholders) . ")";
+    }
+
+    // ถ้าไม่มีสิทธิ์ใดๆ ให้ return ข้อมูลว่าง
+    if (empty($accessConditions)) {
+        echo json_encode([
+            "status" => "success",
+            "data" => []
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // รวมเงื่อนไขสิทธิ์เข้ากับเงื่อนไขหลัก
+    $whereConditions[] = "(" . implode(' OR ', $accessConditions) . ")";
+
+    // เงื่อนไข status_transfer และ transfer_type เดิม
+    $whereConditions[] = "(
+        (ht.transfer_type = 'โอนย้ายถาวร' AND ht.status_transfer = 1) OR
+        (ht.transfer_type = 'โอนย้ายชั่วคราว')
+    )";
+
+    $baseWhere = "WHERE " . implode(' AND ', $whereConditions);
 
     $sql = "
     SELECT DISTINCT
@@ -74,12 +131,23 @@ try {
                                                 AND ht.transfer_type = 'โอนย้ายถาวร'
     {$baseWhere}
     ORDER BY ht.history_transfer_id DESC
-";
-
+    ";
 
     $stmt = $dbh->prepare($sql);
-    $stmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
     $stmt->bindValue(':history_transfer_id', $history_transfer_id, PDO::PARAM_INT);
+    
+    // Bind department_id ถ้ามี
+    if ($user_department_id) {
+        $stmt->bindValue(':user_dept_id', $user_department_id, PDO::PARAM_INT);
+    }
+    
+    // Bind subcategory_ids ถ้ามี
+    if (!empty($userSubcatRows)) {
+        foreach ($userSubcatRows as $idx => $subcatId) {
+            $stmt->bindValue(":subcat_id_{$idx}", $subcatId, PDO::PARAM_INT);
+        }
+    }
+    
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -199,7 +267,6 @@ try {
             "transfer_date" => $transfer_date,
             "returned_date" => $returned_date
         ];
-
     }
 
     echo json_encode([
