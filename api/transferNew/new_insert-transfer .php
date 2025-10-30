@@ -100,7 +100,27 @@ try {
     
     // กำหนดสถานะการโอนตาม transfer_type
     // 0 = ยังไม่คืน (โอนย้ายชั่วคราว), 1 = คืนแล้ว/ไม่ต้องคืน (โอนย้ายถาวร)
-    $status = ($input['transfer_type'] === 'โอนย้ายชั่วคราว') ? 0 : 1;
+    // $status = ($input['transfer_type'] === 'โอนย้ายชั่วคราว') ? 0 : 1;
+
+    // 0 = ยังไม่คืน (โอนย้ายชั่วคราว), 2 = โอนย้ายถาวร
+    if ($input['transfer_type'] === 'โอนย้ายชั่วคราว') {
+        $status = 0;
+    } elseif ($input['transfer_type'] === 'โอนย้ายถาวร') {
+        $status = 2;
+
+            $updateDepJoin = $dbh->prepare("
+            UPDATE equipments 
+            SET dep_join = :dep_join,
+                updated_by = :updated_by,
+                updated_at = :updated_at
+            WHERE equipment_id = :equipment_id
+        ");
+        $updateDepJoin->bindParam(':dep_join', $to_department_id, PDO::PARAM_INT);
+        $updateDepJoin->bindParam(':updated_by', $transfer_user_id, PDO::PARAM_INT);
+        $updateDepJoin->bindParam(':updated_at', $now);
+        $updateDepJoin->bindParam(':equipment_id', $input['equipment_id'], PDO::PARAM_INT);
+        $updateDepJoin->execute();
+    }
 
     // อัปเดต location_department_id และ location_details ในตาราง equipments
     $updateEquipLocation = $dbh->prepare("

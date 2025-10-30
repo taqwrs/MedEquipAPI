@@ -51,27 +51,34 @@ try {
         $params[':search'] = '%' . $search . '%';
     }
     
-    // Query หลัก: ดึงเครื่องมือที่มีสิทธิ์โอน (OR)
+    // Query หลัก: ดึงเครื่องมือที่มีสิทธิ์โอน (3 เงื่อนไข OR)
     $joinTables = "
         FROM equipments e
         INNER JOIN equipment_subcategories es ON e.subcategory_id = es.subcategory_id
         LEFT JOIN departments d ON e.location_department_id = d.department_id
         WHERE (
-            -- เงื่อนไข 1: u_id อยู่ในกลุ่ม group_user.type = 'ผู้ดูแลหลัก'
-            -- ผ่าน relation_user -> group_user -> relation_group -> subcategory_id
-            EXISTS (
-                SELECT 1
-                FROM relation_group rg1
-                INNER JOIN group_user gu1 ON rg1.group_user_id = gu1.group_user_id
-                INNER JOIN relation_user ru1 ON gu1.group_user_id = ru1.group_user_id
-                WHERE rg1.subcategory_id = e.subcategory_id
-                AND ru1.u_id = :u_id 
-                AND gu1.type = 'ผู้ดูแลหลัก'
+            -- เงื่อนไข 1: เป็นผู้ดูแลหลักของ subcategory และมี equipment_transfers.status = 1
+            (
+                EXISTS (
+                    SELECT 1
+                    FROM relation_group rg1
+                    INNER JOIN group_user gu1 ON rg1.group_user_id = gu1.group_user_id
+                    INNER JOIN relation_user ru1 ON gu1.group_user_id = ru1.group_user_id
+                    WHERE rg1.subcategory_id = e.subcategory_id
+                    AND ru1.u_id = :u_id 
+                    AND gu1.type = 'ผู้ดูแลหลัก'
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM equipment_transfers et1
+                    WHERE et1.equipment_id = e.equipment_id
+                    AND et1.status = 1
+                )
             )
             
             OR
             
-            -- เงื่อนไข 2: location_department_id = users.department_id 
+            -- เงื่อนไข 2: location_department_id = user.department_id 
             -- และ subcategory_id ไม่มี group_user.type = 'ผู้ดูแลหลัก'
             (
                 e.location_department_id = :user_department_id
@@ -83,13 +90,20 @@ try {
                     AND gu2.type = 'ผู้ดูแลหลัก'
                 )
             )
-        )
-        -- เงื่อนไขเพิ่มเติม: equipment_id ต้องไม่อยู่ใน equipment_transfers ที่ status = 0
-        AND NOT EXISTS (
-            SELECT 1
-            FROM equipment_transfers et
-            WHERE et.equipment_id = e.equipment_id
-            AND et.status = 0
+            
+            OR
+            
+            -- เงื่อนไข 3: dep_join = user.department_id 
+            -- และ equipment_transfers.status != 0
+            (
+                e.dep_join = :user_department_id
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM equipment_transfers et2
+                    WHERE et2.equipment_id = e.equipment_id
+                    AND et2.status = 0
+                )
+            )
         )
         $searchWhere
     ";
@@ -112,20 +126,28 @@ try {
             es.name as subcategory_name,
             e.location_department_id,
             e.location_details,
+            e.dep_join,
             d.department_name as location_department_name,
             e.updated_at,
-            -- ตรวจสอบว่าเป็นผู้ดูแลหลักหรือไม่
-            EXISTS (
-                SELECT 1
-                FROM relation_group rg1
-                INNER JOIN group_user gu1 ON rg1.group_user_id = gu1.group_user_id
-                INNER JOIN relation_user ru1 ON gu1.group_user_id = ru1.group_user_id
-                WHERE rg1.subcategory_id = e.subcategory_id
-                AND ru1.u_id = :u_id 
-                AND gu1.type = 'ผู้ดูแลหลัก'
-            ) as is_main_admin,
-            -- ตรวจสอบว่าอยู่ในแผนกและไม่มีผู้ดูแลหรือไม่
-            -- ต้องมี location_department_id = user.department_id ด้วย
+            -- ตรวจสอบว่าเป็นผู้ดูแลหลัก + มี status = 1
+            (
+                EXISTS (
+                    SELECT 1
+                    FROM relation_group rg1
+                    INNER JOIN group_user gu1 ON rg1.group_user_id = gu1.group_user_id
+                    INNER JOIN relation_user ru1 ON gu1.group_user_id = ru1.group_user_id
+                    WHERE rg1.subcategory_id = e.subcategory_id
+                    AND ru1.u_id = :u_id 
+                    AND gu1.type = 'ผู้ดูแลหลัก'
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM equipment_transfers et1
+                    WHERE et1.equipment_id = e.equipment_id
+                    AND et1.status = 1
+                )
+            ) as is_main_admin_with_status,
+            -- ตรวจสอบว่าอยู่ในแผนกและไม่มีผู้ดูแลหลัก
             (
                 e.location_department_id = :user_department_id
                 AND NOT EXISTS (
@@ -135,7 +157,17 @@ try {
                     WHERE rg2.subcategory_id = e.subcategory_id
                     AND gu2.type = 'ผู้ดูแลหลัก'
                 )
-            ) as is_department_no_admin
+            ) as is_department_no_admin,
+            -- ตรวจสอบว่า dep_join ตรงกับแผนกผู้ใช้
+            (
+                e.dep_join = :user_department_id
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM equipment_transfers et2
+                    WHERE et2.equipment_id = e.equipment_id
+                    AND et2.status = 0
+                )
+            ) as is_dep_join_match
         $joinTables
         ORDER BY e.updated_at DESC
         LIMIT :limit OFFSET :offset
@@ -150,18 +182,23 @@ try {
     
     $equipment_list = [];
     while ($row = $dataStmt->fetch(PDO::FETCH_ASSOC)) {
-        $is_main_admin = (bool)$row['is_main_admin'];
+        $is_main_admin_with_status = (bool)$row['is_main_admin_with_status'];
         $is_department_no_admin = (bool)$row['is_department_no_admin'];
+        $is_dep_join_match = (bool)$row['is_dep_join_match'];
         
         // กำหนดเหตุผล
-        $reason = "";
-        if ($is_main_admin && $is_department_no_admin) {
-            $reason = "เป็นผู้ดูแลหลัก และ อยู่ในแผนกเดียวกันและไม่มีผู้ดูแลหลัก";
-        } elseif ($is_main_admin) {
-            $reason = "เป็นผู้ดูแลหลัก";
-        } elseif ($is_department_no_admin) {
-            $reason = "อยู่ในแผนกเดียวกันและไม่มีผู้ดูแลหลัก";
+        $reasons = [];
+        if ($is_main_admin_with_status) {
+            $reasons[] = "เป็นผู้ดูแลหลักและมีสถานะการโอนเท่ากับ 1";
         }
+        if ($is_department_no_admin) {
+            $reasons[] = "อยู่ในแผนกเดียวกันและไม่มีผู้ดูแลหลัก";
+        }
+        if ($is_dep_join_match) {
+            $reasons[] = "dep_join ตรงกับแผนกและไม่มีสถานะการโอนเท่ากับ 0";
+        }
+        
+        $reason = implode(" และ ", $reasons);
         
         $equipment_list[] = [
             "equipment_id" => (int)$row['equipment_id'],
@@ -172,8 +209,10 @@ try {
             "location_department_id" => $row['location_department_id'] ? (int)$row['location_department_id'] : null,
             "location_department_name" => $row['location_department_name'],
             "location_details" => $row['location_details'],
-            "is_main_admin" => $is_main_admin,
+            "dep_join" => $row['dep_join'] ? (int)$row['dep_join'] : null,
+            "is_main_admin_with_status" => $is_main_admin_with_status,
             "is_department_no_admin" => $is_department_no_admin,
+            "is_dep_join_match" => $is_dep_join_match,
             "transfer_permission_reason" => $reason
         ];
     }
