@@ -170,7 +170,7 @@ try {
         'title' => "งานซ่อมใหม่: {$repair_type_name}",
         'body' => "เครื่องมือ: {$equipment_code} - {$equipment_name}\n" .
                   "หัวข้อ: {$title}\n",
-        'url' => "http://localhost:5173/repair",
+        'url' => "https://medequipment.tsh/repair",
     ];
 
     $results = sendPushToTargets($targets, $payload);

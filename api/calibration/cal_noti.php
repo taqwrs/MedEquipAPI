@@ -151,7 +151,7 @@ try {
         $payload = [
             'title' => "แจ้งเตือน: แผนการสอบเทียบวันนี้!",
             'body' => "แผน: {$plan_name}\nวันที่: {$start_date}",
-            'url' => "http://localhost:5173/calibration",
+            'url' => "https://medequipment.tsh/calibration",
         ];
 
         $results = sendPushToTargets($targets, $payload);
