@@ -137,7 +137,7 @@ try {
                 )
             ) as is_department_no_admin
         $joinTables
-        ORDER BY e.equipment_id DESC
+        ORDER BY e.updated_at DESC
         LIMIT :limit OFFSET :offset
     ");
     

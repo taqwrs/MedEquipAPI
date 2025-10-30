@@ -89,7 +89,7 @@ try {
     $payload = [
         'title' => "คุณได้รับเครื่องมือคืนเรียบร้อยแล้ว",
         'body' => "เครื่องมือ: {$equipment_code} - {$equipment_name}\nโดย: {$recipient_user_name}",
-        'url' => "http://localhost:5173/transfer/"
+        'url' => "https://medequipment.tsh/transfer/"
     ];
 
     $targets = getActiveSubscriptions($dbh, $transfer_user_id);
