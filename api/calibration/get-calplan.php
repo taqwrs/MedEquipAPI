@@ -108,7 +108,7 @@ try {
 
 
     $query = "
-        SELECT cp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,c.phone,
+        SELECT cp.*, u.full_name AS user_name, gu.group_name, c.name AS company_name,c.phone, c.email,
                COUNT(DISTINCT dcp.details_cal_id) AS total_schedules
         FROM calibration_plans cp
         LEFT JOIN users u ON cp.user_id = u.ID
