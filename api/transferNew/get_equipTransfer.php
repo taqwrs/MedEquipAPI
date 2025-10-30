@@ -69,18 +69,14 @@ try {
                     AND ru1.u_id = :u_id 
                     AND gu1.type = 'ผู้ดูแลหลัก'
                 )
-                AND EXISTS (
-                    SELECT 1
-                    FROM equipment_transfers et1
-                    WHERE et1.equipment_id = e.equipment_id
-                    AND et1.status = 1
-                )
+
             )
             
             OR
             
             -- เงื่อนไข 2: location_department_id = user.department_id 
             -- และ subcategory_id ไม่มี group_user.type = 'ผู้ดูแลหลัก'
+            -- และ equipment_transfers.status ไม่= 0
             (
                 e.location_department_id = :user_department_id
                 AND NOT EXISTS (
@@ -89,6 +85,12 @@ try {
                     INNER JOIN group_user gu2 ON rg2.group_user_id = gu2.group_user_id
                     WHERE rg2.subcategory_id = e.subcategory_id
                     AND gu2.type = 'ผู้ดูแลหลัก'
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM equipment_transfers et2
+                    WHERE et2.equipment_id = e.equipment_id
+                    AND et2.status = 0
                 )
             )
             
