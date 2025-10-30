@@ -27,17 +27,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // 3) ดึง subscriptions จาก DB (เฉพาะที่ active)
 //    ถ้าอยากจำกัดเฉพาะแอดมิน ให้เพิ่ม WHERE emp_code IN (...) เองได้
-function getActiveSubscriptions(PDO $dbh, $recipient_id): array
+// ฟังก์ชันดึง subscriptions ของทุก user ใน department
+function getActiveSubscriptions(PDO $dbh, $department_id): array
 {
-    $sql = "SELECT endpoint, p256dh, auth
-          FROM push_subscriptions
-          WHERE is_active = 1 AND u_id = ?";
+    $sql = "SELECT ps.endpoint, ps.p256dh, ps.auth, u.u_id, u.full_name
+            FROM push_subscriptions ps
+            INNER JOIN users u ON ps.u_id = u.u_id
+            WHERE ps.is_active = 1 
+            AND u.department_id = ?";
     $st = $dbh->prepare($sql);
-    $st->execute([$recipient_id]);
+    $st->execute([$department_id]);
     return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
-// 4) ส่งแจ้งเตือนแบบ queue + flush (มีประสิทธิภาพกว่าเรียกครั้งละตัว)
+// ฟังก์ชันส่ง push notification
 function sendPushToTargets(array $targets, array $payload): array
 {
     $auth = [
@@ -48,7 +51,7 @@ function sendPushToTargets(array $targets, array $payload): array
         ]
     ];
     $webPush = new WebPush($auth);
-    $webPush->setDefaultOptions(['TTL' => 60]); // อยู่ในคิว 60s
+    $webPush->setDefaultOptions(['TTL' => 60]);
 
     // queue ทุกตัว
     foreach ($targets as $t) {
@@ -79,8 +82,10 @@ function sendPushToTargets(array $targets, array $payload): array
     }
     return $results;
 }
+
+
 try {
-$to_department_id = $input->to_department ?? null;
+    $to_department_id = $input->to_department ?? null;
     $to_department_name = $input->to_department_name ?? '';
     $equipment_code = $input->equipment_code ?? '';
     $equipment_name = $input->equipment_name ?? '';
@@ -112,28 +117,33 @@ $to_department_id = $input->to_department ?? null;
         ]
     ];
 
-    // ดึง subscriptions ของทุกคนในแผนกปลายทาง
+    // ดึง subscriptions ของทุก user ใน department
     $targets = getActiveSubscriptions($dbh, $to_department_id);
 
     if (empty($targets)) {
         echo json_encode([
             "ok" => true,
-            "message" => "ไม่มีผู้ใช้ในแผนกนี้ที่เปิดการแจ้งเตือน",
             "requestId" => $requestId,
             "notifyResults" => [],
             "summary" => [
-                "total" => 0, 
-                "success" => 0, 
+                "total" => 0,
+                "success" => 0,
                 "failed" => 0,
-                "users_in_department" => 0
-            ]
+                "users_notified" => 0
+            ],
+            "message" => "ไม่พบ user ที่มี push subscription ใน department นี้"
         ]);
         exit;
     }
-$results = [];
+
+    // นับจำนวน user ที่จะส่ง
+    $unique_users = array_unique(array_column($targets, 'u_id'));
+    $user_count = count($unique_users);
+
+    // ส่ง push notification
     $results = sendPushToTargets($targets, $payload);
-    // var_dump("results data:", $results);
-    // 6) จัดการ endpoint ที่ตาย (404/410) -> set inactive
+
+    // จัดการ endpoint ที่ตาย (404/410)
     $toDeactivate = [];
     foreach ($results as $r) {
         if (!$r['ok'] && in_array($r['status'] ?? null, [404, 410], true)) {
@@ -141,16 +151,10 @@ $results = [];
         }
     }
 
-
     if ($toDeactivate) {
-        // ปิดใช้งาน endpoint ที่ตาย
-        // ถ้ามีคอลัมน์ endpoint_hash ให้ใช้แบบนี้ (ปลอดภัย/เร็วกว่า):
-        //   UPDATE push_subscriptions SET is_active=0 WHERE endpoint_hash IN (SHA2(:ep1,256), SHA2(:ep2,256), ...)
-        // ถ้าไม่มี endpoint_hash ให้ใช้ WHERE endpoint = :ep (อาจช้าได้ถ้าข้อมูลเยอะ)
         $dbh->beginTransaction();
         try {
-            // ใช้ endpoint_hash ถ้ามี
-            $useHash = true; // ตั้งค่านี้ตาม schema จริงของคุณ
+            $useHash = true; // ตั้งค่าตาม schema ของคุณ
             if ($useHash) {
                 $parts = [];
                 $params = [];
@@ -163,7 +167,6 @@ $results = [];
                 $st = $dbh->prepare($sql);
                 $st->execute($params);
             } else {
-                // แบบไม่ใช้ hash
                 $sql = "UPDATE push_subscriptions SET is_active = 0 WHERE endpoint = :ep";
                 $st = $dbh->prepare($sql);
                 foreach ($toDeactivate as $ep) {
@@ -172,30 +175,16 @@ $results = [];
             }
             $dbh->commit();
         } catch (Throwable $e) {
-            if ($dbh->inTransaction())
+            if ($dbh->inTransaction()) {
                 $dbh->rollBack();
-            // ไม่ fail ทั้งงาน แค่แจ้งเตือนฝั่งผลลัพธ์
+            }
             $results[] = ['maintenance' => 'deactivate_failed', 'error' => $e->getMessage()];
         }
     }
 
-    // 7) สรุปผล
+    // สรุปผล
     $success = count(array_filter($results, fn($r) => ($r['ok'] ?? false) === true));
     $failed = count($results) - $success;
-
-    $dbh->beginTransaction();
-    $date_time = date('Y-m-d H:i:s');
-
-    // $updateSql = "UPDATE program SET  mention_code = ?,$recipient_name = ?,mention_by = ? ,mention_at = ? WHERE id = ?";
-    // $stmt = $dbh->prepare($updateSql);
-    // $stmt->bindParam(1, $recipient_id, PDO::PARAM_STR);
-    // $stmt->bindParam(2, $$recipient_name, PDO::PARAM_STR);
-    // $stmt->bindParam(3, $name, PDO::PARAM_STR);
-    // $stmt->bindParam(4, $date_time, PDO::PARAM_STR);
-    // $stmt->bindParam(5, $equipment_code, PDO::PARAM_INT);
-
-    // $stmt->execute();
-    // $dbh->commit();
 
     echo json_encode([
         "ok" => true,
@@ -206,6 +195,8 @@ $results = [];
             "success" => $success,
             "failed" => $failed,
             "deactivated" => count($toDeactivate),
+            "users_notified" => $user_count,
+            "department_id" => $to_department_id
         ],
     ]);
 } catch (Exception $e) {
@@ -214,3 +205,4 @@ $results = [];
     }
     echo json_encode(array("status" => "error", "message" => $e->getMessage()));
 }
+?>

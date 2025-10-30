@@ -1,6 +1,6 @@
 <?php
 // include "../config/jwt.php";
-// include "../config/config-subs.php"; // ต้องมี VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE
+// include "../config/config-subs.php";
 require '../../vendor/autoload.php';
 $dbh = new PDO('mysql:host=192.168.2.41;dbname=intern_medequipment', 'intern', 'intern@Tsh');
 const VAPID_SUBJECT = 'mailto:surapits@thaksinhospital.com';
@@ -23,10 +23,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(array("status" => "error", "message" => "post method!!!"));
     die();
 }
-// payload ที่อยากส่ง (ถ้าหน้าบ้านส่งมา ให้เอามา merge/override ได้)
 
-// 3) ดึง subscriptions จาก DB (เฉพาะที่ active)
-//    ถ้าอยากจำกัดเฉพาะแอดมิน ให้เพิ่ม WHERE emp_code IN (...) เองได้
+// ฟังก์ชันดึงข้อมูลผู้ใช้จาก recipient_user_id
+function getUserName(PDO $dbh, $user_id): ?string
+{
+    $sql = "SELECT full_name FROM users WHERE ID = ?";
+    $st = $dbh->prepare($sql);
+    $st->execute([$user_id]);
+    $result = $st->fetch(PDO::FETCH_ASSOC);
+    return $result ? $result['full_name'] : null;
+}
+
+// ดึง subscriptions จาก DB (เฉพาะที่ active)
 function getActiveSubscriptions(PDO $dbh, $recipient_id): array
 {
     $sql = "SELECT endpoint, p256dh, auth
@@ -37,7 +45,7 @@ function getActiveSubscriptions(PDO $dbh, $recipient_id): array
     return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
-// 4) ส่งแจ้งเตือนแบบ queue + flush (มีประสิทธิภาพกว่าเรียกครั้งละตัว)
+// ส่งแจ้งเตือนแบบ queue + flush
 function sendPushToTargets(array $targets, array $payload): array
 {
     $auth = [
@@ -48,7 +56,7 @@ function sendPushToTargets(array $targets, array $payload): array
         ]
     ];
     $webPush = new WebPush($auth);
-    $webPush->setDefaultOptions(['TTL' => 60]); // อยู่ในคิว 60s
+    $webPush->setDefaultOptions(['TTL' => 60]);
 
     // queue ทุกตัว
     foreach ($targets as $t) {
@@ -79,12 +87,22 @@ function sendPushToTargets(array $targets, array $payload): array
     }
     return $results;
 }
+
 try {
     $transfer_user_id = $input->transfer_user_id;
+    $recipient_user_id = $input->recipient_user_id ?? null; // ผู้ที่ส่งคืนเครื่องมือ
     $equipment_code = $input->equipment_code ?? '';
     $equipment_name = $input->equipment_name ?? '';
-    $recipient_user_name = $input->recipient_user_name ?? '';
     $requestId = (string) time();
+
+    // ดึงชื่อผู้ส่งคืนเครื่องมือจากฐานข้อมูล
+    $recipient_user_name = 'ผู้ใช้'; // ค่า default
+    if ($recipient_user_id) {
+        $name = getUserName($dbh, $recipient_user_id);
+        if ($name) {
+            $recipient_user_name = $name;
+        }
+    }
 
     $payload = [
         'title' => "คุณได้รับเครื่องมือคืนเรียบร้อยแล้ว",
@@ -104,9 +122,9 @@ try {
         exit;
     }
 
-    $results = [];
     $results = sendPushToTargets($targets, $payload);
-    // 6) จัดการ endpoint ที่ตาย (404/410) -> set inactive
+    
+    // จัดการ endpoint ที่ตาย (404/410)
     $toDeactivate = [];
     foreach ($results as $r) {
         if (!$r['ok'] && in_array($r['status'] ?? null, [404, 410], true)) {
@@ -115,11 +133,9 @@ try {
     }
 
     if ($toDeactivate) {
-        // ปิดใช้งาน endpoint ที่ตาย
         $dbh->beginTransaction();
         try {
-            // ใช้ endpoint_hash ถ้ามี
-            $useHash = true; // ตั้งค่านี้ตาม schema จริงของคุณ
+            $useHash = true;
             if ($useHash) {
                 $parts = [];
                 $params = [];
@@ -132,7 +148,6 @@ try {
                 $st = $dbh->prepare($sql);
                 $st->execute($params);
             } else {
-                // แบบไม่ใช้ hash
                 $sql = "UPDATE push_subscriptions SET is_active = 0 WHERE endpoint = :ep";
                 $st = $dbh->prepare($sql);
                 foreach ($toDeactivate as $ep) {
@@ -143,17 +158,13 @@ try {
         } catch (Throwable $e) {
             if ($dbh->inTransaction())
                 $dbh->rollBack();
-            // ไม่ fail ทั้งงาน แค่แจ้งเตือนฝั่งผลลัพธ์
             $results[] = ['maintenance' => 'deactivate_failed', 'error' => $e->getMessage()];
         }
     }
 
-    // 7) สรุปผล
+    // สรุปผล
     $success = count(array_filter($results, fn($r) => ($r['ok'] ?? false) === true));
     $failed = count($results) - $success;
-
-    $dbh->beginTransaction();
-    $date_time = date('Y-m-d H:i:s');
 
     echo json_encode([
         "ok" => true,
