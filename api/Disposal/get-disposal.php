@@ -27,7 +27,6 @@ try {
         'rejected' => 'ไม่อนุมัติ',
     ];
 
-
     $role_id = 0;
     if ($user_id !== '') {
         $stmtRole = $dbh->prepare("SELECT role_id FROM users WHERE ID = :user_id");
@@ -146,21 +145,33 @@ try {
         if ($role_id === 6) {
             $canApprove = true;
         } 
+        // กรณีเป็นผู้ดูแลหลัก และมี group_user_id
         elseif ($isAdminMain && !empty($groupUserIds) && !empty($wo['subcategory_id'])) {
-
+            // สร้าง placeholders สำหรับ IN clause
+            $placeholders = [];
+            foreach ($groupUserIds as $k => $id) {
+                $placeholders[] = ":chk_group_$k";
+            }
+            
             $checkGroupStmt = $dbh->prepare("
                 SELECT COUNT(*) 
                 FROM relation_group 
                 WHERE subcategory_id = :subcategory_id 
-                AND group_user_id IN (" . implode(',', array_map(function($k) { return ":chk_group_$k"; }, array_keys($groupUserIds))) . ")
+                AND group_user_id IN (" . implode(',', $placeholders) . ")
             ");
             $checkGroupStmt->bindValue(':subcategory_id', $wo['subcategory_id'], PDO::PARAM_INT);
+            
             foreach ($groupUserIds as $k => $id) {
                 $checkGroupStmt->bindValue(":chk_group_$k", $id, PDO::PARAM_INT);
             }
+            
             $checkGroupStmt->execute();
             $inGroup = (int)$checkGroupStmt->fetchColumn() > 0;
             $canApprove = $inGroup;
+        }
+        // กรณีอื่นๆ (ไม่ใช่ Super Admin และไม่ใช่ผู้ดูแลหลัก)
+        else {
+            $canApprove = false;
         }
         
         $wo['can_approve'] = $canApprove;
