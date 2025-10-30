@@ -49,12 +49,19 @@ try {
         INNER JOIN group_user gu ON gu.group_user_id = rg.group_user_id
     ";
 
-    $countSql = "SELECT COUNT(DISTINCT e.equipment_id) FROM equipments e";
+    $countSql = "
+        SELECT COUNT(DISTINCT e.equipment_id) 
+        FROM equipments e
+        INNER JOIN relation_group rg ON rg.subcategory_id = e.subcategory_id
+        INNER JOIN group_user gu ON gu.group_user_id = rg.group_user_id
+    ";
 
     $whereClause = "
         WHERE e.active = 1
-        AND e.location_department_id = :user_department_id
-        OR  e.dep_join = :user_department_id
+        AND (
+            e.location_department_id = :user_department_id 
+            OR e.dep_join = :user_department_id
+        )
     ";
 
     $additionalParams = [
@@ -62,7 +69,8 @@ try {
     ];
 
     $search = trim($input['search'] ?? '');
-    $searchFields = ['e.name', 'e.asset_code', 'e.end_date', 'e.status', 'e.record_status'];
+    $searchFields = ['e.name', 'e.asset_code', 'e.status', 'e.record_status', 'gu.group_name'];
+    
     $record_status = trim($input['record_status'] ?? '');
     if ($record_status !== '') {
         $whereClause .= " AND e.record_status = :record_status";
