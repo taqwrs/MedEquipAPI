@@ -35,7 +35,7 @@ try {
     $userDeptStmt->execute();
     $user_department_id = $userDeptStmt->fetchColumn();
 
-    // ดึงข้อมูลเครื่องมือ
+    // ดึงข้อมูลเครื่องมือ (เพิ่ม dep_join)
     $equipmentSQL = "
         SELECT 
             e.equipment_id,
@@ -47,6 +47,7 @@ try {
             e.location_department_id,
             e.location_details,
             e.status,
+            e.dep_join,
             d.department_name as location_department_name,
             e.updated_at
         FROM equipments e
@@ -64,6 +65,7 @@ try {
     }
 
     $subcategory_id = (int) $equipment['subcategory_id'];
+    $dep_join = $equipment['dep_join'];
 
     // ตรวจสอบว่ามีผู้ดูแลหลักสำหรับ subcategory นี้หรือไม่
     $checkAdminSQL = "
@@ -80,9 +82,11 @@ try {
 
     $has_permission = false;
     $admins_data = [];
+    $dep_join_name = null;
 
-    // กรณีที่ 1: มีผู้ดูแลหลัก - ตรวจสอบว่าผู้ใช้อยู่ในกลุ่มผู้ดูแลหลักหรือไม่
+    // กรณีที่ 1: มีผู้ดูแลหลัก
     if ($admin_count > 0) {
+        // ตรวจสอบว่าผู้ใช้อยู่ในกลุ่มผู้ดูแลหลักหรือไม่
         $checkUserInGroupSQL = "
             SELECT COUNT(*) as in_group
             FROM relation_group rg
@@ -98,7 +102,11 @@ try {
         $checkUserStmt->execute();
         $in_group = (int) $checkUserStmt->fetchColumn();
 
-        if ($in_group > 0) {
+        // เช็คสิทธิ์ 3 กรณี: ผู้ดูแลหลัก, แผนก location, หรือ แผนก dep_join
+        if ($in_group > 0 || 
+            ($user_department_id && $equipment['location_department_id'] == $user_department_id) ||
+            ($user_department_id && $dep_join == $user_department_id)) {
+            
             $has_permission = true;
 
             // ดึงข้อมูลผู้ดูแลหลักทั้งหมด
@@ -157,13 +165,47 @@ try {
                     ];
                 }
             }
+
+            // ถ้ามี dep_join ให้ดึงชื่อแผนก
+            if ($dep_join) {
+                $deptSQL = "SELECT department_name FROM departments WHERE department_id = :dept_id";
+                $deptStmt = $dbh->prepare($deptSQL);
+                $deptStmt->bindValue(':dept_id', $dep_join, PDO::PARAM_INT);
+                $deptStmt->execute();
+                $dep_join_name = $deptStmt->fetchColumn();
+            }
         }
     } 
-    // กรณีที่ 2: ไม่มีผู้ดูแลหลัก - ตรวจสอบว่าแผนกตรงกันหรือไม่
+    // กรณีที่ 2: ไม่มีผู้ดูแลหลัก
     else {
-        if ($user_department_id && $equipment['location_department_id'] == $user_department_id) {
+        // เช็คว่า transfer status ไม่เท่ากับ 0
+        $checkTransferSQL = "
+            SELECT COUNT(*) as transfer_count
+            FROM equipment_transfers
+            WHERE equipment_id = :equipment_id AND status != 0
+        ";
+        $checkTransferStmt = $dbh->prepare($checkTransferSQL);
+        $checkTransferStmt->bindValue(':equipment_id', $equipment_id, PDO::PARAM_INT);
+        $checkTransferStmt->execute();
+        $transfer_valid = (int) $checkTransferStmt->fetchColumn() > 0;
+
+        // ให้สิทธิ์ถ้า: แผนก location ตรงกัน หรือ แผนก dep_join ตรงกัน
+        if ($user_department_id && 
+            ($equipment['location_department_id'] == $user_department_id || 
+             $dep_join == $user_department_id) &&
+            $transfer_valid) {
+            
             $has_permission = true;
-            $admins_data = []; // ไม่มีผู้ดูแล
+            $admins_data = []; // ไม่มีผู้ดูแลหลัก
+
+            // ถ้ามี dep_join ให้ดึงชื่อแผนก
+            if ($dep_join) {
+                $deptSQL = "SELECT department_name FROM departments WHERE department_id = :dept_id";
+                $deptStmt = $dbh->prepare($deptSQL);
+                $deptStmt->bindValue(':dept_id', $dep_join, PDO::PARAM_INT);
+                $deptStmt->execute();
+                $dep_join_name = $deptStmt->fetchColumn();
+            }
         }
     }
 
@@ -186,12 +228,14 @@ try {
         "status" => $equipment['status'],
         "updated_at" => $equipment['updated_at'],
         "admins" => $admins_data,
-        "has_admin" => $admin_count > 0 // เพิ่ม flag บอกว่ามีผู้ดูแลหรือไม่
+        "has_admin" => $admin_count > 0,
+        "dep_join" => $dep_join ? (int) $dep_join : null,
+        "dep_join_name" => $dep_join_name
     ];
 
     echo json_encode([
         "status" => "success",
-        "data" => [$result] // ส่งเป็น array เพื่อให้ตรงกับโครงสร้างเดิม
+        "data" => [$result]
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
