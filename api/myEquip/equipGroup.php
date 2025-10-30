@@ -51,17 +51,19 @@ try {
     $whereClause = "
         WHERE e.active = 1
         AND ru.u_id = :user_id
-        AND gu.type = 'ผู้ดูแลหลัก'
-        OR  e.dep_join = u.department_id
+        AND (
+            (gu.type = 'ผู้ดูแลหลัก' AND u.department_id IS NOT NULL)
+            OR e.dep_join = u.department_id
+        )
     ";
 
     $additionalParams = [
         ':user_id' => $user_id
     ];
 
-
     $search = trim($input['search'] ?? '');
-    $searchFields = ['e.name', 'e.asset_code', 'e.end_date', 'e.status', 'e.record_status'];
+    $searchFields = ['e.name', 'e.asset_code', 'e.status', 'e.record_status', 'gu.group_name'];
+    
     if ($search !== '') {
         $whereClause .= " AND (" . implode(" LIKE :search OR ", $searchFields) . " LIKE :search)";
         $additionalParams[':search'] = "%$search%";
@@ -86,7 +88,7 @@ try {
         $additionalParams
     );
 
-    // แปลงวันที่
+
     if ($response['status'] === 'success') {
         foreach ($response['data'] as &$row) {
             $row['end_date_display'] = $row['end_date'] 
