@@ -52,14 +52,12 @@ try {
         $changedData['active'] = $data['active'] ? 1 : 0;
     }
 
-
     if (!empty($fields)) {
         $query = "UPDATE repair SET " . implode(", ", $fields) . " WHERE repair_id = :repair_id";
         $stmt = $dbh->prepare($query);
         $stmt->execute($params);
         $changedData['repair_id'] = $repair_id;
-        $user_id = $decoded->data->ID ;
-
+        $user_id = $decoded->data->ID;
 
         $logModel->insertLog(
             $user_id,
@@ -68,14 +66,39 @@ try {
             $oldRepairData,
             $changedData
         );
-    }
 
+        // ถ้า active ถูกเซ็ตเป็น 0 ให้อัปเดต equipment status เป็น "ใช้งาน"
+        if (array_key_exists('active', $data) && $data['active'] == 0) {
+            $equipment_id = $oldRepairData['equipment_id'];
+            
+            // ดึงข้อมูล equipment เก่าก่อนอัปเดต (สำหรับ log)
+            $stmtEquipOld = $dbh->prepare("SELECT * FROM equipments WHERE equipment_id = :equipment_id");
+            $stmtEquipOld->execute([':equipment_id' => $equipment_id]);
+            $oldEquipmentData = $stmtEquipOld->fetch(PDO::FETCH_ASSOC);
+            
+            // อัปเดต status เป็น "ใช้งาน"
+            $stmtEquip = $dbh->prepare("UPDATE equipments SET status = 'ใช้งาน' WHERE equipment_id = :equipment_id");
+            $stmtEquip->execute([':equipment_id' => $equipment_id]);
+            
+            // บันทึก log การเปลี่ยนแปลง equipment
+            if ($oldEquipmentData) {
+                $logModel->insertLog(
+                    $user_id,
+                    'equipments',
+                    'UPDATE',
+                    $oldEquipmentData,
+                    ['equipment_id' => $equipment_id, 'status' => 'ใช้งาน']
+                );
+            }
+        }
+    }
 
     $query = "SELECT 
         r.repair_id,
         r.equipment_id,
         e.name AS equipment_name,
         e.asset_code,
+        e.status AS equipment_status,
         r.title,
         r.remark,
         r.request_date,
