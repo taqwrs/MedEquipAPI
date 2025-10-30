@@ -58,7 +58,9 @@ try {
         LEFT JOIN departments d ON e.location_department_id = d.department_id
         WHERE e.active = 1
         AND (
-            -- เงื่อนไข 1: เป็นผู้ดูแลหลักของ subcategory และมี equipment_transfers.status = 1
+            -- เงื่อนไข 1: equipment อยู่ใน subcategory ที่มีผู้ดูแลหลัก 
+            -- และผู้ใช้เป็นผู้ดูแลหลักของ subcategory นั้น 
+            -- และ equipment_transfers.status ไม่เท่ากับ 0
             (
                 EXISTS (
                     SELECT 1
@@ -69,14 +71,19 @@ try {
                     AND ru1.u_id = :u_id 
                     AND gu1.type = 'ผู้ดูแลหลัก'
                 )
-
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM equipment_transfers et1
+                    WHERE et1.equipment_id = e.equipment_id
+                    AND et1.status = 0
+                )
             )
             
             OR
             
             -- เงื่อนไข 2: location_department_id = user.department_id 
             -- และ subcategory_id ไม่มี group_user.type = 'ผู้ดูแลหลัก'
-            -- และ equipment_transfers.status ไม่= 0
+            -- และ equipment_transfers.status ไม่เท่ากับ 0
             (
                 e.location_department_id = :user_department_id
                 AND NOT EXISTS (
@@ -97,14 +104,14 @@ try {
             OR
             
             -- เงื่อนไข 3: dep_join = user.department_id 
-            -- และ equipment_transfers.status != 0
+            -- และ equipment_transfers.status ไม่เท่ากับ 0
             (
                 e.dep_join = :user_department_id
                 AND NOT EXISTS (
                     SELECT 1
-                    FROM equipment_transfers et2
-                    WHERE et2.equipment_id = e.equipment_id
-                    AND et2.status = 0
+                    FROM equipment_transfers et3
+                    WHERE et3.equipment_id = e.equipment_id
+                    AND et3.status = 0
                 )
             )
         )
@@ -132,7 +139,7 @@ try {
             e.dep_join,
             d.department_name as location_department_name,
             e.updated_at,
-            -- ตรวจสอบว่าเป็นผู้ดูแลหลัก + มี status = 1
+            -- ตรวจสอบว่าเป็นผู้ดูแลหลัก + status ไม่เท่ากับ 0
             (
                 EXISTS (
                     SELECT 1
@@ -143,14 +150,14 @@ try {
                     AND ru1.u_id = :u_id 
                     AND gu1.type = 'ผู้ดูแลหลัก'
                 )
-                AND EXISTS (
+                AND NOT EXISTS (
                     SELECT 1
                     FROM equipment_transfers et1
                     WHERE et1.equipment_id = e.equipment_id
-                    AND et1.status = 1
+                    AND et1.status = 0
                 )
             ) as is_main_admin_with_status,
-            -- ตรวจสอบว่าอยู่ในแผนกและไม่มีผู้ดูแลหลัก
+            -- ตรวจสอบว่าอยู่ในแผนกและไม่มีผู้ดูแลหลัก + status ไม่เท่ากับ 0
             (
                 e.location_department_id = :user_department_id
                 AND NOT EXISTS (
@@ -160,15 +167,21 @@ try {
                     WHERE rg2.subcategory_id = e.subcategory_id
                     AND gu2.type = 'ผู้ดูแลหลัก'
                 )
-            ) as is_department_no_admin,
-            -- ตรวจสอบว่า dep_join ตรงกับแผนกผู้ใช้
-            (
-                e.dep_join = :user_department_id
                 AND NOT EXISTS (
                     SELECT 1
                     FROM equipment_transfers et2
                     WHERE et2.equipment_id = e.equipment_id
                     AND et2.status = 0
+                )
+            ) as is_department_no_admin,
+            -- ตรวจสอบว่า dep_join ตรงกับแผนกผู้ใช้ + status ไม่เท่ากับ 0
+            (
+                e.dep_join = :user_department_id
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM equipment_transfers et3
+                    WHERE et3.equipment_id = e.equipment_id
+                    AND et3.status = 0
                 )
             ) as is_dep_join_match
         $joinTables
@@ -192,13 +205,13 @@ try {
         // กำหนดเหตุผล
         $reasons = [];
         if ($is_main_admin_with_status) {
-            $reasons[] = "เป็นผู้ดูแลหลักและมีสถานะการโอนเท่ากับ 1";
+            $reasons[] = "เป็นผู้ดูแลหลักและสถานะการโอนไม่เท่ากับ 0";
         }
         if ($is_department_no_admin) {
-            $reasons[] = "อยู่ในแผนกเดียวกันและไม่มีผู้ดูแลหลัก";
+            $reasons[] = "อยู่ในแผนกเดียวกัน ไม่มีผู้ดูแลหลัก และสถานะการโอนไม่เท่ากับ 0";
         }
         if ($is_dep_join_match) {
-            $reasons[] = "dep_join ตรงกับแผนกและไม่มีสถานะการโอนเท่ากับ 0";
+            $reasons[] = "dep_join ตรงกับแผนกและสถานะการโอนไม่เท่ากับ 0";
         }
         
         $reason = implode(" และ ", $reasons);
