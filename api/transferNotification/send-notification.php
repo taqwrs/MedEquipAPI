@@ -80,29 +80,53 @@ function sendPushToTargets(array $targets, array $payload): array
     return $results;
 }
 try {
-
-    // var_dump($WebPush);
-    $recipient_id = $input->recipient_user_id;
-    $recipient_name = $input->recipient_user_name ?? ''; // ถ้ามีส่งชื่อมาด้วย
+$to_department_id = $input->to_department ?? null;
+    $to_department_name = $input->to_department_name ?? '';
     $equipment_code = $input->equipment_code ?? '';
     $equipment_name = $input->equipment_name ?? '';
-    $transfer_user_name = $input->transfer_user_name ?? ''; // ชื่อผู้โอน
-    $requestId = (string) time(); // ไอดีชั่วคราว
+    $transfer_user_name = $input->transfer_user_name ?? '';
+    $equipment_id = $input->equipment_id ?? null;
+    $transfer_type = $input->transfer_type ?? '';
+
+    // ตรวจสอบว่ามี department_id หรือไม่
+    if (!$to_department_id) {
+        echo json_encode([
+            "ok" => false,
+            "message" => "ไม่พบรหัสแผนกปลายทาง (to_department)"
+        ]);
+        exit;
+    }
+
+    $requestId = (string) time();
+    
+    // สร้าง payload สำหรับการแจ้งเตือน
     $payload = [
-        'title' => "คุณได้รับเครื่องมือโอนย้าย",
+        'title' => "แผนกของคุณได้รับการโอนย้ายเครื่องมือ {$transfer_type}",
         'body' => "เครื่องมือ: {$equipment_code} - {$equipment_name}\nจาก: {$transfer_user_name}",
-        'url' => "http://localhost:5173/transfer/"
+        'url' => "https://medequipment.tsh/transfer/",
+        'data' => [
+            'equipment_id' => $equipment_id,
+            'equipment_code' => $equipment_code,
+            'to_department_id' => $to_department_id,
+            'transfer_type' => $transfer_type
+        ]
     ];
 
-    $targets = getActiveSubscriptions($dbh, $recipient_id);
-    // var_dump($targets);
+    // ดึง subscriptions ของทุกคนในแผนกปลายทาง
+    $targets = getActiveSubscriptions($dbh, $to_department_id);
+
     if (empty($targets)) {
-        // echo "aa";
         echo json_encode([
             "ok" => true,
-            "requestId" => [],
+            "message" => "ไม่มีผู้ใช้ในแผนกนี้ที่เปิดการแจ้งเตือน",
+            "requestId" => $requestId,
             "notifyResults" => [],
-            "summary" => ["total" => 0, "success" => 0, "failed" => 0]
+            "summary" => [
+                "total" => 0, 
+                "success" => 0, 
+                "failed" => 0,
+                "users_in_department" => 0
+            ]
         ]);
         exit;
     }
