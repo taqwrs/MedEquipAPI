@@ -56,7 +56,8 @@ try {
         FROM equipments e
         INNER JOIN equipment_subcategories es ON e.subcategory_id = es.subcategory_id
         LEFT JOIN departments d ON e.location_department_id = d.department_id
-        WHERE (
+        WHERE e.active = 1
+        AND (
             -- เงื่อนไข 1: เป็นผู้ดูแลหลักของ subcategory และมี equipment_transfers.status = 1
             (
                 EXISTS (

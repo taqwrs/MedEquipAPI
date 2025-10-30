@@ -23,28 +23,29 @@ try {
         throw new Exception("Invalid User ID");
     }
 
-    $params = [':u_id' => $u_id];
+    // ดึง department_id ของผู้ใช้งาน
+    $userDeptSQL = "SELECT department_id FROM users WHERE ID = :u_id";
+    $userDeptStmt = $dbh->prepare($userDeptSQL);
+    $userDeptStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
+    $userDeptStmt->execute();
+    $user_department_id = $userDeptStmt->fetchColumn();
 
-    $baseWhere = "
-        ru.u_id = :u_id 
-        AND gu.type = 'ผู้ดูแลหลัก'
-        AND e.active = 1
-    ";
+    $params = [':u_id' => $u_id];
+    if ($user_department_id) {
+        $params[':user_dept_id'] = (int) $user_department_id;
+    }
 
     $searchWhere = '';
     if (!empty($input['keyword'])) {
         $keyword = trim($input['keyword']);
-        $searchWhere .= " AND e.name LIKE :keyword";
+        $searchWhere = " AND e.name LIKE :keyword";
         $params[':keyword'] = "%{$keyword}%";
     }
 
-    // ✅ แก้ JOIN ของ equipment_transfers ให้เลือกเฉพาะ record ล่าสุดของแต่ละเครื่อง
-    $joinTables = "
+    // สร้าง WHERE clause ตามเงื่อนไขใหม่
+    $conditionSQL = "
         FROM equipments e
         INNER JOIN equipment_subcategories es ON e.subcategory_id = es.subcategory_id
-        INNER JOIN relation_group rg ON es.subcategory_id = rg.subcategory_id
-        INNER JOIN group_user gu ON rg.group_user_id = gu.group_user_id
-        INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
         LEFT JOIN departments d ON e.location_department_id = d.department_id
         LEFT JOIN (
             SELECT 
@@ -57,18 +58,56 @@ try {
                 GROUP BY equipment_id
             ) t2 ON t1.equipment_id = t2.equipment_id AND t1.transfer_id = t2.latest_transfer_id
         ) et ON e.equipment_id = et.equipment_id
-        WHERE $baseWhere $searchWhere
+        WHERE e.active = 1
+        AND (
+            -- เงื่อนไข 1: equipment ที่อยู่ใน subcategory ที่มีผู้ดูแลหลัก และ status = 1
+            (
+                EXISTS (
+                    SELECT 1
+                    FROM relation_group rg
+                    INNER JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+                    INNER JOIN relation_user ru ON gu.group_user_id = ru.group_user_id
+                    WHERE rg.subcategory_id = e.subcategory_id
+                    AND gu.type = 'ผู้ดูแลหลัก'
+                    AND ru.u_id = :u_id
+                )
+                AND (et.status = 1 OR et.equipment_id IS NULL)
+            )
+            OR
+            -- เงื่อนไข 2: equipment ที่ location_department_id = user department 
+            -- และ subcategory ไม่มีผู้ดูแลหลัก
+            " . ($user_department_id ? "
+            (
+                e.location_department_id = :user_dept_id
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM relation_group rg
+                    INNER JOIN group_user gu ON rg.group_user_id = gu.group_user_id
+                    WHERE rg.subcategory_id = e.subcategory_id
+                    AND gu.type = 'ผู้ดูแลหลัก'
+                )
+            )
+            OR
+            -- เงื่อนไข 3: equipment ที่ dep_join = user department และ status != 0
+            (
+                e.dep_join = :user_dept_id
+                AND (et.status IS NULL OR et.status != 0)
+            )
+            " : "1=0") . "
+        )
+        $searchWhere
     ";
 
-    $countSQL = "SELECT COUNT(DISTINCT e.equipment_id) as total $joinTables";
+    // นับจำนวน equipment
+    $countSQL = "SELECT COUNT(DISTINCT e.equipment_id) as total $conditionSQL";
     $countStmt = $dbh->prepare($countSQL);
-    $countStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
-    if (!empty($input['keyword'])) {
-        $countStmt->bindValue(':keyword', $params[':keyword'], PDO::PARAM_STR);
+    foreach ($params as $key => $value) {
+        $countStmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
     }
     $countStmt->execute();
     $totalItems = (int) $countStmt->fetchColumn();
 
+    // ดึงข้อมูล equipment
     $dataSQL = "
         SELECT DISTINCT
             e.equipment_id,
@@ -79,21 +118,24 @@ try {
             es.category_id,
             e.location_department_id,
             e.location_details,
+            e.dep_join,
             e.status,
             d.department_name as location_department_name,
             e.updated_at,
             CASE 
                 WHEN et.equipment_id IS NULL THEN 'available'
                 WHEN et.status = 0 THEN 'in_transfer'
+                WHEN et.status = 1 THEN 'transferred'
                 ELSE 'available'
-            END as transfer_status
-        $joinTables
+            END as transfer_status,
+            et.status as transfer_status_code
+        $conditionSQL
         ORDER BY e.updated_at DESC
     ";
+    
     $dataStmt = $dbh->prepare($dataSQL);
-    $dataStmt->bindValue(':u_id', $u_id, PDO::PARAM_INT);
-    if (!empty($input['keyword'])) {
-        $dataStmt->bindValue(':keyword', $params[':keyword'], PDO::PARAM_STR);
+    foreach ($params as $key => $value) {
+        $dataStmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
     }
     $dataStmt->execute();
 
@@ -109,7 +151,10 @@ try {
             "location_department_id" => $row['location_department_id'] ? (int) $row['location_department_id'] : null,
             "location_department_name" => $row['location_department_name'],
             "location_details" => $row['location_details'],
-            "category_id" => (int) $row['category_id']
+            "dep_join" => $row['dep_join'] ? (int) $row['dep_join'] : null,
+            "category_id" => (int) $row['category_id'],
+            "transfer_status" => $row['transfer_status'],
+            "transfer_status_code" => $row['transfer_status_code'] !== null ? (int) $row['transfer_status_code'] : null
         ];
         $subcategory_ids[] = (int) $row['subcategory_id'];
     }
@@ -183,6 +228,7 @@ try {
         }
     }
 
+    // เพิ่ม admins เข้าไปใน equipment
     foreach ($equipment_list as &$equipment) {
         $subcategory_id = $equipment['subcategory_id'];
         $equipment['admins'] = [];
@@ -193,6 +239,7 @@ try {
 
     echo json_encode([
         "status" => "success",
+        "total" => $totalItems,
         "data" => $equipment_list
     ], JSON_UNESCAPED_UNICODE);
 

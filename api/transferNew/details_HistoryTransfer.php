@@ -79,10 +79,11 @@ try {
     // รวมเงื่อนไขสิทธิ์เข้ากับเงื่อนไขหลัก
     $whereConditions[] = "(" . implode(' OR ', $accessConditions) . ")";
 
-    // เงื่อนไข status_transfer และ transfer_type เดิม
+    // เงื่อนไข status_transfer ใหม่
+    // status_transfer: 0=ยังไม่คืน, 1=คืนแล้ว, 2=ไม่ต้องคืน
     $whereConditions[] = "(
-        (ht.transfer_type = 'โอนย้ายถาวร' AND ht.status_transfer = 1) OR
-        (ht.transfer_type = 'โอนย้ายชั่วคราว')
+        (ht.transfer_type = 'โอนย้ายถาวร' AND ht.status_transfer = 2) OR
+        (ht.transfer_type = 'โอนย้ายชั่วคราว' AND ht.status_transfer IN (0, 1))
     )";
 
     $baseWhere = "WHERE " . implode(' AND ', $whereConditions);
@@ -230,11 +231,15 @@ try {
             "department_name" => $history['recipient_user_department_name']
         ] : null;
 
+        // แก้ไขการแสดง status ตามค่าใหม่
+        // 0 = ยังไม่คืน, 1 = คืนแล้ว, 2 = ไม่ต้องคืน
         $status_display = '';
-        if ($history['transfer_type'] === 'โอนย้ายถาวร') {
+        if ($history['status_transfer'] == 0) {
+            $status_display = 'ยังไม่คืน';
+        } elseif ($history['status_transfer'] == 1) {
+            $status_display = 'คืนแล้ว';
+        } elseif ($history['status_transfer'] == 2) {
             $status_display = 'ไม่ต้องคืน';
-        } elseif ($history['transfer_type'] === 'โอนย้ายชั่วคราว') {
-            $status_display = ($history['status_transfer'] == 0) ? 'ยังไม่คืน' : 'คืนแล้ว';
         }
 
         $transfer_date = $history['transfer_date']
@@ -261,6 +266,7 @@ try {
             "transfer_user" => $transfer_user,
             "recipient_user" => $recipient_user,
             "admins" => $admins,
+            "status_transfer" => $history['status_transfer'],
             "status_display" => $status_display,
             "updated_at" => $history['updated_at'],
             "reason" => $history['reason'],

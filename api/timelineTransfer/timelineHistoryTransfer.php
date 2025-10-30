@@ -72,12 +72,12 @@ try {
         $recipientUser = $row['recipient_user_name'] ?: "-";
 
         $status = "-";
-        if ($row['transfer_type'] === "โอนย้ายถาวร" && $row['status_transfer'] == 1) {
-            $status = "ไม่ต้องคืน";
-        } elseif ($row['transfer_type'] === "โอนย้ายชั่วคราว" && $row['status_transfer'] == 0) {
+        if ($row['status_transfer'] == 0) {
             $status = "ยังไม่คืน";
-        } elseif ($row['transfer_type'] === "โอนย้ายชั่วคราว" && $row['status_transfer'] == 1) {
+        } elseif ($row['status_transfer'] == 1) {
             $status = "คืนแล้ว";
+        } elseif ($row['status_transfer'] == 2) {
+            $status = "ไม่ต้องคืน";
         }
 
         $timeline[] = [
