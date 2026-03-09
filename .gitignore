@@ -22,6 +22,9 @@ _ide_helper_models.php
 tests/_output/
 tests/_support/_generated/
 
+# Ignore php files containing 'noti' inside api folder
+/api/*noti*.php
+
 # Logs & Cache
 *.log
 storage/logs/
